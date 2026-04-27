@@ -423,90 +423,92 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
-        <div className="text-sm font-black tracking-tight text-white">{monthLabel}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 md:px-5">
+        <div className="text-base font-black tracking-tight text-white md:text-lg">{monthLabel}</div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => onChangeMonth(-1)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
           >
             Prev
           </button>
           <button
             onClick={() => onChangeMonth(0)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
           >
             Today
           </button>
           <button
             onClick={() => onChangeMonth(1)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white"
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
           >
             Next
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
-        {weekdayLabels.map((label) => (
-          <div key={label} className="px-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30">
-            {label}
-          </div>
-        ))}
-
-        {days.map((d) => {
-          const iso = isoFromDate(d);
-          const isCurrentMonth = d.getMonth() === cursorMonth.getMonth();
-          const isToday = iso === isoFromDate(new Date());
-          const dayEvents = eventsByDate.get(iso) ?? [];
-
-          return (
-            <div
-              key={iso}
-              tabIndex={0}
-              onClick={() => onSelectDate(iso)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelectDate(iso);
-                }
-              }}
-              className={`group min-h-[92px] rounded-2xl border p-2 text-left transition ${
-                isCurrentMonth ? "border-white/10 bg-white/[0.02]" : "border-white/5 bg-white/[0.01] opacity-60"
-              } hover:border-purple-300/30 hover:bg-purple-400/5`}
-            >
-              <div className="flex items-center justify-between">
-                <div className={`text-xs font-black ${isToday ? "text-purple-200" : "text-white/80"}`}>{d.getDate()}</div>
-                {dayEvents.length ? (
-                  <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/50">
-                    {dayEvents.length}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-2 space-y-1">
-                {dayEvents.slice(0, 3).map((event) => (
-                  <button
-                    key={event.id}
-                    type="button"
-                    className={`block w-full truncate rounded-lg border px-2 py-1 text-left text-[10px] font-black ${getStatusCalendarClass(event.status)}`}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditEvent(event);
-                    }}
-                    title={`${event.name} · ${event.status}`}
-                  >
-                    {event.name}
-                  </button>
-                ))}
-                {dayEvents.length > 3 ? (
-                  <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 3} more</div>
-                ) : null}
-              </div>
+      <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+        <div className="grid min-w-[720px] grid-cols-7 gap-2 md:min-w-0">
+          {weekdayLabels.map((label) => (
+            <div key={label} className="px-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30 md:text-xs">
+              {label}
             </div>
-          );
-        })}
+          ))}
+
+          {days.map((d) => {
+            const iso = isoFromDate(d);
+            const isCurrentMonth = d.getMonth() === cursorMonth.getMonth();
+            const isToday = iso === isoFromDate(new Date());
+            const dayEvents = eventsByDate.get(iso) ?? [];
+
+            return (
+              <div
+                key={iso}
+                tabIndex={0}
+                onClick={() => onSelectDate(iso)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectDate(iso);
+                  }
+                }}
+                className={`group min-h-[108px] rounded-2xl border p-2 text-left transition md:min-h-[126px] md:p-3 ${
+                  isCurrentMonth ? "border-white/10 bg-white/[0.02]" : "border-white/5 bg-white/[0.01] opacity-60"
+                } hover:border-purple-300/30 hover:bg-purple-400/5`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`text-sm font-black ${isToday ? "text-purple-200" : "text-white/80"}`}>{d.getDate()}</div>
+                  {dayEvents.length ? (
+                    <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/50">
+                      {dayEvents.length}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-2 space-y-1.5">
+                  {dayEvents.slice(0, 3).map((event) => (
+                    <button
+                      key={event.id}
+                      type="button"
+                      className={`block w-full truncate rounded-lg border px-2 py-1.5 text-left text-[10px] font-black md:text-xs ${getStatusCalendarClass(event.status)}`}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditEvent(event);
+                      }}
+                      title={`${event.name} · ${event.status}`}
+                    >
+                      {event.name}
+                    </button>
+                  ))}
+                  {dayEvents.length > 3 ? (
+                    <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 3} more</div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -716,7 +718,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -725,11 +727,11 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="max-h-[calc(100svh-1.5rem)] w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div>
-            <div className="text-lg font-black tracking-tight">{title}</div>
+            <div className="text-lg font-black tracking-tight sm:text-xl">{title}</div>
             <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">
               {selectedWeekName} · {selectedRangeLabel}
             </div>
@@ -742,7 +744,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
           </button>
         </div>
 
-        <div className="space-y-4 px-6 py-5">
+        <div className="space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
             <div className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick day" : "Pick week"}</div>
             <div className="flex flex-wrap items-center gap-2">
@@ -782,7 +784,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
           </div>
           ) : null}
 
-          <div className="max-h-[62vh] space-y-4 overflow-auto pr-2">
+          <div className="max-h-[58vh] space-y-4 overflow-auto pr-1 sm:max-h-[62vh] sm:pr-2">
             {modalDays.map((day) => {
               const date = isoToDate(day.isoDate);
               const weekday = date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
@@ -821,9 +823,9 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                   </div>
 
                   <div className="mt-3">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">DJs & Timings</div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => applyQuickSchedule(day.isoDate)}
                           className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
@@ -844,17 +846,17 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                         {day.slots.map((slot, idx) => (
                           <div
                             key={`${day.isoDate}-${idx}`}
-                            className={`grid grid-cols-[1fr_110px_110px_110px_36px] items-center gap-2 rounded-xl border bg-black/20 p-2 ${
+                            className={`grid grid-cols-2 items-center gap-2 rounded-xl border bg-black/20 p-2 sm:grid-cols-[minmax(180px,1fr)_110px_110px_120px_40px] ${
                               dayConflictSlots.has(idx) ? "border-rose-300/50" : "border-white/10"
                             }`}
                           >
-                            <div>
+                            <div className="col-span-2 sm:col-span-1">
                               <input
                                 list={djListId}
                                 value={slot.dj}
                                 onChange={(e) => updateSlot(day.isoDate, idx, { dj: e.target.value })}
                                 placeholder="Select DJ"
-                                className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/85 outline-none focus:border-purple-300/60"
+                                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/85 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
                               />
                               <datalist id={djListId}>
                                 {djOptions.map((dj) => (
@@ -870,7 +872,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                                 const nextEnd = normalizeSlotTimes(day.isoDate, idx, nextStart, slot.end);
                                 updateSlot(day.isoDate, idx, { start: nextStart, end: nextEnd });
                               }}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/70 outline-none focus:border-purple-300/60"
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
                             >
                               {timeOptions.map((t) => (
                                 <option key={t} value={t}>
@@ -886,7 +888,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                                 const fixedEnd = normalizeSlotTimes(day.isoDate, idx, slot.start, nextEnd);
                                 updateSlot(day.isoDate, idx, { end: fixedEnd });
                               }}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/70 outline-none focus:border-purple-300/60"
+                              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
                             >
                               {timeOptions.map((t) => (
                                 <option key={t} value={t}>
@@ -898,7 +900,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                             <select
                               value={slot.role}
                               onChange={(e) => updateSlot(day.isoDate, idx, { role: e.target.value })}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/50 outline-none focus:border-purple-300/60"
+                              className="col-span-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/50 outline-none focus:border-purple-300/60 sm:col-span-1 sm:px-2 sm:py-2 sm:text-xs"
                             >
                               {roleOptions.map((r) => (
                                 <option key={r} value={r}>
@@ -909,7 +911,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
 
                             <button
                               onClick={() => removeSlot(day.isoDate, idx)}
-                              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/40 hover:bg-rose-400/20 hover:text-rose-200"
+                              className="col-span-2 flex h-10 w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/40 hover:bg-rose-400/20 hover:text-rose-200 sm:col-span-1 sm:h-9 sm:w-9"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -959,7 +961,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/50 hover:bg-white/10 hover:text-white"
@@ -1003,28 +1005,28 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
         <CardContent className="relative p-0">
           <div className={`absolute left-0 top-0 h-full w-1.5 ${getStatusColor(event.status)}`} />
 
-          <div className="grid grid-cols-[58px_1fr_auto] gap-4 px-5 py-4 pl-6">
+          <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-3 px-4 py-4 pl-6 sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:gap-4 sm:px-5 md:grid-cols-[72px_minmax(0,1fr)_auto] md:px-7 md:py-5">
             <div className="text-center leading-none text-white/70">
-              <div className="text-[10px] font-bold tracking-widest">{event.day}</div>
-              <div className="mt-1 text-3xl font-black text-white">{event.dayNo}</div>
-              <div className="mt-1 text-[10px] font-bold tracking-widest">{event.month}</div>
+              <div className="text-[10px] font-bold tracking-widest md:text-xs">{event.day}</div>
+              <div className="mt-1 text-3xl font-black text-white md:text-4xl">{event.dayNo}</div>
+              <div className="mt-1 text-[10px] font-bold tracking-widest md:text-xs">{event.month}</div>
             </div>
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="truncate text-sm font-black tracking-wide text-white md:text-base">{event.name}</h3>
+                <h3 className="min-w-0 text-lg font-black tracking-wide text-white md:text-xl">{event.name}</h3>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
                   {event.status}
                 </span>
               </div>
-              <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-white/35">{event.genre}</div>
+              <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-white/35 md:text-xs">{event.genre}</div>
 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {event.slots.length ? (
                   event.slots.map((slot, idx) => (
                     <span
                       key={idx}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-black ${
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-black md:px-3 md:py-2 md:text-sm ${
                         conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
                       }`}
                     >
@@ -1035,22 +1037,22 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                   <span className="text-xs font-bold text-rose-300">No lineup</span>
                 )}
               </div>
-              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{event.stage}</div>
+              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30 md:text-xs">{event.stage}</div>
             </div>
 
-            <div className="flex flex-col items-end justify-between gap-2">
+            <div className="col-span-2 flex items-center justify-between gap-2 border-t border-white/10 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
               <button
                 onClick={onToggle}
-                className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+                className="rounded-lg border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white sm:p-1.5 md:p-2"
               >
                 <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
               </button>
-              <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
                 <select
                   value={event.ic || ""}
                   onChange={(e) => onAssignIC(e.target.value)}
-                  className="h-8 rounded-lg border border-white/10 bg-white/5 px-2 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+                  className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:px-2 sm:text-xs md:h-9 md:text-sm"
                 >
                   <option value="">PIC</option>
                   <option value="Wai Hong">Wai Hong</option>
@@ -1059,7 +1061,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
               </div>
               <button
                 onClick={onEdit}
-                className="inline-flex h-8 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/60 hover:bg-purple-400 hover:text-black"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
               >
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
@@ -1071,7 +1073,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="border-t border-white/10 px-6 pb-5 pt-4"
+              className="border-t border-white/10 px-4 pb-5 pt-4 md:px-7"
             >
               {event.slots.length ? (
                 <>
@@ -1505,14 +1507,14 @@ export default function OABookingDashboard() {
   }, [filteredEvents]);
 
   return (
-    <div className="min-h-screen bg-[#080711] p-4 text-white md:p-8">
-      <div className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-6">
-          <div className="flex items-center gap-3">
-            <div className="text-xl font-black tracking-tight">O<span className="text-purple-300">&</span>A</div>
+    <div className="min-h-screen bg-[#080711] p-3 text-white sm:p-4 lg:p-6 xl:p-8">
+      <div className="mx-auto max-w-[1600px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-6 xl:px-8">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-2xl font-black tracking-tight md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <Button
               onClick={() => setView("List")}
-              className={`h-9 rounded-xl px-4 text-xs font-black ${
+              className={`h-11 rounded-xl px-4 text-sm font-black md:px-5 ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
@@ -1520,7 +1522,7 @@ export default function OABookingDashboard() {
             </Button>
             <Button
               onClick={() => setView("Calendar")}
-              className={`h-9 rounded-xl px-4 text-xs font-black ${
+              className={`h-11 rounded-xl px-4 text-sm font-black md:px-5 ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
@@ -1531,27 +1533,27 @@ export default function OABookingDashboard() {
           </div>
           <Button
             onClick={() => openAddModal()}
-            className="h-9 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300"
+            className="h-11 rounded-xl bg-purple-400 px-4 text-sm font-black text-black hover:bg-purple-300 md:px-6"
           >
             <Plus className="mr-2 h-4 w-4" /> ADD WEEK
           </Button>
         </header>
 
         {syncError ? (
-          <div className="border-b border-rose-400/20 bg-rose-400/10 px-4 py-3 text-xs font-bold text-rose-100 md:px-6">
+          <div className="border-b border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-bold text-rose-100 md:px-6 xl:px-8">
             Supabase sync issue: {syncError}
           </div>
         ) : !isSupabaseConfigured ? (
-          <div className="border-b border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-xs font-bold text-yellow-100 md:px-6">
+          <div className="border-b border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-sm font-bold text-yellow-100 md:px-6 xl:px-8">
             Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in this environment.
           </div>
         ) : syncStatus ? (
-          <div className="border-b border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold text-emerald-100 md:px-6">
+          <div className="border-b border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100 md:px-6 xl:px-8">
             {syncStatus}
           </div>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-4 py-4 sm:grid-cols-5 md:px-6">
+        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-4 py-4 sm:grid-cols-5 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
           <Stat number={stats.unconfirmed} label="Unconfirmed" tone="text-yellow-300" />
@@ -1559,8 +1561,8 @@ export default function OABookingDashboard() {
           <Stat number={stats.urgent} label="Urgent" tone="text-purple-300" />
         </section>
 
-        <section className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-4 py-3 backdrop-blur md:px-6">
-          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
+        <section className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-4 py-3 backdrop-blur md:px-6 xl:px-8">
+          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-white/[0.03] p-1">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
               { key: "Past", label: "Past Events", count: pastCount },
@@ -1570,7 +1572,7 @@ export default function OABookingDashboard() {
                 <button
                   key={item.key}
                   onClick={() => setDateScope(item.key)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                  className={`shrink-0 rounded-full px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
                     active ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
                   }`}
                 >
@@ -1587,7 +1589,7 @@ export default function OABookingDashboard() {
               <button
                 key={item.key}
                 onClick={() => setActiveFilter(item.key)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-black transition ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
                   active ? "border-purple-300 bg-purple-400 text-black" : "border-white/10 bg-white/5 text-white/45 hover:text-white"
                 }`}
               >
@@ -1599,13 +1601,13 @@ export default function OABookingDashboard() {
           <select
             value={dateSort}
             onChange={(e) => setDateSort(e.target.value)}
-            className="ml-auto h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+            className="h-11 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 lg:ml-auto"
           >
             <option value="asc">Date ↑</option>
             <option value="desc">Date ↓</option>
           </select>
 
-          <div className="flex min-w-[220px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
             <Search className="h-4 w-4" />
             <input
               value={search}
@@ -1616,15 +1618,15 @@ export default function OABookingDashboard() {
           </div>
         </section>
 
-        <main className="space-y-3 px-4 py-4 md:px-6">
+        <main className="space-y-4 px-4 py-4 md:px-6 xl:px-8 xl:py-6">
           {view === "List" ? (
             <>
               {groupedEvents.map((group) => (
-                <section key={group.key} className="space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0">
+                <section key={group.key} className="space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/25">{group.weekName}</div>
-                      <h2 className="mt-1 text-sm font-black text-white/85">{group.label}</h2>
+                      <h2 className="mt-1 text-base font-black text-white/85 md:text-lg">{group.label}</h2>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
                       <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">{group.items.length} events</span>
@@ -1701,9 +1703,9 @@ export default function OABookingDashboard() {
 
 function Stat({ number, label, tone = "text-white" }) {
   return (
-    <div className="rounded-2xl bg-white/[0.02] p-3 text-center">
-      <div className={`text-2xl font-black ${tone}`}>{number}</div>
-      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-white/25">{label}</div>
+    <div className="rounded-2xl bg-white/[0.02] p-3 text-center md:p-4 xl:p-5">
+      <div className={`text-3xl font-black md:text-4xl ${tone}`}>{number}</div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-white/25 md:text-xs">{label}</div>
     </div>
   );
 }
