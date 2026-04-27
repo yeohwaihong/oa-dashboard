@@ -150,6 +150,13 @@ function getStatusColor(status) {
   return "bg-purple-400";
 }
 
+function getStatusCalendarClass(status) {
+  if (status === "No Lineup") return "border-rose-300/40 bg-rose-500/15 text-rose-100";
+  if (status === "Unconfirmed") return "border-yellow-300/40 bg-yellow-400/15 text-yellow-100";
+  if (status === "Confirmed") return "border-emerald-300/40 bg-emerald-400/15 text-emerald-100";
+  return "border-purple-300/40 bg-purple-400/15 text-purple-100";
+}
+
 function timeToPercent(time) {
   const [hRaw, mRaw] = time.split(":").map(Number);
   const h = hRaw < 10 ? hRaw + 24 : hRaw;
@@ -400,7 +407,7 @@ function dayLabelFromISO(iso) {
   return isoToDate(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
-function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onEditEvent, onAssignIC }) {
+function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onEditEvent }) {
   const first = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth(), 1);
   const last = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth() + 1, 0);
   const gridStart = startOfWeekMonday(first);
@@ -456,7 +463,6 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
           return (
             <div
               key={iso}
-              role="button"
               tabIndex={0}
               onClick={() => onSelectDate(iso)}
               onKeyDown={(event) => {
@@ -479,35 +485,23 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
               </div>
 
               <div className="mt-2 space-y-1">
-                {dayEvents.slice(0, 2).map((event) => (
-                  <div
+                {dayEvents.slice(0, 3).map((event) => (
+                  <button
                     key={event.id}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1"
+                    type="button"
+                    className={`block w-full truncate rounded-lg border px-2 py-1 text-left text-[10px] font-black ${getStatusCalendarClass(event.status)}`}
                     onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditEvent(event);
+                    }}
+                    title={`${event.name} · ${event.status}`}
                   >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditEvent(event);
-                      }}
-                      className="min-w-0 flex-1 truncate text-left text-[10px] font-black text-white/70 hover:text-white"
-                      title={event.name}
-                    >
-                      {event.name}
-                    </button>
-                    <select
-                      value={event.ic || ""}
-                      onChange={(e) => onAssignIC(event.id, e.target.value)}
-                      className="h-6 w-[88px] shrink-0 rounded-md border border-white/10 bg-white/5 px-1 text-[10px] font-black text-white/60 outline-none hover:bg-white/10 focus:border-purple-300/60"
-                    >
-                      <option value="">PIC</option>
-                      <option value="Wai Hong">Wai Hong</option>
-                      <option value="Ashwin">Ashwin</option>
-                    </select>
-                  </div>
+                    {event.name}
+                  </button>
                 ))}
-                {dayEvents.length > 2 ? (
-                  <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 2} more</div>
+                {dayEvents.length > 3 ? (
+                  <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 3} more</div>
                 ) : null}
               </div>
             </div>
@@ -1547,6 +1541,10 @@ export default function OABookingDashboard() {
           <div className="border-b border-rose-400/20 bg-rose-400/10 px-4 py-3 text-xs font-bold text-rose-100 md:px-6">
             Supabase sync issue: {syncError}
           </div>
+        ) : !isSupabaseConfigured ? (
+          <div className="border-b border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-xs font-bold text-yellow-100 md:px-6">
+            Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in this environment.
+          </div>
         ) : syncStatus ? (
           <div className="border-b border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold text-emerald-100 md:px-6">
             {syncStatus}
@@ -1666,7 +1664,6 @@ export default function OABookingDashboard() {
               eventsByDate={calendarEventsByDate}
               onSelectDate={(iso) => openAddModal(iso)}
               onEditEvent={openEditModal}
-              onAssignIC={assignIC}
             />
           )}
         </main>
