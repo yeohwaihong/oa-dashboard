@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarDays,
@@ -8,10 +8,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Headphones,
   ChevronDown,
   Clock,
-  Sparkles,
   X,
   Zap,
   Trash2,
@@ -19,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { isSupabaseConfigured, supabase } from "./src/supabaseClient.js";
 
 const eventsSeed = [
   {
@@ -142,7 +141,6 @@ const filterItems = [
   { key: "Attention", label: "Attention", icon: AlertTriangle },
   { key: "Confirmed", label: "Confirmed", icon: CheckCircle2 },
   { key: "No Lineup", label: "No Lineup", icon: XCircle },
-  { key: "Mr. Yang", label: "Mr. Yang", icon: Headphones },
 ];
 
 function getStatusColor(status) {
@@ -195,6 +193,53 @@ function minutesFromTime(time) {
   return h * 60 + mRaw;
 }
 
+function validateScheduleDays(days) {
+  const errorsByDate = {};
+  const conflictSlots = {};
+
+  for (const day of days) {
+    const slots = day.slots
+      .map((slot, index) => ({
+        index,
+        dj: String(slot.dj || "").trim() || `Slot ${index + 1}`,
+        start: slot.start,
+        end: slot.end,
+        startM: minutesFromTime(slot.start),
+        endM: minutesFromTime(slot.end),
+      }))
+      .filter((slot) => slot.start && slot.end);
+
+    const dayErrors = [];
+    const dayConflicts = new Set();
+
+    for (const slot of slots) {
+      if (slot.endM <= slot.startM) {
+        dayErrors.push(`${slot.dj} must end after it starts.`);
+        dayConflicts.add(slot.index);
+      }
+    }
+
+    const validSlots = slots.filter((slot) => slot.endM > slot.startM).sort((a, b) => a.startM - b.startM);
+    for (let i = 0; i < validSlots.length; i += 1) {
+      for (let j = i + 1; j < validSlots.length; j += 1) {
+        const a = validSlots[i];
+        const b = validSlots[j];
+        if (b.startM >= a.endM) break;
+        dayErrors.push(`${a.dj} (${a.start}-${a.end}) overlaps ${b.dj} (${b.start}-${b.end}).`);
+        dayConflicts.add(a.index);
+        dayConflicts.add(b.index);
+      }
+    }
+
+    if (dayErrors.length) {
+      errorsByDate[day.isoDate] = dayErrors;
+      conflictSlots[day.isoDate] = dayConflicts;
+    }
+  }
+
+  return { errorsByDate, conflictSlots, hasErrors: Object.keys(errorsByDate).length > 0 };
+}
+
 function buildTimeOptions() {
   const options = [];
   for (let minutes = 22 * 60; minutes <= 28 * 60; minutes += 30) {
@@ -209,6 +254,98 @@ function buildTimeOptions() {
 const timeOptions = buildTimeOptions();
 const roleOptions = ["Warm-up", "Driver", "Peak", "Closer"];
 const stageOptions = ["Centre Stage", "Main Stage"];
+const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
+const supabaseEventSelect = `
+  id,
+  event_name,
+  event_date,
+  day_name,
+  event_type,
+  genre_profile,
+  stage,
+  status,
+  notes,
+  event_slots (
+    id,
+    slot_order,
+    start_time,
+    end_time,
+    role,
+    expected_energy,
+    event_assignments (
+      id,
+      assignment_status,
+      fee,
+      notes,
+      djs (
+        id,
+        name
+      )
+    )
+  )
+`;
+
+function timeForInput(time) {
+  return String(time || "00:00").slice(0, 5);
+}
+
+function parseIc(notes) {
+  return String(notes || "").match(icNotePattern)?.[1] || "";
+}
+
+function setIcInNotes(notes, ic) {
+  const cleanNotes = String(notes || "").replace(icNotePattern, "").trim();
+  const cleanIc = String(ic || "").trim();
+  return [cleanNotes, cleanIc ? `[dashboard:ic=${cleanIc}]` : ""].filter(Boolean).join("\n");
+}
+
+function isSupabaseUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value));
+}
+
+function firstRelated(value) {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function mapSupabaseEvent(row) {
+  const date = row.event_date;
+  const dateObj = isoToDate(date);
+  const { day, dayNo, month } = formatEventDatePieces(dateObj);
+  const slots = Array.isArray(row.event_slots)
+    ? [...row.event_slots]
+        .sort((a, b) => (a.slot_order ?? 0) - (b.slot_order ?? 0))
+        .map((slot) => {
+          const assignment = firstRelated(slot.event_assignments);
+          const dj = assignment?.djs?.name || assignment?.notes || "(OPENING TBD)";
+          return {
+            id: String(slot.id),
+            assignmentId: assignment?.id ? String(assignment.id) : null,
+            dj,
+            role: slot.role || "Warm-up",
+            start: timeForInput(slot.start_time),
+            end: timeForInput(slot.end_time),
+            energy: slot.expected_energy ?? 3,
+            warning: dj.toUpperCase().includes("TBD"),
+          };
+        })
+    : [];
+
+  return {
+    id: String(row.id),
+    date,
+    day,
+    dayNo,
+    month,
+    name: row.event_name || "Untitled",
+    genre: row.genre_profile || "—",
+    status: row.status || "No Lineup",
+    stage: row.stage || stageOptions[0],
+    slots,
+    ic: parseIc(row.notes),
+    notes: row.notes || "",
+  };
+}
 
 function isoFromDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -227,6 +364,40 @@ function endOfWeekMonday(date) {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
   return end;
+}
+
+function weekKeyFromISO(iso) {
+  return isoFromDate(startOfWeekMonday(isoToDate(iso)));
+}
+
+function weekLabelFromKey(key) {
+  const start = isoToDate(key);
+  const end = endOfWeekMonday(start);
+  const startLabel = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const endLabel = end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${startLabel} - ${endLabel}`;
+}
+
+function weekOfMonthFromISO(iso) {
+  return Math.max(1, Math.ceil(isoToDate(iso).getDate() / 7));
+}
+
+function shiftISODate(iso, days) {
+  const date = isoToDate(iso);
+  date.setDate(date.getDate() + days);
+  return isoFromDate(date);
+}
+
+function weekRangeLabelFromDates(dates) {
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const firstLabel = first.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const lastLabel = last.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  return `${firstLabel} - ${lastLabel}`;
+}
+
+function dayLabelFromISO(iso) {
+  return isoToDate(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
 function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onEditEvent, onAssignIC }) {
@@ -283,9 +454,17 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
           const dayEvents = eventsByDate.get(iso) ?? [];
 
           return (
-            <button
+            <div
               key={iso}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectDate(iso)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectDate(iso);
+                }
+              }}
               className={`group min-h-[92px] rounded-2xl border p-2 text-left transition ${
                 isCurrentMonth ? "border-white/10 bg-white/[0.02]" : "border-white/5 bg-white/[0.01] opacity-60"
               } hover:border-purple-300/30 hover:bg-purple-400/5`}
@@ -321,9 +500,9 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
                       onChange={(e) => onAssignIC(event.id, e.target.value)}
                       className="h-6 w-[88px] shrink-0 rounded-md border border-white/10 bg-white/5 px-1 text-[10px] font-black text-white/60 outline-none hover:bg-white/10 focus:border-purple-300/60"
                     >
-                      <option value="">IC…</option>
-                      <option value="Ashwin">Ashwin</option>
+                      <option value="">PIC</option>
                       <option value="Wai Hong">Wai Hong</option>
+                      <option value="Ashwin">Ashwin</option>
                     </select>
                   </div>
                 ))}
@@ -331,7 +510,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
                   <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 2} more</div>
                 ) : null}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -339,7 +518,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
   );
 }
 
-function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave, djOptions, title = "Add Event Day", initialDays }) {
+function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave, djOptions, title = "Add Event Day", initialDays, dateMode = "week" }) {
   const [days, setDays] = useState(() => {
     return weekWedToSat(seedDateISO).map((d) => {
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -355,8 +534,34 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
   });
 
   const [hasAutofilled, setHasAutofilled] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const headerDates = useMemo(() => weekWedToSat(seedDateISO), [seedDateISO]);
+  const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
+  const selectedRangeLabel = useMemo(() => (dateMode === "day" ? dayLabelFromISO(seedDateISO) : weekRangeLabelFromDates(headerDates)), [dateMode, headerDates, seedDateISO]);
+  const selectedWeekName = `Week ${weekOfMonthFromISO(seedDateISO)}`;
+
+  const datesForMode = (iso) => (dateMode === "day" ? [isoToDate(iso)] : weekWedToSat(iso));
+
+  const changeSelectedPeriod = (nextSeedDateISO) => {
+    onChangeSeedDate(nextSeedDateISO);
+    setDays((prev) => {
+      const nextDates = datesForMode(nextSeedDateISO);
+      return nextDates.map((d) => {
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const existing = prev.find((x) => x.isoDate === iso);
+        return (
+          existing ?? {
+            isoDate: iso,
+            name: "",
+            genre: "",
+            confirmed: false,
+            stage: stageOptions[0],
+            slots: [],
+          }
+        );
+      });
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -366,7 +571,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
       return;
     }
     setDays(
-      weekWedToSat(seedDateISO).map((d) => {
+      datesForMode(seedDateISO).map((d) => {
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         return {
           isoDate: iso,
@@ -378,7 +583,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         };
       }),
     );
-  }, [initialDays, open]);
+  }, [dateMode, initialDays, open, seedDateISO]);
 
   const modalDays = useMemo(() => {
     return headerDates.map((d) => {
@@ -395,6 +600,8 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
       };
     });
   }, [days, headerDates]);
+
+  const validation = useMemo(() => validateScheduleDays(modalDays), [modalDays]);
 
   const setDayField = (isoDate, patch) => {
     setDays((prev) => prev.map((d) => (d.isoDate === isoDate ? { ...d, ...patch } : d)));
@@ -497,9 +704,18 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
     setHasAutofilled(true);
   };
 
-  const save = () => {
-    onSave(modalDays);
-    onClose();
+  const save = async () => {
+    if (validation.hasErrors) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await onSave(modalDays);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!open) return null;
@@ -520,7 +736,9 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
           <div>
             <div className="text-lg font-black tracking-tight">{title}</div>
-            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">Pick any date in the week</div>
+            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">
+              {selectedWeekName} · {selectedRangeLabel}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -531,34 +749,34 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         </div>
 
         <div className="space-y-4 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <input
-              type="date"
-              value={seedDateISO}
-              onChange={(e) => {
-                onChangeSeedDate(e.target.value);
-                setDays((prev) => {
-                  const nextDates = weekWedToSat(e.target.value);
-                  return nextDates.map((d) => {
-                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                    const existing = prev.find((x) => x.isoDate === iso);
-                    return (
-                      existing ?? {
-                        isoDate: iso,
-                        name: "",
-                        genre: "",
-                        confirmed: false,
-                        stage: stageOptions[0],
-                        slots: [],
-                      }
-                    );
-                  });
-                });
-              }}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white/80 outline-none focus:border-purple-300/60"
-            />
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick day" : "Pick week"}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => changeSelectedPeriod(shiftISODate(seedDateISO, dateMode === "day" ? -1 : -7))}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+              >
+                Prev
+              </button>
+              <input
+                type="date"
+                value={seedDateISO}
+                onChange={(e) => changeSelectedPeriod(e.target.value)}
+                className="min-w-[180px] flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/80 outline-none focus:border-purple-300/60"
+              />
+              <button
+                onClick={() => changeSelectedPeriod(shiftISODate(seedDateISO, dateMode === "day" ? 1 : 7))}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+              >
+                Next
+              </button>
+            </div>
+            <div className="mt-2 text-xs font-bold text-purple-100/70">
+              {selectedWeekName} · {selectedRangeLabel}
+            </div>
           </div>
 
+          {dateMode === "week" ? (
           <div className="flex flex-wrap items-center gap-3">
             <Button
               onClick={autoFill}
@@ -568,6 +786,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
             </Button>
             <div className="text-xs font-bold text-white/35">{hasAutofilled ? "You can still edit manually below" : "or fill manually below"}</div>
           </div>
+          ) : null}
 
           <div className="max-h-[62vh] space-y-4 overflow-auto pr-2">
             {modalDays.map((day) => {
@@ -576,9 +795,14 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
               const month = date.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
               const header = `${weekday} · ${date.getDate()} ${month}`;
               const djListId = `dj-options-${day.isoDate}`;
+              const dayErrors = validation.errorsByDate[day.isoDate] ?? [];
+              const dayConflictSlots = validation.conflictSlots[day.isoDate] ?? new Set();
 
               return (
-                <div key={day.isoDate} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div
+                  key={day.isoDate}
+                  className={`rounded-2xl border bg-white/[0.03] p-4 ${dayErrors.length ? "border-rose-300/40" : "border-white/10"}`}
+                >
                   <div className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200/80">{header}</div>
 
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -626,7 +850,9 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                         {day.slots.map((slot, idx) => (
                           <div
                             key={`${day.isoDate}-${idx}`}
-                            className="grid grid-cols-[1fr_110px_110px_110px_36px] items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2"
+                            className={`grid grid-cols-[1fr_110px_110px_110px_36px] items-center gap-2 rounded-xl border bg-black/20 p-2 ${
+                              dayConflictSlots.has(idx) ? "border-rose-300/50" : "border-white/10"
+                            }`}
                           >
                             <div>
                               <input
@@ -701,6 +927,13 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
                         Add slots to build the lineup (DJ + start/end + role)
                       </div>
                     )}
+                    {dayErrors.length ? (
+                      <div className="mt-2 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">
+                        {dayErrors.map((error) => (
+                          <div key={error}>{error}</div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -741,9 +974,10 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
           </Button>
           <Button
             onClick={save}
-            className="h-11 flex-1 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
+            disabled={isSaving}
+            className="h-11 flex-1 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Save Events
+            {isSaving ? "Saving..." : validation.hasErrors ? "Fix Time Overlaps" : dateMode === "day" ? "Save Day" : "Save Week"}
           </Button>
         </div>
       </motion.div>
@@ -752,10 +986,13 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
 }
 
 function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
+  const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
+  const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const warnings = [];
   if (!event.slots.length) warnings.push("No lineup assigned");
   if (event.slots.some((x) => x.warning || x.dj.includes("TBD"))) warnings.push("Opening slot TBD");
   if (event.slots.length && !event.slots.some((x) => ["Peak", "Closer"].includes(x.role))) warnings.push("Missing peak DJ");
+  if (scheduleValidation.errorsByDate[event.date]) warnings.push(...scheduleValidation.errorsByDate[event.date]);
 
   return (
     <motion.div
@@ -764,7 +1001,11 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
     >
-      <Card className="overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] text-white shadow-xl shadow-black/20">
+      <Card
+        className={`overflow-hidden rounded-2xl border bg-[#12111f] text-white shadow-xl shadow-black/20 ${
+          scheduleValidation.hasErrors ? "border-rose-300/50" : "border-white/10"
+        }`}
+      >
         <CardContent className="relative p-0">
           <div className={`absolute left-0 top-0 h-full w-1.5 ${getStatusColor(event.status)}`} />
 
@@ -787,14 +1028,20 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {event.slots.length ? (
                   event.slots.map((slot, idx) => (
-                    <span key={idx} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/70">
-                      {slot.dj}
+                    <span
+                      key={idx}
+                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-black ${
+                        conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
+                      }`}
+                    >
+                      {slot.dj} <span className={conflictSlots.has(idx) ? "text-rose-100/70" : "text-white/40"}>{slot.start}-{slot.end}</span>
                     </span>
                   ))
                 ) : (
                   <span className="text-xs font-bold text-rose-300">No lineup</span>
                 )}
               </div>
+              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{event.stage}</div>
             </div>
 
             <div className="flex flex-col items-end justify-between gap-2">
@@ -805,15 +1052,15 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                 <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
               </button>
               <div className="flex flex-col items-end gap-1">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">Assign</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
                 <select
                   value={event.ic || ""}
                   onChange={(e) => onAssignIC(e.target.value)}
                   className="h-8 rounded-lg border border-white/10 bg-white/5 px-2 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
                 >
-                  <option value="">IC…</option>
-                  <option value="Ashwin">Ashwin</option>
+                  <option value="">PIC</option>
                   <option value="Wai Hong">Wai Hong</option>
+                  <option value="Ashwin">Ashwin</option>
                 </select>
               </div>
               <button
@@ -822,7 +1069,6 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
               >
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
-              <div className="text-[10px] text-white/30">{event.stage}</div>
             </div>
           </div>
 
@@ -857,9 +1103,14 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
 
                   <div className="mt-4 grid gap-2 md:grid-cols-2">
                     {event.slots.map((slot, idx) => (
-                      <div key={idx} className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                          conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/10" : "border-white/10 bg-black/20"
+                        }`}
+                      >
                         <div>
-                          <div className="text-xs font-black text-white">{slot.role} · {slot.dj}</div>
+                          <div className="text-sm font-black text-white">{slot.role} · {slot.dj}</div>
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-white/35">
                             <Clock className="h-3 w-3" /> {slot.start}–{slot.end} · Energy {slot.energy}/5
                           </div>
@@ -889,18 +1140,151 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
 
 export default function OABookingDashboard() {
   const [activeFilter, setActiveFilter] = useState("All");
+  const [dateScope, setDateScope] = useState("Upcoming");
+  const [dateSort, setDateSort] = useState("asc");
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState(5);
-  const [events, setEvents] = useState(eventsSeed);
+  const [expandedId, setExpandedId] = useState("5");
+  const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
   const [view, setView] = useState("List");
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
+  const [modalDateMode, setModalDateMode] = useState("week");
+  const [syncError, setSyncError] = useState("");
+  const [syncStatus, setSyncStatus] = useState("");
+  const [toast, setToast] = useState(null);
   const [seedDateISO, setSeedDateISO] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
+
+  const showToast = useCallback((message, tone = "success") => {
+    setToast({ message, tone, id: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const loadEvents = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+
+    const { data, error } = await supabase
+      .from("events")
+      .select(supabaseEventSelect)
+      .order("event_date", { ascending: true })
+      .order("slot_order", { foreignTable: "event_slots", ascending: true });
+
+    if (error) {
+      setSyncError(error.message);
+      setSyncStatus("");
+      return;
+    }
+
+    if (!Array.isArray(data)) return;
+
+    setSyncError("");
+    setSyncStatus("Live from Supabase");
+    setEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
+  }, []);
+
+  const findOrCreateDj = useCallback(async (rawName) => {
+    const name = String(rawName || "").trim();
+    if (!name || name.toUpperCase().includes("TBD")) return null;
+
+    const existing = await supabase.from("djs").select("id").eq("name", name).limit(1).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id;
+
+    const created = await supabase.from("djs").insert({ name }).select("id").single();
+    if (created.error?.message?.includes("row-level security policy")) return null;
+    if (created.error) throw created.error;
+    return created.data.id;
+  }, []);
+
+  const saveEventToSupabase = useCallback(
+    async (event) => {
+      const payload = {
+        event_name: event.name,
+        event_date: event.date,
+        day_name: event.day,
+        event_type: event.name,
+        genre_profile: event.genre,
+        stage: event.stage,
+        status: event.status,
+        notes: setIcInNotes(event.notes, event.ic),
+      };
+
+      const savedEvent = isSupabaseUuid(event.id)
+        ? await supabase.from("events").update(payload).eq("id", event.id).select("id").single()
+        : await supabase.from("events").insert(payload).select("id").single();
+
+      if (savedEvent.error) throw savedEvent.error;
+
+      const deletedSlots = await supabase.from("event_slots").delete().eq("event_id", savedEvent.data.id);
+      if (deletedSlots.error) throw deletedSlots.error;
+
+      for (const [slotIndex, slot] of event.slots.entries()) {
+        const savedSlot = await supabase
+          .from("event_slots")
+          .insert({
+            event_id: savedEvent.data.id,
+            slot_order: slotIndex + 1,
+            start_time: slot.start,
+            end_time: slot.end,
+            role: slot.role,
+            expected_energy: slot.energy ?? 3,
+          })
+          .select("id")
+          .single();
+
+        if (savedSlot.error) throw savedSlot.error;
+
+        const djId = await findOrCreateDj(slot.dj);
+        const savedAssignment = await supabase.from("event_assignments").insert({
+          event_slot_id: savedSlot.data.id,
+          dj_id: djId,
+          assignment_status: event.status === "Confirmed" ? "Confirmed" : "Pending",
+          notes: djId ? null : slot.dj,
+        });
+
+        if (savedAssignment.error) throw savedAssignment.error;
+      }
+    },
+    [findOrCreateDj],
+  );
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let refreshTimer = null;
+
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadEvents, 250);
+    };
+
+    loadEvents();
+    const channel = supabase
+      .channel("oa-dashboard-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_slots" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_assignments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, scheduleRefresh)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setSyncError("");
+          setSyncStatus("Realtime connected");
+        }
+      });
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [loadEvents]);
 
   const djOptions = useMemo(() => {
     const set = new Set(["(OPENING TBD)"]);
@@ -912,130 +1296,195 @@ export default function OABookingDashboard() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [events]);
 
+  const todayISO = useMemo(() => isoFromDate(new Date()), []);
+
+  const scopedEvents = useMemo(() => {
+    return events.filter((event) => (dateScope === "Past" ? event.date < todayISO : event.date >= todayISO));
+  }, [dateScope, events, todayISO]);
+
+  const pastCount = useMemo(() => events.filter((event) => event.date < todayISO).length, [events, todayISO]);
+  const upcomingCount = events.length - pastCount;
+
   const stats = useMemo(() => {
-    const total = events.length;
-    const confirmed = events.filter((x) => x.status === "Confirmed").length;
-    const unconfirmed = events.filter((x) => x.status === "Unconfirmed").length;
-    const noLineup = events.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
-    const urgent = events.filter((x) => !x.slots.length || x.slots.some((s) => s.dj.includes("TBD"))).length;
+    const total = scopedEvents.length;
+    const confirmed = scopedEvents.filter((x) => x.status === "Confirmed").length;
+    const unconfirmed = scopedEvents.filter((x) => x.status === "Unconfirmed").length;
+    const noLineup = scopedEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
+    const urgent = scopedEvents.filter((x) => !x.slots.length || x.slots.some((s) => s.dj.includes("TBD"))).length;
     return { total, confirmed, unconfirmed, noLineup, urgent };
-  }, [events]);
+  }, [scopedEvents]);
 
   const filteredEvents = useMemo(() => {
-    return events.filter((event) => {
-      const matchesSearch = `${event.name} ${event.genre} ${event.stage} ${event.ic || ""} ${event.slots.map((x) => x.dj).join(" ")}`
-        .toLowerCase()
-        .includes(search.toLowerCase());
+    return scopedEvents
+      .filter((event) => {
+        const matchesSearch = `${event.name} ${event.genre} ${event.stage} ${event.ic || ""} ${event.slots.map((x) => x.dj).join(" ")}`
+          .toLowerCase()
+          .includes(search.toLowerCase());
 
-      if (!matchesSearch) return false;
-      if (activeFilter === "All") return true;
-      if (activeFilter === "Attention") return event.status === "No Lineup" || event.slots.some((s) => s.dj.includes("TBD"));
-      if (activeFilter === "Mr. Yang") return event.slots.some((s) => s.dj.toLowerCase().includes("yang"));
-      return event.status === activeFilter;
-    });
-  }, [activeFilter, events, search]);
+        if (!matchesSearch) return false;
+        if (activeFilter === "All") return true;
+        if (activeFilter === "Attention") return event.status === "No Lineup" || event.slots.some((s) => s.dj.includes("TBD"));
+        return event.status === activeFilter;
+      })
+      .sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateSort === "asc" ? dateCompare : -dateCompare;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+  }, [activeFilter, dateSort, scopedEvents, search]);
 
-  const saveModalDays = (modalDays) => {
-    setEvents((prev) => {
-      const existingByDate = new Map(prev.map((e) => [e.date, e]));
-      const next = [...prev];
-      let nextId = prev.reduce((max, e) => Math.max(max, e.id), 0) + 1;
+  const groupedEvents = useMemo(() => {
+    const groups = new Map();
+    for (const event of filteredEvents) {
+      const key = weekKeyFromISO(event.date);
+      const items = groups.get(key) ?? [];
+      items.push(event);
+      groups.set(key, items);
+    }
 
-      for (const d of modalDays) {
-        const dateObj = isoToDate(d.isoDate);
-        const { day, dayNo, month } = formatEventDatePieces(dateObj);
-        const slots = d.slots
-          .map((s) => ({ ...s, dj: String(s.dj || "").trim() }))
-          .filter((s) => s.dj.length && minutesFromTime(s.end) > minutesFromTime(s.start))
-          .map((s) => ({
-            dj: s.dj,
-            role: s.role,
-            start: s.start,
-            end: s.end,
-            energy: s.energy ?? 3,
-            warning: s.dj.toUpperCase().includes("TBD"),
-          }));
+    return Array.from(groups.entries())
+      .map(([key, items]) => ({
+        key,
+        weekName: `Week ${weekOfMonthFromISO(items[0]?.date ?? key)}`,
+        label: weekLabelFromKey(key),
+        items,
+        confirmed: items.filter((event) => event.status === "Confirmed").length,
+        needsAttention: items.filter((event) => event.status === "No Lineup" || event.slots.some((slot) => slot.dj.includes("TBD"))).length,
+      }))
+      .sort((a, b) => (dateSort === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
+  }, [dateSort, filteredEvents]);
 
-        const status = d.confirmed ? "Confirmed" : slots.length ? "Unconfirmed" : "No Lineup";
-        const name = String(d.name || "").trim() || "Untitled";
-        const genre = String(d.genre || "").trim() || "—";
-        const stage = d.stage || stageOptions[0];
+  const saveModalDays = async (modalDays) => {
+    const existingByDate = new Map(events.map((e) => [e.date, e]));
+    const next = [...events];
+    let nextId = events.reduce((max, e) => Math.max(max, Number(e.id) || 0), 0) + 1;
+    const eventsToSave = [];
 
-        const existing = existingByDate.get(d.isoDate);
-        const event = {
-          id: existing?.id ?? nextId++,
-          date: d.isoDate,
-          day,
-          dayNo,
-          month,
-          name,
-          genre,
-          status,
-          stage,
-          slots,
-          ic: existing?.ic || "",
-        };
+    for (const d of modalDays) {
+      const dateObj = isoToDate(d.isoDate);
+      const { day, dayNo, month } = formatEventDatePieces(dateObj);
+      const slots = d.slots
+        .map((s) => ({ ...s, dj: String(s.dj || "").trim() }))
+        .filter((s) => s.dj.length && minutesFromTime(s.end) > minutesFromTime(s.start))
+        .map((s) => ({
+          dj: s.dj,
+          role: s.role,
+          start: s.start,
+          end: s.end,
+          energy: s.energy ?? 3,
+          warning: s.dj.toUpperCase().includes("TBD"),
+        }));
 
-        if (existing) {
-          const idx = next.findIndex((x) => x.id === existing.id);
-          if (idx >= 0) next[idx] = event;
-        } else {
-          next.push(event);
-        }
+      const status = d.confirmed ? "Confirmed" : slots.length ? "Unconfirmed" : "No Lineup";
+      const name = String(d.name || "").trim() || "Untitled";
+      const genre = String(d.genre || "").trim() || "—";
+      const stage = d.stage || stageOptions[0];
+
+      const existing = existingByDate.get(d.isoDate);
+      const event = {
+        id: existing?.id ?? String(nextId++),
+        date: d.isoDate,
+        day,
+        dayNo,
+        month,
+        name,
+        genre,
+        status,
+        stage,
+        slots,
+        ic: existing?.ic || "",
+        notes: existing?.notes || "",
+      };
+
+      if (existing) {
+        const idx = next.findIndex((x) => x.id === existing.id);
+        if (idx >= 0) next[idx] = event;
+      } else {
+        next.push(event);
       }
 
-      next.sort((a, b) => a.date.localeCompare(b.date));
-      return next;
-    });
+      eventsToSave.push(event);
+    }
+
+    next.sort((a, b) => a.date.localeCompare(b.date));
+    setEvents(next);
+
+    if (isSupabaseConfigured && eventsToSave.length) {
+      try {
+        setSyncError("");
+        setSyncStatus("Saving to Supabase...");
+        await Promise.all(eventsToSave.map(saveEventToSupabase));
+        await loadEvents();
+        setSyncStatus("Saved to Supabase");
+        showToast("Saved to database");
+      } catch (error) {
+        const message = error.message || "Could not save to Supabase";
+        setSyncError(message);
+        setSyncStatus("");
+        showToast("Save failed", "error");
+        throw new Error(message);
+      }
+    }
   };
 
   const assignIC = (eventId, ic) => {
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? { ...e, ic } : e)));
+    setEvents((prev) =>
+      prev.map((e) => {
+        if (e.id !== eventId) return e;
+        return { ...e, ic };
+      }),
+    );
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const existing = events.find((event) => event.id === eventId);
+          if (!existing || !isSupabaseUuid(eventId)) return;
+          setSyncError("");
+          setSyncStatus("Saving PIC...");
+          const { error } = await supabase.from("events").update({ notes: setIcInNotes(existing.notes, ic) }).eq("id", eventId);
+          if (error) throw error;
+          setSyncStatus("PIC saved to Supabase");
+          showToast("PIC saved to database");
+        } catch (error) {
+          setSyncError(error.message || "Could not update PIC");
+          setSyncStatus("");
+          showToast("PIC save failed", "error");
+        }
+      })();
+    }
   };
 
   const openAddModal = (dateISO) => {
     if (dateISO) setSeedDateISO(dateISO);
-    setModalTitle("Add Event Day");
+    setModalTitle("Add Event Week");
     setModalInitialDays(null);
+    setModalDateMode("week");
     setModalOpen(true);
   };
 
   const openEditModal = (event) => {
-    const dates = weekWedToSat(event.date);
-    const byDate = new Map(events.map((e) => [e.date, e]));
-    const initialDays = dates.map((d) => {
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const existing = byDate.get(iso);
-      if (!existing) {
-        return {
-          isoDate: iso,
-          name: "",
-          genre: "",
-          confirmed: false,
-          stage: stageOptions[0],
-          slots: [],
-        };
-      }
-
-      return {
-        isoDate: existing.date,
-        name: existing.name,
-        genre: existing.genre,
-        confirmed: existing.status === "Confirmed",
-        stage: existing.stage,
-        slots: (existing.slots ?? []).map((s) => ({
+    const initialDays = [
+      {
+        isoDate: event.date,
+        name: event.name,
+        genre: event.genre,
+        confirmed: event.status === "Confirmed",
+        stage: event.stage,
+        slots: (event.slots ?? []).map((s) => ({
           dj: s.dj ?? "",
           role: s.role ?? "Warm-up",
           start: s.start ?? "22:30",
           end: s.end ?? "00:00",
           energy: s.energy ?? 3,
         })),
-      };
-    });
+      },
+    ];
 
     setSeedDateISO(event.date);
-    setModalTitle("Edit Event Week");
+    setModalTitle("Edit Event Day");
     setModalInitialDays(initialDays);
+    setModalDateMode("day");
     setModalOpen(true);
   };
 
@@ -1090,9 +1539,19 @@ export default function OABookingDashboard() {
             onClick={() => openAddModal()}
             className="h-9 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300"
           >
-            <Plus className="mr-2 h-4 w-4" /> ADD DAY
+            <Plus className="mr-2 h-4 w-4" /> ADD WEEK
           </Button>
         </header>
+
+        {syncError ? (
+          <div className="border-b border-rose-400/20 bg-rose-400/10 px-4 py-3 text-xs font-bold text-rose-100 md:px-6">
+            Supabase sync issue: {syncError}
+          </div>
+        ) : syncStatus ? (
+          <div className="border-b border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-xs font-bold text-emerald-100 md:px-6">
+            {syncStatus}
+          </div>
+        ) : null}
 
         <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-4 py-4 sm:grid-cols-5 md:px-6">
           <Stat number={stats.total} label="Events" />
@@ -1103,6 +1562,26 @@ export default function OABookingDashboard() {
         </section>
 
         <section className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-4 py-3 backdrop-blur md:px-6">
+          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
+            {[
+              { key: "Upcoming", label: "Upcoming", count: upcomingCount },
+              { key: "Past", label: "Past Events", count: pastCount },
+            ].map((item) => {
+              const active = dateScope === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setDateScope(item.key)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                    active ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {item.label} <span className={active ? "text-black/50" : "text-white/25"}>{item.count}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {filterItems.map((item) => {
             const Icon = item.icon;
             const active = activeFilter === item.key;
@@ -1119,7 +1598,16 @@ export default function OABookingDashboard() {
             );
           })}
 
-          <div className="ml-auto flex min-w-[220px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+          <select
+            value={dateSort}
+            onChange={(e) => setDateSort(e.target.value)}
+            className="ml-auto h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+          >
+            <option value="asc">Date ↑</option>
+            <option value="desc">Date ↓</option>
+          </select>
+
+          <div className="flex min-w-[220px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white/40">
             <Search className="h-4 w-4" />
             <input
               value={search}
@@ -1133,20 +1621,43 @@ export default function OABookingDashboard() {
         <main className="space-y-3 px-4 py-4 md:px-6">
           {view === "List" ? (
             <>
-              <div className="mb-3 flex items-center gap-2 rounded-2xl border border-purple-400/20 bg-purple-400/10 p-3 text-xs font-bold text-purple-100">
-                <Sparkles className="h-4 w-4" /> Music Director Mode: attention filter shows missing lineups, TBD slots, and risky nights first.
-              </div>
+              {groupedEvents.map((group) => (
+                <section key={group.key} className="space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/25">{group.weekName}</div>
+                      <h2 className="mt-1 text-sm font-black text-white/85">{group.label}</h2>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">{group.items.length} events</span>
+                      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200/80">
+                        {group.confirmed} confirmed
+                      </span>
+                      {group.needsAttention ? (
+                        <span className="rounded-full border border-rose-400/20 bg-rose-400/10 px-2 py-1 text-rose-200/80">
+                          {group.needsAttention} attention
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
 
-              {filteredEvents.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  expanded={expandedId === event.id}
-                  onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
-                  onEdit={() => openEditModal(event)}
-                  onAssignIC={(ic) => assignIC(event.id, ic)}
-                />
+                  {group.items.map((event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      expanded={expandedId === event.id}
+                      onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
+                      onEdit={() => openEditModal(event)}
+                      onAssignIC={(ic) => assignIC(event.id, ic)}
+                    />
+                  ))}
+                </section>
               ))}
+              {!filteredEvents.length ? (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-10 text-center text-sm font-bold text-white/35">
+                  No {dateScope === "Past" ? "past" : "upcoming"} events match this view.
+                </div>
+              ) : null}
             </>
           ) : (
             <CalendarView
@@ -1173,7 +1684,20 @@ export default function OABookingDashboard() {
         djOptions={djOptions}
         title={modalTitle}
         initialDays={modalInitialDays}
+        dateMode={modalDateMode}
       />
+
+      {toast ? (
+        <div
+          className={`fixed bottom-5 right-5 z-[60] rounded-2xl border px-4 py-3 text-sm font-black shadow-2xl backdrop-blur ${
+            toast.tone === "error"
+              ? "border-rose-300/30 bg-rose-500/20 text-rose-50 shadow-rose-950/40"
+              : "border-emerald-300/30 bg-emerald-500/20 text-emerald-50 shadow-emerald-950/40"
+          }`}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   );
 }
