@@ -78,38 +78,43 @@ drop policy if exists "dashboard anon insert templates" on public.event_template
 drop policy if exists "dashboard anon update templates" on public.event_templates;
 drop policy if exists "dashboard anon delete templates" on public.event_templates;
 
--- Let real admin/staff users manage dashboard data.
+-- Let real admins manage dashboard data (staff is view-only).
 drop policy if exists "dashboard staff write events" on public.events;
-create policy "dashboard staff write events"
+drop policy if exists "dashboard admin write events" on public.events;
+create policy "dashboard admin write events"
 on public.events for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
 
 drop policy if exists "dashboard staff write slots" on public.event_slots;
-create policy "dashboard staff write slots"
+drop policy if exists "dashboard admin write slots" on public.event_slots;
+create policy "dashboard admin write slots"
 on public.event_slots for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
 
 drop policy if exists "dashboard staff write assignments" on public.event_assignments;
-create policy "dashboard staff write assignments"
+drop policy if exists "dashboard admin write assignments" on public.event_assignments;
+create policy "dashboard admin write assignments"
 on public.event_assignments for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
 
 drop policy if exists "dashboard staff write djs" on public.djs;
-create policy "dashboard staff write djs"
+drop policy if exists "dashboard admin write djs" on public.djs;
+create policy "dashboard admin write djs"
 on public.djs for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
 
 drop policy if exists "dashboard staff write templates" on public.event_templates;
-create policy "dashboard staff write templates"
+drop policy if exists "dashboard admin write templates" on public.event_templates;
+create policy "dashboard admin write templates"
 on public.event_templates for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));

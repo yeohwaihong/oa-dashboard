@@ -1569,7 +1569,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -1675,6 +1675,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                 <select
                   value={event.ic || ""}
                   onChange={(e) => onAssignIC(e.target.value)}
+                  disabled={!canEdit}
                   className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:flex-none sm:px-2 sm:text-xs md:h-9 md:text-sm"
                 >
                   <option value="">PIC</option>
@@ -1682,15 +1683,17 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                   <option value="Ashwin">Ashwin</option>
                 </select>
               </div>
-              <button
-                onClick={onEdit}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
-                title="Edit day"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Edit</span>
-              </button>
-              {event.status !== "Confirmed" ? (
+              {canEdit ? (
+                <button
+                  onClick={onEdit}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                  title="Edit day"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Edit</span>
+                </button>
+              ) : null}
+              {canEdit && event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
                   disabled={confirmationBlockers.length > 0}
@@ -1773,7 +1776,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
   );
 }
 
-function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
+function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
 
@@ -1866,33 +1869,35 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
           >
             Close
           </Button>
-          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <Button
-              onClick={() => onDelete(event)}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete Day</span>
-            </Button>
-            <Button
-              onClick={() => onEdit(event)}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
-            >
-              <Pencil className="h-4 w-4" />
-              <span>Edit Day</span>
-            </Button>
-              {event.status !== "Confirmed" ? (
+          {canEdit ? (
+            <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
               <Button
-                onClick={() => onConfirm(event)}
-                disabled={confirmationBlockers.length > 0}
-                title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
+                onClick={() => onDelete(event)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                <span>Confirm Night</span>
+                <Trash2 className="h-4 w-4" />
+                <span>Delete Day</span>
               </Button>
-            ) : null}
-          </div>
+              <Button
+                onClick={() => onEdit(event)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
+              >
+                <Pencil className="h-4 w-4" />
+                <span>Edit Day</span>
+              </Button>
+              {event.status !== "Confirmed" ? (
+                <Button
+                  onClick={() => onConfirm(event)}
+                  disabled={confirmationBlockers.length > 0}
+                  title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Confirm Night</span>
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </motion.div>
     </div>
@@ -2956,6 +2961,8 @@ function DashboardApp({ onLogout, userRole }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const isLightTheme = theme === "light";
+  const canEdit = userRole === "admin";
+  const canAccessFinance = userRole === "admin";
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -2964,6 +2971,14 @@ function DashboardApp({ onLogout, userRole }) {
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
   }, []);
+
+  const denyEdit = useCallback(() => {
+    showToast("Staff accounts are view-only", "error");
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!canAccessFinance && view === "Finance") setView("List");
+  }, [canAccessFinance, view]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -3271,6 +3286,10 @@ function DashboardApp({ onLogout, userRole }) {
   }, [dateSort, filteredEvents]);
 
   const saveModalDays = async (modalDays) => {
+    if (!canEdit) {
+      denyEdit();
+      throw new Error("View-only account");
+    }
     const existingByDate = new Map(events.map((e) => [e.date, e]));
     if (!modalLockDateSelection) {
       const duplicates = modalDays.filter((day) => existingByDate.has(day.isoDate));
@@ -3364,6 +3383,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const assignIC = (eventId, ic) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== eventId) return e;
@@ -3392,6 +3415,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const updateEventStatus = (event, status) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     if (status === "Confirmed") {
       const blockers = getConfirmationBlockers(event);
       if (blockers.length) {
@@ -3438,6 +3465,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const deleteEventDay = async (event) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     const confirmed = window.confirm(`Delete ${event.name} on ${dayLabelFromISO(event.date)}? This removes the day and its set times.`);
     if (!confirmed) return;
 
@@ -3470,6 +3501,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const openAddModal = (dateISO) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     if (dateISO) setSeedDateISO(dateISO);
     setModalTitle("Add Event Week");
     setModalInitialDays(null);
@@ -3480,6 +3515,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const openAddDayModal = (dateISO) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     if (dateISO) setSeedDateISO(dateISO);
     setModalTitle("Add Event Day");
     setModalInitialDays(null);
@@ -3490,6 +3529,10 @@ function DashboardApp({ onLogout, userRole }) {
   };
 
   const openEditModal = (event) => {
+    if (!canEdit) {
+      denyEdit();
+      return;
+    }
     const initialDays = [
       {
         isoDate: event.date,
@@ -3606,7 +3649,11 @@ function DashboardApp({ onLogout, userRole }) {
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
           <div className="flex items-center gap-2">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
-            <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none">
+            <div
+              className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${
+                canAccessFinance ? "grid-cols-3" : "grid-cols-2"
+              }`}
+            >
             <Button
               onClick={() => setView("List")}
               className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
@@ -3627,17 +3674,19 @@ function DashboardApp({ onLogout, userRole }) {
               <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Calendar</span>
             </Button>
-            <Button
-              onClick={() => setView("Finance")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
-                view === "Finance"
-                  ? "bg-purple-400 text-black hover:bg-purple-300"
-                  : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>Finance</span>
-            </Button>
+            {canAccessFinance ? (
+              <Button
+                onClick={() => setView("Finance")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                  view === "Finance"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>Finance</span>
+              </Button>
+            ) : null}
             </div>
           </div>
           <div className="grid w-full grid-cols-5 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
@@ -3648,20 +3697,24 @@ function DashboardApp({ onLogout, userRole }) {
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
             </Button>
-            <Button
-              onClick={() => openAddDayModal()}
-              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
-            >
-              <Plus className="h-4 w-4 shrink-0" />
-              <span>Add Day</span>
-            </Button>
-            <Button
-              onClick={() => openAddModal()}
-              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
-            >
-              <Plus className="h-4 w-4 shrink-0" />
-              <span>Add Week</span>
-            </Button>
+            {canEdit ? (
+              <Button
+                onClick={() => openAddDayModal()}
+                className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Add Day</span>
+              </Button>
+            ) : null}
+            {canEdit ? (
+              <Button
+                onClick={() => openAddModal()}
+                className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Add Week</span>
+              </Button>
+            ) : null}
             <Button
               onClick={() => setTheme(isLightTheme ? "dark" : "light")}
               className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
@@ -3793,6 +3846,7 @@ function DashboardApp({ onLogout, userRole }) {
                       key={event.id}
                       event={event}
                       expanded={expandedId === event.id}
+                      canEdit={canEdit}
                       onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
@@ -3813,7 +3867,7 @@ function DashboardApp({ onLogout, userRole }) {
               onChangeMonth={changeCalendarMonth}
               eventsByDate={calendarEventsByDate}
               holidaysByDate={holidaysByDate}
-              onSelectDate={(iso) => openAddDayModal(iso)}
+              onSelectDate={(iso) => (canEdit ? openAddDayModal(iso) : denyEdit())}
               onPreviewEvent={setPreviewEvent}
             />
           )}
@@ -3850,6 +3904,7 @@ function DashboardApp({ onLogout, userRole }) {
         onEdit={openEditFromPreview}
         onDelete={deleteEventDay}
         onConfirm={(event) => updateEventStatus(event, "Confirmed")}
+        canEdit={canEdit}
       />
 
       <MalaysiaHolidaysModal
