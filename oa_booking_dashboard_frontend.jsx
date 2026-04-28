@@ -2475,9 +2475,8 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
 }
 
 function PublicEventCard({ event }) {
-  const headliners = event.slots.filter((slot) => slot.role !== "MC").slice(0, 3);
-  const mcSlots = event.slots.filter((slot) => slot.role === "MC");
-  const mcNames = mcSlots.map((slot) => String(slot.dj || "").replace(/^MC\s+/i, "").trim()).filter(Boolean);
+  const slots = event.slots ?? [];
+  const displaySlotName = (slot) => (slot.role === "MC" ? String(slot.dj || "").replace(/^MC\s+/i, "").trim() : slot.dj);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 backdrop-blur">
@@ -2499,12 +2498,19 @@ function PublicEventCard({ event }) {
         ))}
       </div>
 
-      {headliners.length ? (
+      {slots.length ? (
         <div className="mt-4 grid gap-2">
-          {headliners.map((slot, index) => (
-            <div key={`${event.id}-${index}`} className="rounded-xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2">
-              <div className="text-[9px] font-black uppercase tracking-[0.16em] text-cyan-100/65">{slot.role}</div>
-              <div className="mt-1 text-sm font-black text-white">{slot.dj}</div>
+          {slots.map((slot, index) => (
+            <div
+              key={`${event.id}-${index}`}
+              className={`rounded-xl border px-3 py-2 ${
+                slot.role === "MC" ? "border-purple-300/20 bg-purple-400/10" : "border-cyan-300/15 bg-cyan-400/10"
+              }`}
+            >
+              <div className={`text-[9px] font-black uppercase tracking-[0.16em] ${slot.role === "MC" ? "text-purple-100/70" : "text-cyan-100/65"}`}>
+                {slot.role}
+              </div>
+              <div className="mt-1 text-sm font-black text-white">{displaySlotName(slot)}</div>
               <div className="mt-1 inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-black/20 px-2 py-1 text-xs font-black text-cyan-100">
                 <Clock className="h-3.5 w-3.5" />
                 {slot.start}-{slot.end}
@@ -2518,7 +2524,7 @@ function PublicEventCard({ event }) {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/35">
         <span>{event.stage}</span>
-        {mcNames.length ? <span className="text-purple-100">MC {mcNames.join(", ")}</span> : null}
+        <span>{slots.length} set{slots.length === 1 ? "" : "s"}</span>
       </div>
     </div>
   );
@@ -2529,22 +2535,36 @@ function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
-  const [publicEvents, setPublicEvents] = useState(() => eventsSeed.map((event) => ({ ...event, id: String(event.id) })));
+  const [publicEvents, setPublicEvents] = useState(() => (isSupabaseConfigured ? [] : eventsSeed.map((event) => ({ ...event, id: String(event.id) }))));
+  const [publicLoading, setPublicLoading] = useState(isSupabaseConfigured);
+  const [publicSyncError, setPublicSyncError] = useState("");
+  const [publicLastSync, setPublicLastSync] = useState("");
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
-  const weekStartISO = useMemo(() => isoFromDate(startOfWeekMonday(new Date())), []);
-  const weekEndISO = useMemo(() => isoFromDate(endOfWeekMonday(new Date())), []);
+  const publicWeekDates = useMemo(() => weekWedToSat(todayISO).map(isoFromDate), [todayISO]);
+  const weekStartISO = publicWeekDates[0];
+  const weekEndISO = publicWeekDates[publicWeekDates.length - 1];
   const loadPublicEvents = useCallback(async () => {
     if (!isSupabaseConfigured) return;
+    setPublicLoading(true);
 
     const { data, error: loadError } = await supabase
       .from("events")
       .select(supabaseEventSelect)
+      .gte("event_date", weekStartISO)
+      .lte("event_date", weekEndISO)
       .order("event_date", { ascending: true })
       .order("slot_order", { foreignTable: "event_slots", ascending: true });
 
-    if (loadError || !Array.isArray(data)) return;
+    setPublicLoading(false);
+    if (loadError || !Array.isArray(data)) {
+      setPublicSyncError(loadError?.message || "Could not load live lineup.");
+      return;
+    }
+
+    setPublicSyncError("");
     setPublicEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
-  }, []);
+    setPublicLastSync(new Date().toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+  }, [weekEndISO, weekStartISO]);
 
   const submit = (event) => {
     event.preventDefault();
@@ -2571,7 +2591,9 @@ function LoginScreen({ onLogin }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "event_slots" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_assignments" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, scheduleRefresh)
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setPublicSyncError("");
+      });
 
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
@@ -2581,18 +2603,11 @@ function LoginScreen({ onLogin }) {
 
   const weekEvents = useMemo(() => {
     return publicEvents
-      .filter((event) => event.date >= weekStartISO && event.date <= weekEndISO)
+      .filter((event) => publicWeekDates.includes(event.date))
       .sort((a, b) => a.date.localeCompare(b.date) || (a.name || "").localeCompare(b.name || ""));
-  }, [publicEvents, weekEndISO, weekStartISO]);
+  }, [publicEvents, publicWeekDates]);
 
-  const nextEvents = useMemo(() => {
-    return publicEvents
-      .filter((event) => event.date >= todayISO)
-      .sort((a, b) => a.date.localeCompare(b.date) || (a.name || "").localeCompare(b.name || ""))
-      .slice(0, 4);
-  }, [publicEvents, todayISO]);
-
-  const displayEvents = weekEvents.length ? weekEvents : nextEvents;
+  const displayEvents = weekEvents;
   const weekLabel = `${dayLabelFromISO(weekStartISO)} - ${dayLabelFromISO(weekEndISO)}`;
 
   return (
@@ -2626,20 +2641,32 @@ function LoginScreen({ onLogin }) {
           </section>
 
           <section className="rounded-3xl border border-white/10 bg-[#0d0c17] p-3 shadow-2xl shadow-black/40 sm:p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300/15 bg-emerald-400/10 px-4 py-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100">
+                {isSupabaseConfigured ? "Live from Supabase" : "Demo data"}
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
+                {publicLoading ? "Syncing..." : `${displayEvents.length} events${publicLastSync ? ` • Updated ${publicLastSync}` : ""}`}
+              </div>
+            </div>
+            {publicSyncError ? (
+              <div className="mb-3 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-rose-100">
+                Live lineup issue: {publicSyncError}
+              </div>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-2">
-              {displayEvents.length ? (
+              {publicLoading && !displayEvents.length ? (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-10 text-center text-sm font-bold text-white/40 md:col-span-2">
+                  Loading live lineup...
+                </div>
+              ) : displayEvents.length ? (
                 displayEvents.map((event) => <PublicEventCard key={event.id} event={event} />)
               ) : (
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-10 text-center text-sm font-bold text-white/40 md:col-span-2">
-                  No events published for this week yet.
+                  No live events published for this week yet.
                 </div>
               )}
             </div>
-            {!weekEvents.length && nextEvents.length ? (
-              <div className="mt-3 rounded-2xl border border-yellow-300/20 bg-yellow-400/10 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-yellow-100">
-                Showing next upcoming events because this week has no published lineup.
-              </div>
-            ) : null}
           </section>
         </main>
       </div>
