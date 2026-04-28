@@ -891,7 +891,7 @@ function AddEventDayModal({
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="max-h-[calc(100svh-1.5rem)] w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div>
@@ -908,7 +908,7 @@ function AddEventDayModal({
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {!lockDateSelection ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1030,7 +1030,7 @@ function AddEventDayModal({
           </div>
           ) : null}
 
-          <div className="max-h-[58vh] space-y-4 overflow-auto pr-1 sm:max-h-[62vh] sm:pr-2">
+          <div className="space-y-4 pr-1 sm:pr-2">
             {modalDays.map((day) => {
               const date = isoToDate(day.isoDate);
               const weekday = date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
@@ -1465,7 +1465,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="max-h-[calc(100svh-1.5rem)] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div className="min-w-0">
@@ -1481,7 +1481,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
               {event.status}
@@ -1572,7 +1572,7 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="max-h-[calc(100svh-1.5rem)] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div>
@@ -1587,7 +1587,7 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
           </button>
         </div>
 
-        <div className="max-h-[68vh] space-y-2 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {error ? (
             <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-3 py-3 text-sm font-bold text-rose-100">{error}</div>
           ) : null}
@@ -1625,7 +1625,68 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
   );
 }
 
-export default function OABookingDashboard() {
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (username.trim() === "admin" && password === "admin") {
+      setError("");
+      onLogin();
+      return;
+    }
+    setError("Use admin / admin");
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
+      >
+        <div className="text-3xl font-black tracking-tight">
+          O<span className="text-purple-300">&</span>A
+        </div>
+        <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">Dashboard Login</div>
+
+        <div className="mt-6 space-y-3">
+          <label className="block">
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Username</span>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+              placeholder="admin"
+              autoComplete="username"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+              placeholder="admin"
+              autoComplete="current-password"
+            />
+          </label>
+        </div>
+
+        {error ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">{error}</div> : null}
+
+        <Button type="submit" className="mt-5 h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300">
+          Login
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function DashboardApp({ onLogout }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
   const [dateSort, setDateSort] = useState("asc");
@@ -2206,6 +2267,12 @@ export default function OABookingDashboard() {
               <Plus className="h-4 w-4" />
               <span>ADD WEEK</span>
             </Button>
+            <Button
+              onClick={onLogout}
+              className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/45 hover:bg-white/10 hover:text-white"
+            >
+              Logout
+            </Button>
           </div>
         </header>
 
@@ -2384,6 +2451,27 @@ export default function OABookingDashboard() {
       ) : null}
     </div>
   );
+}
+
+export default function OABookingDashboard() {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem("oa_dashboard_auth") === "admin";
+  });
+
+  const login = () => {
+    window.sessionStorage.setItem("oa_dashboard_auth", "admin");
+    setIsLoggedIn(true);
+  };
+
+  const logout = () => {
+    window.sessionStorage.removeItem("oa_dashboard_auth");
+    setIsLoggedIn(false);
+  };
+
+  if (!isLoggedIn) return <LoginScreen onLogin={login} />;
+
+  return <DashboardApp onLogout={logout} />;
 }
 
 function Stat({ number, label, tone = "text-white" }) {
