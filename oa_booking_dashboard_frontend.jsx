@@ -3536,14 +3536,21 @@ function DashboardApp({ onLogout, userRole }) {
     node.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const weekKeys = useMemo(() => groupedEvents.map((g) => g.key), [groupedEvents]);
+  const weekIndex = useMemo(() => {
+    if (!effectiveWeekKey) return -1;
+    return weekKeys.indexOf(effectiveWeekKey);
+  }, [effectiveWeekKey, weekKeys]);
+  const canJumpPrevWeek = weekIndex > 0;
+  const canJumpNextWeek = weekIndex >= 0 && weekIndex < weekKeys.length - 1;
+
   const jumpWeek = (direction) => {
     if (view !== "List") return;
-    const keys = groupedEvents.map((g) => g.key);
-    if (!keys.length) return;
-    const currentKey = effectiveWeekKey || keys[0];
-    const index = Math.max(0, keys.findIndex((k) => k === currentKey));
-    const nextIndex = Math.max(0, Math.min(keys.length - 1, index + direction));
-    const nextKey = keys[nextIndex];
+    if (!weekKeys.length) return;
+    const index = Math.max(0, weekIndex >= 0 ? weekIndex : 0);
+    const nextIndex = Math.max(0, Math.min(weekKeys.length - 1, index + direction));
+    if (nextIndex === index) return;
+    const nextKey = weekKeys[nextIndex];
     setActiveWeekKey(nextKey);
     scrollToWeekKey(nextKey);
   };
@@ -4069,29 +4076,6 @@ function DashboardApp({ onLogout, userRole }) {
             })}
           </div>
 
-          {view === "List" ? (
-            <div className="flex gap-1.5 md:ml-auto">
-              <Button
-                onClick={() => jumpWeek(-1)}
-                disabled={!groupedEvents.length}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                title="Previous week"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Prev week</span>
-              </Button>
-              <Button
-                onClick={() => jumpWeek(1)}
-                disabled={!groupedEvents.length}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                title="Next week"
-              >
-                <span className="hidden sm:inline">Next week</span>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : null}
-
           <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
             <select
               value={dateSort}
@@ -4181,6 +4165,29 @@ function DashboardApp({ onLogout, userRole }) {
           )}
         </main>
       </div>
+
+      {view === "List" && weekKeys.length > 1 ? (
+        <div className="fixed bottom-5 left-1/2 z-[55] -translate-x-1/2 sm:bottom-6">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 p-2 shadow-2xl shadow-black/40 backdrop-blur">
+            <Button
+              onClick={() => jumpWeek(-1)}
+              disabled={!canJumpPrevWeek}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20"
+              title="Previous week"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <Button
+              onClick={() => jumpWeek(1)}
+              disabled={!canJumpNextWeek}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20"
+              title="Next week"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <AddEventDayModal
         open={modalOpen}
