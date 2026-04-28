@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   ChevronDown,
   Clock,
@@ -3190,6 +3192,8 @@ function DashboardApp({ onLogout, userRole }) {
   const [expandedId, setExpandedId] = useState("5");
   const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
   const [view, setView] = useState("List");
+  const [listGrouping, setListGrouping] = useState("month");
+  const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
@@ -3511,6 +3515,21 @@ function DashboardApp({ onLogout, userRole }) {
       });
   }, [activeFilter, dateSort, scopedEvents, search]);
 
+  const listMonthLabel = useMemo(() => {
+    return listMonthCursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }, [listMonthCursor]);
+
+  const listMonthRange = useMemo(() => {
+    const start = new Date(listMonthCursor.getFullYear(), listMonthCursor.getMonth(), 1);
+    const end = new Date(listMonthCursor.getFullYear(), listMonthCursor.getMonth() + 1, 0);
+    return { startISO: isoFromDate(start), endISO: isoFromDate(end) };
+  }, [listMonthCursor]);
+
+  const listGroupedSourceEvents = useMemo(() => {
+    if (listGrouping !== "month") return filteredEvents;
+    return filteredEvents.filter((event) => event.date >= listMonthRange.startISO && event.date <= listMonthRange.endISO);
+  }, [filteredEvents, listGrouping, listMonthRange.endISO, listMonthRange.startISO]);
+
   const calendarFilteredEvents = useMemo(() => {
     return events
       .filter((event) => {
@@ -3530,7 +3549,7 @@ function DashboardApp({ onLogout, userRole }) {
 
   const groupedEvents = useMemo(() => {
     const groups = new Map();
-    for (const event of filteredEvents) {
+    for (const event of listGroupedSourceEvents) {
       const key = weekKeyFromISO(event.date);
       const items = groups.get(key) ?? [];
       items.push(event);
@@ -3547,7 +3566,7 @@ function DashboardApp({ onLogout, userRole }) {
         needsAttention: items.filter(eventNeedsAttention).length,
       }))
       .sort((a, b) => (dateSort === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
-  }, [dateSort, filteredEvents]);
+  }, [dateSort, listGroupedSourceEvents]);
 
   const effectiveWeekKey = useMemo(() => {
     if (!activeWeekKey) return groupedEvents[0]?.key || null;
@@ -3567,6 +3586,17 @@ function DashboardApp({ onLogout, userRole }) {
   }, [effectiveWeekKey, weekKeys]);
   const canJumpPrevWeek = weekIndex > 0;
   const canJumpNextWeek = weekIndex >= 0 && weekIndex < weekKeys.length - 1;
+
+  useEffect(() => {
+    if (view !== "List") return;
+    if (!weekKeys.length) {
+      setActiveWeekKey(null);
+      return;
+    }
+    setActiveWeekKey(weekKeys[0]);
+    window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 0);
+    window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 160);
+  }, [listGrouping, listMonthRange.endISO, listMonthRange.startISO, view, weekKeys]);
 
   const jumpWeek = (direction) => {
     if (view !== "List") return;
@@ -3855,6 +3885,14 @@ function DashboardApp({ onLogout, userRole }) {
     setModalOpen(true);
   };
 
+  const changeListMonth = (direction) => {
+    if (direction === 0) {
+      setListMonthCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+      return;
+    }
+    setListMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + direction, 1));
+  };
+
   const openEditModal = (event) => {
     if (!canEdit) {
       denyEdit();
@@ -4132,6 +4170,55 @@ function DashboardApp({ onLogout, userRole }) {
               );
             })}
           </div>
+
+          {view === "List" ? (
+            <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+              <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+                <button
+                  onClick={() => setListGrouping("month")}
+                  className={`rounded-xl px-3 py-2 text-[11px] font-black transition md:rounded-full md:text-sm ${
+                    listGrouping === "month" ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  Month
+                </button>
+                <button
+                  onClick={() => setListGrouping("all")}
+                  className={`rounded-xl px-3 py-2 text-[11px] font-black transition md:rounded-full md:text-sm ${
+                    listGrouping === "all" ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  All
+                </button>
+              </div>
+
+              {listGrouping === "month" ? (
+                <div className="flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+                  <button
+                    onClick={() => changeListMonth(-1)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+                    title="Previous month"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => changeListMonth(0)}
+                    className="h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 hover:bg-white/10"
+                    title="Jump to current month"
+                  >
+                    {listMonthLabel}
+                  </button>
+                  <button
+                    onClick={() => changeListMonth(1)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+                    title="Next month"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
             <select
