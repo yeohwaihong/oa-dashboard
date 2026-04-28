@@ -265,6 +265,55 @@ const timeOptions = buildTimeOptions();
 const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
+const malaysiaHolidayFallback = [
+  { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-02-01", localName: "Federal Territory Day", name: "Federal Territory Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-02-01", localName: "Thaipusam", name: "Thaipusam", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-02-02", localName: "Thaipusam Holiday", name: "Thaipusam Holiday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-02-18", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-03-20", localName: "Eid al-Fitr", name: "Eid al-Fitr", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-03-21", localName: "Eid al-Fitr Holiday", name: "Eid al-Fitr Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-04-03", localName: "Good Friday", name: "Good Friday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-05-01", localName: "Labour Day", name: "Labour Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-05-27", localName: "Eid al-Adha", name: "Eid al-Adha", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-05-27", localName: "Hari Raya Haji", name: "Hari Raya Haji", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-05-28", localName: "Eid al-Adha Holiday", name: "Eid al-Adha Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-05-31", localName: "Wesak Day", name: "Wesak Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-06-01", localName: "King's Birthday", name: "King's Birthday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-06-01", localName: "Gawai Dayak", name: "Gawai Dayak", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-06-02", localName: "Gawai Dayak Holiday", name: "Gawai Dayak Holiday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2026-06-17", localName: "Awal Muharram", name: "Awal Muharram", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-08-25", localName: "Prophet Muhammad's Birthday", name: "Prophet Muhammad's Birthday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-08-31", localName: "National Day", name: "National Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-11-08", localName: "Deepavali", name: "Deepavali", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-11-09", localName: "Deepavali Holiday", name: "Deepavali Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-01-01", localName: "New Year's Day", name: "New Year's Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-01-22", localName: "Thaipusam", name: "Thaipusam", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-01-24", localName: "Thaipusam Holiday", name: "Thaipusam Holiday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-02-01", localName: "Federal Territory Day", name: "Federal Territory Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-02-06", localName: "Chinese New Year", name: "Chinese New Year", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-02-07", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-03-10", localName: "Eid al-Fitr", name: "Eid al-Fitr", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-03-11", localName: "Eid al-Fitr Holiday", name: "Eid al-Fitr Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-03-26", localName: "Good Friday", name: "Good Friday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-05-01", localName: "Labour Day", name: "Labour Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-05-17", localName: "Eid al-Adha", name: "Eid al-Adha", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-05-17", localName: "Hari Raya Haji", name: "Hari Raya Haji", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-05-18", localName: "Eid al-Adha Holiday", name: "Eid al-Adha Holiday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-05-20", localName: "Wesak Day", name: "Wesak Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-06-01", localName: "Gawai Dayak", name: "Gawai Dayak", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-06-02", localName: "Gawai Dayak Holiday", name: "Gawai Dayak Holiday", countryCode: "MY", global: false, types: ["State & Federal Territory"] },
+  { date: "2027-06-06", localName: "Awal Muharram", name: "Awal Muharram", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-06-07", localName: "King's Birthday", name: "King's Birthday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-08-15", localName: "Prophet Muhammad's Birthday", name: "Prophet Muhammad's Birthday", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-08-31", localName: "National Day", name: "National Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-09-16", localName: "Malaysia Day", name: "Malaysia Day", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-10-28", localName: "Deepavali", name: "Deepavali", countryCode: "MY", global: true, types: ["National"] },
+  { date: "2027-12-25", localName: "Christmas Day", name: "Christmas Day", countryCode: "MY", global: true, types: ["National"] },
+];
 const supabaseEventSelect = `
   id,
   event_name,
@@ -438,7 +487,16 @@ function monthGridDates(monthDate) {
   return days;
 }
 
-function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onPreviewEvent }) {
+function holidayLabel(holiday) {
+  return holiday.localName && holiday.localName !== holiday.name ? `${holiday.localName} / ${holiday.name}` : holiday.name || holiday.localName;
+}
+
+function fallbackMalaysiaHolidays(years) {
+  const wantedYears = new Set(years.map(String));
+  return malaysiaHolidayFallback.filter((holiday) => wantedYears.has(String(holiday.date).slice(0, 4)));
+}
+
+function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate, onSelectDate, onPreviewEvent }) {
   const first = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth(), 1);
   const last = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth() + 1, 0);
   const gridStart = startOfWeekMonday(first);
@@ -491,6 +549,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
             const isCurrentMonth = d.getMonth() === cursorMonth.getMonth();
             const isToday = iso === isoFromDate(new Date());
             const dayEvents = eventsByDate.get(iso) ?? [];
+            const holidays = holidaysByDate.get(iso) ?? [];
 
             return (
               <div
@@ -508,19 +567,39 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
                 }
               }}
                 className={`group min-h-[108px] rounded-2xl border p-2 text-left transition md:min-h-[126px] md:p-3 ${
-                  isCurrentMonth ? "border-white/10 bg-white/[0.02]" : "border-white/5 bg-white/[0.01] opacity-60"
+                  isToday
+                    ? "border-purple-200/70 bg-purple-400/10 shadow-[0_0_0_1px_rgba(216,180,254,0.25)]"
+                    : isCurrentMonth
+                      ? "border-white/10 bg-white/[0.02]"
+                      : "border-white/5 bg-white/[0.01] opacity-60"
                 } hover:border-purple-300/30 hover:bg-purple-400/5`}
               >
                 <div className="flex items-center justify-between">
-                  <div className={`text-sm font-black ${isToday ? "text-purple-200" : "text-white/80"}`}>{d.getDate()}</div>
-                  {dayEvents.length ? (
-                    <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/50">
-                      {dayEvents.length}
-                    </div>
-                  ) : null}
+                  <div className={`text-sm font-black ${isToday ? "text-purple-100" : "text-white/80"}`}>{d.getDate()}</div>
+                  <div className="flex items-center gap-1">
+                    {isToday ? (
+                      <div className="rounded-full border border-purple-200/40 bg-purple-300/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-purple-100">
+                        Today
+                      </div>
+                    ) : null}
+                    {dayEvents.length ? (
+                      <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/50">
+                        {dayEvents.length}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="mt-2 space-y-1.5">
+                  {holidays.slice(0, 2).map((holiday) => (
+                    <div
+                      key={`${holiday.date}-${holiday.name}`}
+                      className="truncate rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100"
+                      title={holidayLabel(holiday)}
+                    >
+                      🎉 {holiday.localName || holiday.name}
+                    </div>
+                  ))}
                   {dayEvents.slice(0, 3).map((event) => (
                     <button
                       key={event.id}
@@ -558,6 +637,7 @@ function AddEventDayModal({
   djOptions,
   genreOptions,
   existingEventsByDate,
+  holidaysByDate,
   onPreviewEvent,
   editEvent,
   onDeleteDay,
@@ -592,6 +672,7 @@ function AddEventDayModal({
   const pickerDays = useMemo(() => monthGridDates(pickerMonth), [pickerMonth]);
   const selectedISOSet = useMemo(() => new Set(headerDates.map(isoFromDate)), [headerDates]);
   const selectedFilledDays = useMemo(() => headerDates.map(isoFromDate).filter((iso) => existingEventsByDate.has(iso)), [existingEventsByDate, headerDates]);
+  const selectedHolidayDays = useMemo(() => headerDates.map(isoFromDate).filter((iso) => (holidaysByDate.get(iso) ?? []).length), [holidaysByDate, headerDates]);
 
   const datesForMode = (iso) => (dateMode === "day" ? [isoToDate(iso)] : weekWedToSat(iso));
 
@@ -869,6 +950,8 @@ function AddEventDayModal({
                 const existingEvent = existingEventsByDate.get(iso);
                 const isFilled = Boolean(existingEvent);
                 const isSelected = selectedISOSet.has(iso);
+                const dayHolidays = holidaysByDate.get(iso) ?? [];
+                const hasHoliday = dayHolidays.length > 0;
                 const weekDates = weekWedToSat(iso);
                 const weekFilled = weekDates.some((date) => existingEventsByDate.has(isoFromDate(date)));
                 return (
@@ -889,14 +972,23 @@ function AddEventDayModal({
                           ? "border-purple-200 bg-purple-400 text-black"
                           : weekFilled && dateMode === "week"
                             ? "border-yellow-300/25 bg-yellow-400/10 text-yellow-100/80"
-                            : "border-white/10 bg-black/20 text-white/65 hover:border-purple-300/40 hover:bg-purple-400/10 hover:text-white"
+                            : hasHoliday
+                              ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-100"
+                              : "border-white/10 bg-black/20 text-white/65 hover:border-purple-300/40 hover:bg-purple-400/10 hover:text-white"
                     } ${isCurrentMonth ? "" : "opacity-35"}`}
-                    title={isFilled ? `${existingEvent.name || "Schedule"} · ${existingEvent.status}` : "Available"}
+                    title={isFilled ? `${existingEvent.name || "Schedule"} · ${existingEvent.status}` : hasHoliday ? dayHolidays.map(holidayLabel).join(", ") : "Available"}
                   >
-                    <span className="block text-center text-xs font-black">{d.getDate()}</span>
+                    <span className="flex items-center justify-center gap-1 text-center text-xs font-black">
+                      <span>{d.getDate()}</span>
+                      {hasHoliday ? <span aria-label="Holiday">🎉</span> : null}
+                    </span>
                     {isFilled ? (
                       <span className="mt-1 block truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">
                         {existingEvent.name}
+                      </span>
+                    ) : hasHoliday ? (
+                      <span className="mt-1 block truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">
+                        {dayHolidays[0].localName || dayHolidays[0].name}
                       </span>
                     ) : weekFilled && dateMode === "week" ? (
                       <span className="mt-1 block text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">Busy week</span>
@@ -912,6 +1004,7 @@ function AddEventDayModal({
               <span className={`rounded-full border px-2 py-1 ${statusConfig.Confirmed}`}>Confirmed</span>
               <span className={`rounded-full border px-2 py-1 ${statusConfig.Unconfirmed}`}>Unconfirmed</span>
               <span className={`rounded-full border px-2 py-1 ${statusConfig["No Lineup"]}`}>No Lineup</span>
+              <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-cyan-100/75">🎉 Holiday</span>
               {dateMode === "week" ? (
                 <span className="rounded-full border border-yellow-300/25 bg-yellow-400/10 px-2 py-1 text-yellow-100/75">Week has filled day</span>
               ) : null}
@@ -1465,6 +1558,73 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
   );
 }
 
+function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.18 }}
+        className="max-h-[calc(100svh-1.5rem)] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
+          <div>
+            <div className="text-lg font-black tracking-tight sm:text-xl">🎉 Malaysia Holidays</div>
+            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">Upcoming public holidays</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="max-h-[68vh] space-y-2 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          {error ? (
+            <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-3 py-3 text-sm font-bold text-rose-100">{error}</div>
+          ) : null}
+
+          {holidays.length ? (
+            holidays.map((holiday) => (
+              <div key={`${holiday.date}-${holiday.name}`} className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-100/70">{dayLabelFromISO(holiday.date)}</div>
+                <div className="mt-1 text-sm font-black text-white">🎉 {holiday.localName || holiday.name}</div>
+                {holiday.name && holiday.name !== holiday.localName ? (
+                  <div className="mt-0.5 text-xs font-bold text-white/40">{holiday.name}</div>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(holiday.types ?? ["Public"]).map((type) => (
+                    <span key={type} className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100/70">
+                      {type}
+                    </span>
+                  ))}
+                  {!holiday.global ? (
+                    <span className="rounded-full border border-yellow-300/20 bg-yellow-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-yellow-100/70">
+                      State specific
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-8 text-center text-sm font-bold text-white/35">
+              No upcoming holidays loaded yet.
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function OABookingDashboard() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
@@ -1481,6 +1641,9 @@ export default function OABookingDashboard() {
   const [modalLockDateSelection, setModalLockDateSelection] = useState(false);
   const [modalEditEvent, setModalEditEvent] = useState(null);
   const [previewEvent, setPreviewEvent] = useState(null);
+  const [holidaysModalOpen, setHolidaysModalOpen] = useState(false);
+  const [malaysiaHolidays, setMalaysiaHolidays] = useState([]);
+  const [holidayError, setHolidayError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
   const [toast, setToast] = useState(null);
@@ -1664,6 +1827,61 @@ export default function OABookingDashboard() {
   }, [events]);
 
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
+
+  const holidayYears = useMemo(() => {
+    const now = new Date();
+    return Array.from(new Set([now.getFullYear(), calendarCursor.getFullYear(), calendarCursor.getFullYear() + 1])).sort();
+  }, [calendarCursor]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMalaysiaHolidays() {
+      try {
+        setHolidayError("");
+        const responses = await Promise.all(
+          holidayYears.map((year) =>
+            fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`).then((response) => {
+              if (response.status === 204) return [];
+              if (!response.ok) throw new Error(`Could not load Malaysia holidays for ${year}`);
+              return response.json();
+            }),
+          ),
+        );
+        if (cancelled) return;
+        const merged = responses.flat().filter((holiday) => holiday?.date);
+        const source = merged.length ? merged : fallbackMalaysiaHolidays(holidayYears);
+        const deduped = Array.from(new Map(source.map((holiday) => [`${holiday.date}-${holiday.name}`, holiday])).values());
+        deduped.sort((a, b) => a.date.localeCompare(b.date));
+        setMalaysiaHolidays(deduped);
+        if (!merged.length) setHolidayError("Using built-in Malaysia holiday list because the public API returned no MY data.");
+      } catch (error) {
+        if (!cancelled) {
+          setMalaysiaHolidays(fallbackMalaysiaHolidays(holidayYears));
+          setHolidayError("Using built-in Malaysia holiday list because live holiday data could not load.");
+        }
+      }
+    }
+
+    loadMalaysiaHolidays();
+    return () => {
+      cancelled = true;
+    };
+  }, [holidayYears]);
+
+  const holidaysByDate = useMemo(() => {
+    const map = new Map();
+    for (const holiday of malaysiaHolidays) {
+      const list = map.get(holiday.date) ?? [];
+      list.push(holiday);
+      map.set(holiday.date, list);
+    }
+    return map;
+  }, [malaysiaHolidays]);
+
+  const upcomingMalaysiaHolidays = useMemo(() => {
+    return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
+  }, [malaysiaHolidays, todayISO]);
 
   const scopedEvents = useMemo(() => {
     return events.filter((event) => (dateScope === "Past" ? event.date < todayISO : event.date >= todayISO));
@@ -1968,6 +2186,13 @@ export default function OABookingDashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
+              onClick={() => setHolidaysModalOpen(true)}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 text-sm font-black text-cyan-100 hover:bg-cyan-400/20 md:px-5"
+            >
+              <CalendarDays className="h-4 w-4" />
+              <span>HOLIDAYS</span>
+            </Button>
+            <Button
               onClick={() => openAddDayModal()}
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-sm font-black text-purple-100 hover:bg-purple-400/20 md:px-5"
             >
@@ -2105,6 +2330,7 @@ export default function OABookingDashboard() {
               cursorMonth={calendarCursor}
               onChangeMonth={changeCalendarMonth}
               eventsByDate={calendarEventsByDate}
+              holidaysByDate={holidaysByDate}
               onSelectDate={(iso) => openAddDayModal(iso)}
               onPreviewEvent={setPreviewEvent}
             />
@@ -2126,6 +2352,7 @@ export default function OABookingDashboard() {
         djOptions={djOptions}
         genreOptions={genreOptions}
         existingEventsByDate={existingEventsByDate}
+        holidaysByDate={holidaysByDate}
         onPreviewEvent={setPreviewEvent}
         editEvent={modalEditEvent}
         onDeleteDay={deleteEventDay}
@@ -2136,6 +2363,13 @@ export default function OABookingDashboard() {
       />
 
       <EventDetailsModal event={previewEvent} onClose={() => setPreviewEvent(null)} onEdit={openEditFromPreview} onDelete={deleteEventDay} />
+
+      <MalaysiaHolidaysModal
+        open={holidaysModalOpen}
+        holidays={upcomingMalaysiaHolidays}
+        error={holidayError}
+        onClose={() => setHolidaysModalOpen(false)}
+      />
 
       {toast ? (
         <div
