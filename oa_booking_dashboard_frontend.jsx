@@ -249,7 +249,7 @@ function validateScheduleDays(days) {
 
 function buildTimeOptions() {
   const options = [];
-  for (let minutes = 22 * 60; minutes <= 28 * 60; minutes += 30) {
+  for (let minutes = 22 * 60; minutes <= 28 * 60; minutes += 15) {
     const displayHour = Math.floor(minutes / 60) % 24;
     const m = minutes % 60;
     const label = `${String(displayHour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -407,7 +407,19 @@ function dayLabelFromISO(iso) {
   return isoToDate(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
-function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onEditEvent }) {
+function monthGridDates(monthDate) {
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const last = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+  const gridStart = startOfWeekMonday(first);
+  const gridEnd = endOfWeekMonday(last);
+  const days = [];
+  for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {
+    days.push(new Date(d));
+  }
+  return days;
+}
+
+function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, onPreviewEvent }) {
   const first = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth(), 1);
   const last = new Date(cursorMonth.getFullYear(), cursorMonth.getMonth() + 1, 0);
   const gridStart = startOfWeekMonday(first);
@@ -465,13 +477,17 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
               <div
                 key={iso}
                 tabIndex={0}
-                onClick={() => onSelectDate(iso)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
+              onClick={() => (dayEvents.length ? onPreviewEvent(dayEvents[0]) : onSelectDate(iso))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  if (dayEvents.length) {
+                    onPreviewEvent(dayEvents[0]);
+                  } else {
                     onSelectDate(iso);
                   }
-                }}
+                }
+              }}
                 className={`group min-h-[108px] rounded-2xl border p-2 text-left transition md:min-h-[126px] md:p-3 ${
                   isCurrentMonth ? "border-white/10 bg-white/[0.02]" : "border-white/5 bg-white/[0.01] opacity-60"
                 } hover:border-purple-300/30 hover:bg-purple-400/5`}
@@ -491,11 +507,11 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
                       key={event.id}
                       type="button"
                       className={`block w-full truncate rounded-lg border px-2 py-1.5 text-left text-[10px] font-black md:text-xs ${getStatusCalendarClass(event.status)}`}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditEvent(event);
-                      }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPreviewEvent(event);
+                    }}
                       title={`${event.name} · ${event.status}`}
                     >
                       {event.name}
@@ -514,7 +530,20 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, onSelectDate, 
   );
 }
 
-function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave, djOptions, title = "Add Event Day", initialDays, dateMode = "week" }) {
+function AddEventDayModal({
+  open,
+  onClose,
+  seedDateISO,
+  onChangeSeedDate,
+  onSave,
+  djOptions,
+  existingEventsByDate,
+  onPreviewEvent,
+  title = "Add Event Day",
+  initialDays,
+  dateMode = "week",
+  lockDateSelection = false,
+}) {
   const [days, setDays] = useState(() => {
     return weekWedToSat(seedDateISO).map((d) => {
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -531,15 +560,23 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
 
   const [hasAutofilled, setHasAutofilled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(() => new Date(isoToDate(seedDateISO).getFullYear(), isoToDate(seedDateISO).getMonth(), 1));
 
   const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
   const selectedRangeLabel = useMemo(() => (dateMode === "day" ? dayLabelFromISO(seedDateISO) : weekRangeLabelFromDates(headerDates)), [dateMode, headerDates, seedDateISO]);
   const selectedWeekName = `Week ${weekOfMonthFromISO(seedDateISO)}`;
+  const pickerMonthLabel = pickerMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const pickerDays = useMemo(() => monthGridDates(pickerMonth), [pickerMonth]);
+  const selectedISOSet = useMemo(() => new Set(headerDates.map(isoFromDate)), [headerDates]);
+  const selectedFilledDays = useMemo(() => headerDates.map(isoFromDate).filter((iso) => existingEventsByDate.has(iso)), [existingEventsByDate, headerDates]);
 
   const datesForMode = (iso) => (dateMode === "day" ? [isoToDate(iso)] : weekWedToSat(iso));
 
   const changeSelectedPeriod = (nextSeedDateISO) => {
+    if (lockDateSelection) return;
     onChangeSeedDate(nextSeedDateISO);
+    const nextDate = isoToDate(nextSeedDateISO);
+    setPickerMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
     setDays((prev) => {
       const nextDates = datesForMode(nextSeedDateISO);
       return nextDates.map((d) => {
@@ -562,6 +599,8 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
   useEffect(() => {
     if (!open) return;
     setHasAutofilled(false);
+    const nextDate = isoToDate(seedDateISO);
+    setPickerMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
     if (initialDays?.length) {
       setDays(initialDays);
       return;
@@ -610,7 +649,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         const nextRole = roleOptions[Math.min(d.slots.length, roleOptions.length - 1)];
         const start = d.slots.length ? d.slots[d.slots.length - 1].end : "22:30";
         const startIndex = Math.max(0, timeOptions.indexOf(start));
-        const end = timeOptions[Math.min(timeOptions.length - 1, startIndex + 3)] ?? "00:00";
+        const end = timeOptions[Math.min(timeOptions.length - 1, startIndex + 6)] ?? "00:00";
         return {
           ...d,
           slots: [
@@ -647,7 +686,7 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
     const endM = minutesFromTime(nextEnd);
     if (endM > startM) return nextEnd;
     const startIndex = timeOptions.indexOf(nextStart);
-    return timeOptions[Math.min(timeOptions.length - 1, Math.max(0, startIndex + 3))] ?? nextEnd;
+    return timeOptions[Math.min(timeOptions.length - 1, Math.max(0, startIndex + 6))] ?? nextEnd;
   };
 
   const applyQuickSchedule = (isoDate) => {
@@ -709,6 +748,8 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
     try {
       await onSave(modalDays);
       onClose();
+    } catch (error) {
+      // The parent shows a toast; keeping the modal open lets the user pick another date.
     } finally {
       setIsSaving(false);
     }
@@ -745,32 +786,102 @@ function AddEventDayModal({ open, onClose, seedDateISO, onChangeSeedDate, onSave
         </div>
 
         <div className="space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick day" : "Pick week"}</div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => changeSelectedPeriod(shiftISODate(seedDateISO, dateMode === "day" ? -1 : -7))}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
-              >
-                Prev
-              </button>
-              <input
-                type="date"
-                value={seedDateISO}
-                onChange={(e) => changeSelectedPeriod(e.target.value)}
-                className="min-w-[180px] flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/80 outline-none focus:border-purple-300/60"
-              />
-              <button
-                onClick={() => changeSelectedPeriod(shiftISODate(seedDateISO, dateMode === "day" ? 1 : 7))}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
-              >
-                Next
-              </button>
+          {!lockDateSelection ? (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick available day" : "Pick available week"}</div>
+                <div className="mt-1 text-sm font-black text-white/85">{pickerMonthLabel}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() => setPickerMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-            <div className="mt-2 text-xs font-bold text-purple-100/70">
-              {selectedWeekName} · {selectedRangeLabel}
+
+            <div className="mt-3 grid grid-cols-7 gap-1 text-center">
+              {["M", "T", "W", "T", "F", "S", "S"].map((label, idx) => (
+                <div key={`${label}-${idx}`} className="py-1 text-[10px] font-black text-white/25">
+                  {label}
+                </div>
+              ))}
+              {pickerDays.map((d) => {
+                const iso = isoFromDate(d);
+                const isCurrentMonth = d.getMonth() === pickerMonth.getMonth();
+                const existingEvent = existingEventsByDate.get(iso);
+                const isFilled = Boolean(existingEvent);
+                const isSelected = selectedISOSet.has(iso);
+                const weekDates = weekWedToSat(iso);
+                const weekFilled = weekDates.some((date) => existingEventsByDate.has(isoFromDate(date)));
+                return (
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => {
+                      if (existingEvent) {
+                        onPreviewEvent(existingEvent);
+                        return;
+                      }
+                      changeSelectedPeriod(iso);
+                    }}
+                    className={`min-h-16 rounded-xl border px-1.5 py-1 text-left text-xs font-black transition ${
+                      isFilled
+                        ? getStatusCalendarClass(existingEvent.status)
+                        : isSelected
+                          ? "border-purple-200 bg-purple-400 text-black"
+                          : weekFilled && dateMode === "week"
+                            ? "border-yellow-300/25 bg-yellow-400/10 text-yellow-100/80"
+                            : "border-white/10 bg-black/20 text-white/65 hover:border-purple-300/40 hover:bg-purple-400/10 hover:text-white"
+                    } ${isCurrentMonth ? "" : "opacity-35"}`}
+                    title={isFilled ? `${existingEvent.name || "Schedule"} · ${existingEvent.status}` : "Available"}
+                  >
+                    <span className="block text-center text-xs font-black">{d.getDate()}</span>
+                    {isFilled ? (
+                      <span className="mt-1 block truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">
+                        {existingEvent.name}
+                      </span>
+                    ) : weekFilled && dateMode === "week" ? (
+                      <span className="mt-1 block text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">Busy week</span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em]">
+              <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/45">Selected: {selectedWeekName} · {selectedRangeLabel}</span>
+              <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-1 text-emerald-100/70">Open</span>
+              <span className={`rounded-full border px-2 py-1 ${statusConfig.Confirmed}`}>Confirmed</span>
+              <span className={`rounded-full border px-2 py-1 ${statusConfig.Unconfirmed}`}>Unconfirmed</span>
+              <span className={`rounded-full border px-2 py-1 ${statusConfig["No Lineup"]}`}>No Lineup</span>
+              {dateMode === "week" ? (
+                <span className="rounded-full border border-yellow-300/25 bg-yellow-400/10 px-2 py-1 text-yellow-100/75">Week has filled day</span>
+              ) : null}
+            </div>
+
+            {selectedFilledDays.length ? (
+              <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">
+                Existing schedule on {selectedFilledDays.map(dayLabelFromISO).join(", ")}. Pick another {dateMode === "day" ? "day" : "week"} before saving.
+              </div>
+            ) : null}
           </div>
+          ) : null}
 
           {dateMode === "week" ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -1134,6 +1245,92 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
   );
 }
 
+function EventDetailsModal({ event, onClose, onEdit }) {
+  if (!event) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.18 }}
+        className="max-h-[calc(100svh-1.5rem)] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
+          <div className="min-w-0">
+            <div className="text-[11px] font-black uppercase tracking-[0.22em] text-purple-200/70">{dayLabelFromISO(event.date)}</div>
+            <div className="mt-1 text-xl font-black tracking-tight text-white">{event.name}</div>
+            <div className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-white/35">{event.stage}</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
+              {event.status}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">{event.genre}</span>
+            {event.ic ? (
+              <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-3 py-1 text-xs font-black text-purple-100">PIC {event.ic}</span>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Set Times</div>
+            {event.slots.length ? (
+              <div className="mt-3 grid gap-2">
+                {event.slots.map((slot, idx) => (
+                  <div key={`${event.id}-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-black text-white">{slot.dj}</div>
+                      <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{slot.role}</div>
+                    </div>
+                    <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
+                      <Clock className="h-3.5 w-3.5" />
+                      {slot.start}-{slot.end}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-rose-300/20 bg-rose-500/10 px-3 py-3 text-sm font-bold text-rose-100/80">
+                No lineup added yet.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
+          <Button
+            onClick={onClose}
+            className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
+          >
+            Close
+          </Button>
+          <Button
+            onClick={() => onEdit(event)}
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
+          >
+            <Pencil className="h-4 w-4" />
+            <span>Edit Day</span>
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function OABookingDashboard() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
@@ -1147,6 +1344,8 @@ export default function OABookingDashboard() {
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
   const [modalDateMode, setModalDateMode] = useState("week");
+  const [modalLockDateSelection, setModalLockDateSelection] = useState(false);
+  const [previewEvent, setPreviewEvent] = useState(null);
   const [syncError, setSyncError] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
   const [toast, setToast] = useState(null);
@@ -1292,6 +1491,14 @@ export default function OABookingDashboard() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [events]);
 
+  const existingEventsByDate = useMemo(() => {
+    const map = new Map();
+    for (const event of events) {
+      if (!map.has(event.date)) map.set(event.date, event);
+    }
+    return map;
+  }, [events]);
+
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
 
   const scopedEvents = useMemo(() => {
@@ -1352,6 +1559,15 @@ export default function OABookingDashboard() {
 
   const saveModalDays = async (modalDays) => {
     const existingByDate = new Map(events.map((e) => [e.date, e]));
+    if (!modalLockDateSelection) {
+      const duplicates = modalDays.filter((day) => existingByDate.has(day.isoDate));
+      if (duplicates.length) {
+        const labels = duplicates.map((day) => dayLabelFromISO(day.isoDate)).join(", ");
+        showToast(`Schedule already exists: ${labels}`, "error");
+        throw new Error(`Schedule already exists: ${labels}`);
+      }
+    }
+
     const next = [...events];
     let nextId = events.reduce((max, e) => Math.max(max, Number(e.id) || 0), 0) + 1;
     const eventsToSave = [];
@@ -1456,6 +1672,16 @@ export default function OABookingDashboard() {
     setModalTitle("Add Event Week");
     setModalInitialDays(null);
     setModalDateMode("week");
+    setModalLockDateSelection(false);
+    setModalOpen(true);
+  };
+
+  const openAddDayModal = (dateISO) => {
+    if (dateISO) setSeedDateISO(dateISO);
+    setModalTitle("Add Event Day");
+    setModalInitialDays(null);
+    setModalDateMode("day");
+    setModalLockDateSelection(false);
     setModalOpen(true);
   };
 
@@ -1481,7 +1707,15 @@ export default function OABookingDashboard() {
     setModalTitle("Edit Event Day");
     setModalInitialDays(initialDays);
     setModalDateMode("day");
+    setModalLockDateSelection(true);
     setModalOpen(true);
+  };
+
+  const openEditFromPreview = (event) => {
+    setPreviewEvent(null);
+    setModalOpen(false);
+    setModalInitialDays(null);
+    openEditModal(event);
   };
 
   const changeCalendarMonth = (direction) => {
@@ -1510,33 +1744,45 @@ export default function OABookingDashboard() {
     <div className="min-h-screen bg-[#080711] p-3 text-white sm:p-4 lg:p-6 xl:p-8">
       <div className="mx-auto max-w-[1600px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-6 xl:px-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-2xl font-black tracking-tight md:text-3xl">O<span className="text-purple-300">&</span>A</div>
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            <div className="mr-1 text-2xl font-black leading-none tracking-tight md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <Button
               onClick={() => setView("List")}
-              className={`h-11 rounded-xl px-4 text-sm font-black md:px-5 ${
+              className={`inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black md:px-5 ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <List className="mr-2 h-4 w-4" /> List
+              <List className="h-4 w-4" />
+              <span>List</span>
             </Button>
             <Button
               onClick={() => setView("Calendar")}
-              className={`h-11 rounded-xl px-4 text-sm font-black md:px-5 ${
+              className={`inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black md:px-5 ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <CalendarDays className="mr-2 h-4 w-4" /> Calendar
+              <CalendarDays className="h-4 w-4" />
+              <span>Calendar</span>
             </Button>
           </div>
-          <Button
-            onClick={() => openAddModal()}
-            className="h-11 rounded-xl bg-purple-400 px-4 text-sm font-black text-black hover:bg-purple-300 md:px-6"
-          >
-            <Plus className="mr-2 h-4 w-4" /> ADD WEEK
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => openAddDayModal()}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-sm font-black text-purple-100 hover:bg-purple-400/20 md:px-5"
+            >
+              <Plus className="h-4 w-4" />
+              <span>ADD DAY</span>
+            </Button>
+            <Button
+              onClick={() => openAddModal()}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-4 text-sm font-black text-black hover:bg-purple-300 md:px-6"
+            >
+              <Plus className="h-4 w-4" />
+              <span>ADD WEEK</span>
+            </Button>
+          </div>
         </header>
 
         {syncError ? (
@@ -1546,10 +1792,6 @@ export default function OABookingDashboard() {
         ) : !isSupabaseConfigured ? (
           <div className="border-b border-yellow-400/20 bg-yellow-400/10 px-4 py-3 text-sm font-bold text-yellow-100 md:px-6 xl:px-8">
             Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in this environment.
-          </div>
-        ) : syncStatus ? (
-          <div className="border-b border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100 md:px-6 xl:px-8">
-            {syncStatus}
           </div>
         ) : null}
 
@@ -1664,8 +1906,8 @@ export default function OABookingDashboard() {
               cursorMonth={calendarCursor}
               onChangeMonth={changeCalendarMonth}
               eventsByDate={calendarEventsByDate}
-              onSelectDate={(iso) => openAddModal(iso)}
-              onEditEvent={openEditModal}
+              onSelectDate={(iso) => openAddDayModal(iso)}
+              onPreviewEvent={setPreviewEvent}
             />
           )}
         </main>
@@ -1676,15 +1918,21 @@ export default function OABookingDashboard() {
         onClose={() => {
           setModalOpen(false);
           setModalInitialDays(null);
+          setModalLockDateSelection(false);
         }}
         seedDateISO={seedDateISO}
         onChangeSeedDate={setSeedDateISO}
         onSave={saveModalDays}
         djOptions={djOptions}
+        existingEventsByDate={existingEventsByDate}
+        onPreviewEvent={setPreviewEvent}
         title={modalTitle}
         initialDays={modalInitialDays}
         dateMode={modalDateMode}
+        lockDateSelection={modalLockDateSelection}
       />
+
+      <EventDetailsModal event={previewEvent} onClose={() => setPreviewEvent(null)} onEdit={openEditFromPreview} />
 
       {toast ? (
         <div
