@@ -316,6 +316,50 @@ function minutesFromTime(time) {
   return h * 60 + mRaw;
 }
 
+function timeFromMinutes(totalMinutes) {
+  const displayHour = Math.floor(totalMinutes / 60) % 24;
+  const minutes = totalMinutes % 60;
+  return `${String(displayHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function buildSmartSlots({ djCount = 3, start = "22:30", end = "03:00" }) {
+  const startM = minutesFromTime(start);
+  const endM = minutesFromTime(end);
+  const duration = endM - startM;
+  if (duration < 15) return [];
+  const maxSlots = Math.max(1, Math.floor(duration / 15));
+  const count = Math.max(1, Math.min(8, maxSlots, Number(djCount) || 3));
+
+  const totalSteps = Math.floor(duration / 15);
+  const baseSteps = Math.floor(totalSteps / count);
+  const remainder = totalSteps % count;
+  const middle = (count - 1) / 2;
+  const slots = [];
+  let cursor = startM;
+
+  for (let i = 0; i < count; i += 1) {
+    const extraStep = i >= Math.floor((count - remainder) / 2) && i < Math.floor((count - remainder) / 2) + remainder ? 1 : 0;
+    const steps = Math.max(1, baseSteps + extraStep);
+    const slotStart = cursor;
+    const slotEnd = i === count - 1 ? endM : Math.min(endM, cursor + steps * 15);
+    const role = count === 1 ? "Main" : i === 0 ? "Warm-up" : i === count - 1 ? "Closer" : "Main";
+    const distanceFromMiddle = Math.abs(i - middle);
+    const energy = role === "Warm-up" ? 2 : role === "Closer" ? 4 : distanceFromMiddle < 0.75 ? 5 : 4;
+
+    slots.push({
+      dj: "",
+      role,
+      start: timeFromMinutes(slotStart),
+      end: timeFromMinutes(slotEnd),
+      energy,
+    });
+
+    cursor = slotEnd;
+  }
+
+  return slots.filter((slot) => minutesFromTime(slot.end) > minutesFromTime(slot.start));
+}
+
 function validateScheduleDays(days) {
   const errorsByDate = {};
   const conflictSlots = {};
@@ -789,6 +833,7 @@ function AddEventDayModal({
   const [hasAutofilled, setHasAutofilled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [genreDrafts, setGenreDrafts] = useState({});
+  const [smartSchedules, setSmartSchedules] = useState({});
   const [pickerMonth, setPickerMonth] = useState(() => new Date(isoToDate(seedDateISO).getFullYear(), isoToDate(seedDateISO).getMonth(), 1));
 
   const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
@@ -894,6 +939,18 @@ function AddEventDayModal({
     );
   };
 
+  const getSmartSchedule = (isoDate) => smartSchedules[isoDate] ?? { djCount: 3, start: "22:30", end: "03:00" };
+
+  const setSmartScheduleField = (isoDate, patch) => {
+    setSmartSchedules((prev) => ({
+      ...prev,
+      [isoDate]: {
+        ...(prev[isoDate] ?? { djCount: 3, start: "22:30", end: "03:00" }),
+        ...patch,
+      },
+    }));
+  };
+
   const addSlot = (isoDate) => {
     setDays((prev) =>
       prev.map((d) => {
@@ -942,16 +999,15 @@ function AddEventDayModal({
   };
 
   const applyQuickSchedule = (isoDate) => {
+    const smartSchedule = getSmartSchedule(isoDate);
     setDays((prev) =>
       prev.map((d) => {
         if (d.isoDate !== isoDate) return d;
+        const nextSlots = buildSmartSlots(smartSchedule);
+        const existingNames = d.slots.map((slot) => slot.dj).filter(Boolean);
         return {
           ...d,
-          slots: [
-            { dj: "", role: "Warm-up", start: "22:30", end: "00:00", energy: 2 },
-            { dj: "", role: "Main", start: "00:00", end: "01:30", energy: 4 },
-            { dj: "", role: "Closer", start: "01:30", end: "03:00", energy: 4 },
-          ],
+          slots: nextSlots.map((slot, index) => ({ ...slot, dj: existingNames[index] ?? "" })),
         };
       }),
     );
@@ -1173,6 +1229,8 @@ function AddEventDayModal({
               const genreDraft = genreDrafts[day.isoDate] ?? "";
               const dayErrors = validation.errorsByDate[day.isoDate] ?? [];
               const dayConflictSlots = validation.conflictSlots[day.isoDate] ?? new Set();
+              const smartSchedule = getSmartSchedule(day.isoDate);
+              const smartScheduleInvalid = minutesFromTime(smartSchedule.end) <= minutesFromTime(smartSchedule.start);
 
               return (
                 <div
@@ -1241,21 +1299,69 @@ function AddEventDayModal({
                   <div className="mt-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">DJs & Timings</div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => applyQuickSchedule(day.isoDate)}
-                          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
-                        >
-                          Quick schedule
-                        </button>
-                        <button
-                          onClick={() => addSlot(day.isoDate)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
-                        >
-                          <Plus className="h-3.5 w-3.5" /> Add slot
-                        </button>
-                      </div>
                     </div>
+
+                    <div className="mt-2 grid gap-2 rounded-xl border border-white/10 bg-black/20 p-2 sm:grid-cols-[90px_1fr_1fr_auto_auto] sm:items-end">
+                      <label>
+                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">DJs</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="8"
+                          value={smartSchedule.djCount}
+                          onChange={(e) => setSmartScheduleField(day.isoDate, { djCount: Math.max(1, Math.min(8, Number(e.target.value) || 1)) })}
+                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                        />
+                      </label>
+                      <label>
+                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">From</span>
+                        <select
+                          value={smartSchedule.start}
+                          onChange={(e) => setSmartScheduleField(day.isoDate, { start: e.target.value })}
+                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                        >
+                          {timeOptions.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">To</span>
+                        <select
+                          value={smartSchedule.end}
+                          onChange={(e) => setSmartScheduleField(day.isoDate, { end: e.target.value })}
+                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                        >
+                          {timeOptions.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickSchedule(day.isoDate)}
+                        disabled={smartScheduleInvalid}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-purple-300/30 bg-purple-400/10 px-3 text-[10px] font-black text-purple-100 hover:bg-purple-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <Zap className="h-3.5 w-3.5" /> Suggest slots
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addSlot(day.isoDate)}
+                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add slot
+                      </button>
+                    </div>
+                    {smartScheduleInvalid ? (
+                      <div className="mt-2 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">
+                        End time must be after start time.
+                      </div>
+                    ) : null}
 
                     {day.slots.length ? (
                       <div className="mt-2 space-y-2">
@@ -3035,7 +3141,7 @@ function DashboardApp({ onLogout }) {
   }, [activeFilter, calendarFilteredEvents, dateSort, search, view]);
 
   return (
-    <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-6 xl:p-8`}>
+    <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-5 xl:p-6`}>
       <style>{`
         .oa-theme-light { color-scheme: light; }
         .oa-theme-light [class*="bg-[#0d0c17]"],
@@ -3073,7 +3179,7 @@ function DashboardApp({ onLogout }) {
         .oa-theme-light select,
         .oa-theme-light textarea { color: #171321 !important; background-color: rgba(23, 19, 33, 0.045) !important; }
       `}</style>
-      <div className={`mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
+      <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
           <div className="flex items-center gap-2">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
