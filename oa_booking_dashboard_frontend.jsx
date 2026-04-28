@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Clock,
   Moon,
@@ -1671,19 +1673,20 @@ function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onC
               >
                 <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
               </button>
-              <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
-                <select
-                  value={event.ic || ""}
-                  onChange={(e) => onAssignIC(e.target.value)}
-                  disabled={!canEdit}
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:flex-none sm:px-2 sm:text-xs md:h-9 md:text-sm"
-                >
-                  <option value="">PIC</option>
-                  <option value="Wai Hong">Wai Hong</option>
-                  <option value="Ashwin">Ashwin</option>
-                </select>
-              </div>
+              {canEdit ? (
+                <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
+                  <select
+                    value={event.ic || ""}
+                    onChange={(e) => onAssignIC(e.target.value)}
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:flex-none sm:px-2 sm:text-xs md:h-9 md:text-sm"
+                  >
+                    <option value="">PIC</option>
+                    <option value="Wai Hong">Wai Hong</option>
+                    <option value="Ashwin">Ashwin</option>
+                  </select>
+                </div>
+              ) : null}
               {canEdit ? (
                 <button
                   onClick={onEdit}
@@ -1818,7 +1821,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm, canEdi
                 {genre}
               </span>
             ))}
-            {event.ic ? (
+            {canEdit && event.ic ? (
               <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-3 py-1 text-xs font-black text-purple-100">PIC {event.ic}</span>
             ) : null}
           </div>
@@ -2936,7 +2939,6 @@ function UserManagementPage({ onToast }) {
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
-  const [onlyUnassigned, setOnlyUnassigned] = useState(true);
   const [savingUserId, setSavingUserId] = useState(null);
   const [passwordByUserId, setPasswordByUserId] = useState({});
   const [roleByUserId, setRoleByUserId] = useState({});
@@ -3001,15 +3003,13 @@ function UserManagementPage({ onToast }) {
     const q = search.trim().toLowerCase();
     return users
       .filter((u) => {
-        const role = roleByUserId[u.id] ?? u.role ?? "";
-        if (onlyUnassigned && role) return false;
         if (!q) return true;
         return String(u.email || "")
           .toLowerCase()
           .includes(q) || String(u.id || "").toLowerCase().includes(q);
       })
       .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
-  }, [onlyUnassigned, roleByUserId, search, users]);
+  }, [search, users]);
 
   const updateUserRole = async (userId) => {
     const nextRole = String(roleByUserId[userId] || "").trim();
@@ -3084,15 +3084,6 @@ function UserManagementPage({ onToast }) {
                 className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
               />
             </div>
-            <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55">
-              <input
-                type="checkbox"
-                checked={onlyUnassigned}
-                onChange={(e) => setOnlyUnassigned(e.target.checked)}
-                className="h-4 w-4 accent-purple-400"
-              />
-              Unassigned only
-            </label>
           </div>
 
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
@@ -3206,6 +3197,8 @@ function DashboardApp({ onLogout, userRole }) {
   const canEdit = userRole === "admin";
   const canAccessFinance = userRole === "admin";
   const canManageUsers = userRole === "admin";
+  const weekSectionRefs = React.useRef({});
+  const [activeWeekKey, setActiveWeekKey] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -3531,6 +3524,29 @@ function DashboardApp({ onLogout, userRole }) {
       }))
       .sort((a, b) => (dateSort === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
   }, [dateSort, filteredEvents]);
+
+  const effectiveWeekKey = useMemo(() => {
+    if (!activeWeekKey) return groupedEvents[0]?.key || null;
+    return groupedEvents.some((g) => g.key === activeWeekKey) ? activeWeekKey : groupedEvents[0]?.key || null;
+  }, [activeWeekKey, groupedEvents]);
+
+  const scrollToWeekKey = (key) => {
+    const node = weekSectionRefs.current?.[key];
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const jumpWeek = (direction) => {
+    if (view !== "List") return;
+    const keys = groupedEvents.map((g) => g.key);
+    if (!keys.length) return;
+    const currentKey = effectiveWeekKey || keys[0];
+    const index = Math.max(0, keys.findIndex((k) => k === currentKey));
+    const nextIndex = Math.max(0, Math.min(keys.length - 1, index + direction));
+    const nextKey = keys[nextIndex];
+    setActiveWeekKey(nextKey);
+    scrollToWeekKey(nextKey);
+  };
 
   const saveModalDays = async (modalDays) => {
     if (!canEdit) {
@@ -4053,6 +4069,29 @@ function DashboardApp({ onLogout, userRole }) {
             })}
           </div>
 
+          {view === "List" ? (
+            <div className="flex gap-1.5 md:ml-auto">
+              <Button
+                onClick={() => jumpWeek(-1)}
+                disabled={!groupedEvents.length}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                title="Previous week"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Prev week</span>
+              </Button>
+              <Button
+                onClick={() => jumpWeek(1)}
+                disabled={!groupedEvents.length}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                title="Next week"
+              >
+                <span className="hidden sm:inline">Next week</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
             <select
               value={dateSort}
@@ -4084,7 +4123,14 @@ function DashboardApp({ onLogout, userRole }) {
           ) : view === "List" ? (
             <>
               {groupedEvents.map((group) => (
-                <section key={group.key} className="space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5">
+                <section
+                  key={group.key}
+                  ref={(node) => {
+                    if (!node) return;
+                    weekSectionRefs.current[group.key] = node;
+                  }}
+                  className="scroll-mt-32 space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/25">{group.weekName}</div>
