@@ -146,9 +146,14 @@ function statusClass(status) {
   return statusConfig[status] ?? statusConfig.Unconfirmed;
 }
 
+function statusLabel(status) {
+  return status === "Unconfirmed" ? "Pending" : status;
+}
+
 const filterItems = [
   { key: "All", label: "All", icon: null },
   { key: "Need Attention", label: "Need Attention", icon: AlertTriangle },
+  { key: "Unconfirmed", label: "Pending", icon: Clock },
   { key: "Confirmed", label: "Confirmed", icon: CheckCircle2 },
   { key: "No Lineup", label: "No Lineup", icon: XCircle },
 ];
@@ -311,7 +316,7 @@ function weekWedToSat(baseISO) {
 }
 
 function minutesFromTime(time) {
-  const [hRaw, mRaw] = time.split(":").map(Number);
+  const [hRaw = 0, mRaw = 0] = String(time || "00:00").split(":").map(Number);
   const h = hRaw < 10 ? hRaw + 24 : hRaw;
   return h * 60 + mRaw;
 }
@@ -408,6 +413,23 @@ function validateScheduleDays(days) {
   }
 
   return { errorsByDate, conflictSlots, hasErrors: Object.keys(errorsByDate).length > 0 };
+}
+
+function getConfirmationBlockers(event) {
+  const slots = event.slots ?? [];
+  const validation = validateScheduleDays([{ isoDate: event.date, slots }]);
+  const blockers = [];
+  const assignedSlots = slots.filter((slot) => {
+    const name = String(slot.dj || "").trim();
+    return name && !name.toUpperCase().includes("TBD");
+  });
+  const latestEnd = slots.reduce((latest, slot) => Math.max(latest, minutesFromTime(slot.end || "00:00")), 0);
+
+  if (!assignedSlots.length) blockers.push("Add at least one DJ/MC before confirming.");
+  if (validation.hasErrors) blockers.push("Fix set time clashes before confirming.");
+  if (latestEnd < minutesFromTime("03:00")) blockers.push("Lineup must end at 03:00 or later before confirming.");
+
+  return blockers;
 }
 
 function buildTimeOptions() {
@@ -779,7 +801,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                         e.stopPropagation();
                         onPreviewEvent(event);
                       }}
-                      title={`${event.name} · ${event.status}`}
+                      title={`${event.name} · ${statusLabel(event.status)}`}
                     >
                       {event.name}
                     </button>
@@ -1162,7 +1184,7 @@ function AddEventDayModal({
                               ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-100"
                               : "border-white/10 bg-black/20 text-white/65 hover:border-purple-300/40 hover:bg-purple-400/10 hover:text-white"
                     } ${isCurrentMonth ? "" : "opacity-35"}`}
-                    title={isFilled ? `${existingEvent.name || "Schedule"} · ${existingEvent.status}` : hasHoliday ? dayHolidays.map(holidayLabel).join(", ") : "Available"}
+                    title={isFilled ? `${existingEvent.name || "Schedule"} · ${statusLabel(existingEvent.status)}` : hasHoliday ? dayHolidays.map(holidayLabel).join(", ") : "Available"}
                   >
                     <span className="flex items-center justify-center gap-0.5 text-center text-[11px] font-black sm:gap-1 sm:text-xs">
                       <span>{d.getDate()}</span>
@@ -1188,7 +1210,7 @@ function AddEventDayModal({
               <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/45">Selected: {selectedWeekName} · {selectedRangeLabel}</span>
               <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-1 text-emerald-100/70">Open</span>
               <span className={`rounded-full border px-2 py-1 ${statusClass("Confirmed")}`}>Confirmed</span>
-              <span className={`rounded-full border px-2 py-1 ${statusClass("Unconfirmed")}`}>Unconfirmed</span>
+              <span className={`rounded-full border px-2 py-1 ${statusClass("Unconfirmed")}`}>Pending</span>
               <span className={`rounded-full border px-2 py-1 ${statusClass("Need Attention")}`}>Need Attention</span>
               <span className={`rounded-full border px-2 py-1 ${statusClass("No Lineup")}`}>No Lineup</span>
               <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-cyan-100/75">🎉 Holiday</span>
@@ -1231,6 +1253,7 @@ function AddEventDayModal({
               const dayConflictSlots = validation.conflictSlots[day.isoDate] ?? new Set();
               const smartSchedule = getSmartSchedule(day.isoDate);
               const smartScheduleInvalid = minutesFromTime(smartSchedule.end) <= minutesFromTime(smartSchedule.start);
+              const dayConfirmationBlockers = getConfirmationBlockers({ date: day.isoDate, slots: day.slots });
 
               return (
                 <div
@@ -1460,16 +1483,23 @@ function AddEventDayModal({
                       <div className="mt-1 grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
                         {statusOptions.map((status) => {
                           const active = (day.status || "No Lineup") === status;
+                          const confirmBlocked = status === "Confirmed" && dayConfirmationBlockers.length > 0;
                           return (
                             <button
                               key={status}
                               type="button"
                               onClick={() => setDayField(day.isoDate, { status })}
+                              disabled={confirmBlocked}
+                              title={confirmBlocked ? dayConfirmationBlockers.join(" ") : statusLabel(status)}
                               className={`rounded-lg border px-2 py-2 text-[10px] font-black uppercase tracking-[0.08em] transition sm:px-3 sm:tracking-[0.12em] ${
-                                active ? statusClass(status) : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                                confirmBlocked
+                                  ? "cursor-not-allowed border-white/10 bg-white/5 text-white/20"
+                                  : active
+                                    ? statusClass(status)
+                                    : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
                               }`}
                             >
-                              {status}
+                                {statusLabel(status)}
                             </button>
                           );
                         })}
@@ -1542,10 +1572,12 @@ function AddEventDayModal({
 function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
+  const confirmationBlockers = getConfirmationBlockers(event);
   const warnings = [];
   if (!event.slots.length) warnings.push("No lineup assigned");
   if (event.slots.some((x) => x.warning || x.dj.includes("TBD"))) warnings.push("Opening slot TBD");
   if (event.slots.length && !event.slots.some((x) => ["Main", "Closer"].includes(x.role))) warnings.push("Missing main DJ");
+  if (event.slots.length && confirmationBlockers.length) warnings.push(...confirmationBlockers);
   if (scheduleValidation.errorsByDate[event.date]) warnings.push(...scheduleValidation.errorsByDate[event.date]);
 
   return (
@@ -1574,7 +1606,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="min-w-0 text-base font-black tracking-wide text-white sm:text-lg md:text-xl">{event.name}</h3>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
-                  {event.status}
+                  {statusLabel(event.status)}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1661,8 +1693,9 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               {event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
-                  title="Confirm night"
+                  disabled={confirmationBlockers.length > 0}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400 hover:text-black disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25 sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                  title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Confirm</span>
@@ -1742,6 +1775,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
 
 function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
   if (!event) return null;
+  const confirmationBlockers = getConfirmationBlockers(event);
 
   return (
     <div
@@ -1773,7 +1807,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusClass(event.status)}`}>
-              {event.status}
+              {statusLabel(event.status)}
             </span>
             {splitGenreTags(event.genre).map((genre) => (
               <span key={genre} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">
@@ -1847,10 +1881,12 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
               <Pencil className="h-4 w-4" />
               <span>Edit Day</span>
             </Button>
-            {event.status !== "Confirmed" ? (
+              {event.status !== "Confirmed" ? (
               <Button
                 onClick={() => onConfirm(event)}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300"
+                disabled={confirmationBlockers.length > 0}
+                title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 <span>Confirm Night</span>
@@ -2486,7 +2522,7 @@ function PublicEventCard({ event }) {
           <h3 className="mt-1 text-xl font-black tracking-tight text-white">{event.name}</h3>
         </div>
         <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClass(event.status)}`}>
-          {event.status}
+          {statusLabel(event.status)}
         </span>
       </div>
 
@@ -2530,10 +2566,17 @@ function PublicEventCard({ event }) {
   );
 }
 
-function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState("");
+function LoginScreen() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [registerName, setRegisterName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
+  const [authMode, setAuthMode] = useState("login");
+  const [authBusy, setAuthBusy] = useState(false);
   const [error, setError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [publicEvents, setPublicEvents] = useState(() => (isSupabaseConfigured ? [] : eventsSeed.map((event) => ({ ...event, id: String(event.id) }))));
   const [publicLoading, setPublicLoading] = useState(isSupabaseConfigured);
@@ -2568,12 +2611,68 @@ function LoginScreen({ onLogin }) {
 
   const submit = (event) => {
     event.preventDefault();
-    if (username.trim() === "admin" && password === "admin") {
-      setError("");
-      onLogin();
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured for real login.");
       return;
     }
-    setError("Invalid username or password");
+
+    (async () => {
+      setAuthBusy(true);
+      setError("");
+      setAuthMessage("");
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (signInError) setError(signInError.message || "Could not log in");
+      setAuthBusy(false);
+    })();
+  };
+
+  const register = (event) => {
+    event.preventDefault();
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured for real registration.");
+      return;
+    }
+    if (registerPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (registerPassword !== registerConfirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    (async () => {
+      setAuthBusy(true);
+      setError("");
+      setAuthMessage("");
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: registerEmail.trim(),
+        password: registerPassword,
+        options: {
+          emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+          data: {
+            display_name: registerName.trim(),
+          },
+        },
+      });
+
+      if (signUpError) {
+        setError(signUpError.message || "Could not create account.");
+        setAuthBusy(false);
+        return;
+      }
+
+      setRegisterName("");
+      setRegisterEmail("");
+      setRegisterPassword("");
+      setRegisterConfirmPassword("");
+      setAuthMessage(data?.session ? "Account created. Ask an admin to assign your dashboard role." : "Account created. Check your email to confirm, then ask an admin to assign your dashboard role.");
+      setAuthMode("login");
+      setAuthBusy(false);
+    })();
   };
 
   useEffect(() => {
@@ -2618,7 +2717,12 @@ function LoginScreen({ onLogin }) {
             O<span className="text-purple-300">&</span>A
           </div>
           <Button
-            onClick={() => setLoginOpen(true)}
+            onClick={() => {
+              setAuthMode("login");
+              setError("");
+              setAuthMessage("");
+              setLoginOpen(true);
+            }}
             className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/70 hover:bg-purple-400 hover:text-black"
           >
             Login
@@ -2679,15 +2783,17 @@ function LoginScreen({ onLogin }) {
           }}
         >
           <form
-            onSubmit={submit}
-            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
+            onSubmit={authMode === "login" ? submit : register}
+            className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-3xl font-black tracking-tight">
                   O<span className="text-purple-300">&</span>A
                 </div>
-                <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">Dashboard Login</div>
+                <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">
+                  {authMode === "login" ? "Dashboard Login" : "Create Account"}
+                </div>
               </div>
               <button
                 type="button"
@@ -2698,35 +2804,119 @@ function LoginScreen({ onLogin }) {
               </button>
             </div>
 
-            <div className="mt-6 space-y-3">
-              <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Username</span>
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-                  placeholder="Username"
-                  autoComplete="username"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-                  placeholder="Password"
-                  autoComplete="current-password"
-                />
-              </label>
+            <div className="mt-5 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+              {[
+                { key: "login", label: "Login" },
+                { key: "register", label: "Register" },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setAuthMode(item.key);
+                    setError("");
+                    setAuthMessage("");
+                  }}
+                  className={`h-10 rounded-xl text-sm font-black transition ${
+                    authMode === item.key ? "bg-purple-400 text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
 
-            {error ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">{error}</div> : null}
+            {authMode === "login" ? (
+              <div className="mt-5 space-y-3">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Email</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Email"
+                    autoComplete="email"
+                    required
+                  />
+                </label>
 
-            <Button type="submit" className="mt-5 h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300">
-              Login
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Password"
+                    autoComplete="current-password"
+                    required
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-3">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Name</span>
+                  <input
+                    value={registerName}
+                    onChange={(e) => setRegisterName(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Name"
+                    autoComplete="name"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Email</span>
+                  <input
+                    type="email"
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Email"
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
+                  <input
+                    type="password"
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Password"
+                    autoComplete="new-password"
+                    required
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Confirm Password</span>
+                  <input
+                    type="password"
+                    value={registerConfirmPassword}
+                    onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="Confirm Password"
+                    autoComplete="new-password"
+                    required
+                  />
+                </label>
+              </div>
+            )}
+
+            {error ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">{error}</div> : null}
+            {authMessage ? <div className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-100">{authMessage}</div> : null}
+
+            <Button
+              type="submit"
+              disabled={authBusy}
+              className="mt-5 h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+            >
+              {authBusy ? "Please wait..." : authMode === "login" ? "Login" : "Create Account"}
             </Button>
           </form>
         </div>
@@ -2735,7 +2925,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function DashboardApp({ onLogout }) {
+function DashboardApp({ onLogout, userRole }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
   const [dateSort, setDateSort] = useState("asc");
@@ -2837,7 +3027,7 @@ function DashboardApp({ onLogout }) {
       if (savedEvent.error) {
         const message = savedEvent.error.message || "";
         if (event.status === "Need Attention" && message.toLowerCase().includes("check")) {
-          throw new Error("Supabase needs the status SQL update before Need Attention can save.");
+          throw new Error("Run supabase/required_dashboard_schema_updates.sql in Supabase SQL Editor before saving Need Attention.");
         }
         throw savedEvent.error;
       }
@@ -2862,7 +3052,7 @@ function DashboardApp({ onLogout }) {
         if (savedSlot.error) {
           const message = savedSlot.error.message || "";
           if ((slot.role === "MC" || normalizeSlotRole(slot.role) === "Main") && message.toLowerCase().includes("check")) {
-            throw new Error("Supabase needs the role SQL update before Main/MC slots can save.");
+            throw new Error("Run supabase/required_dashboard_schema_updates.sql in Supabase SQL Editor before saving Main/MC slots.");
           }
           throw savedSlot.error;
         }
@@ -3014,15 +3204,16 @@ function DashboardApp({ onLogout }) {
 
   const pastCount = useMemo(() => events.filter((event) => event.date < todayISO).length, [events, todayISO]);
   const upcomingCount = events.length - pastCount;
+  const statEvents = view === "Calendar" ? events : scopedEvents;
 
   const stats = useMemo(() => {
-    const total = scopedEvents.length;
-    const confirmed = scopedEvents.filter((x) => x.status === "Confirmed").length;
-    const unconfirmed = scopedEvents.filter((x) => x.status === "Unconfirmed").length;
-    const noLineup = scopedEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
-    const needAttention = scopedEvents.filter(eventNeedsAttention).length;
+    const total = statEvents.length;
+    const confirmed = statEvents.filter((x) => x.status === "Confirmed").length;
+    const unconfirmed = statEvents.filter((x) => x.status === "Unconfirmed").length;
+    const noLineup = statEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
+    const needAttention = statEvents.filter(eventNeedsAttention).length;
     return { total, confirmed, unconfirmed, noLineup, needAttention };
-  }, [scopedEvents]);
+  }, [statEvents]);
 
   const filteredEvents = useMemo(() => {
     return scopedEvents
@@ -3132,6 +3323,15 @@ function DashboardApp({ onLogout }) {
         notes: remarks,
       };
 
+      if (event.status === "Confirmed") {
+        const blockers = getConfirmationBlockers(event);
+        if (blockers.length) {
+          const message = `${dayLabelFromISO(event.date)} cannot be confirmed: ${blockers.join(" ")}`;
+          showToast(message, "error");
+          throw new Error(message);
+        }
+      }
+
       if (existing) {
         const idx = next.findIndex((x) => x.id === existing.id);
         if (idx >= 0) next[idx] = event;
@@ -3157,7 +3357,7 @@ function DashboardApp({ onLogout }) {
         const message = error.message || "Could not save to Supabase";
         setSyncError(message);
         setSyncStatus("");
-        showToast(message.includes("role SQL") ? "Run the role SQL in Supabase first" : message.includes("status SQL") ? "Run the status SQL in Supabase first" : "Save failed", "error");
+        showToast(message.includes("required_dashboard_schema_updates.sql") ? "Run required_dashboard_schema_updates.sql in Supabase first" : "Save failed", "error");
         throw new Error(message);
       }
     }
@@ -3192,6 +3392,14 @@ function DashboardApp({ onLogout }) {
   };
 
   const updateEventStatus = (event, status) => {
+    if (status === "Confirmed") {
+      const blockers = getConfirmationBlockers(event);
+      if (blockers.length) {
+        showToast(blockers[0], "error");
+        return;
+      }
+    }
+
     const previousEvents = events;
     const updatedEvent = { ...event, status };
     setEvents((prev) => prev.map((item) => (item.id === event.id ? updatedEvent : item)));
@@ -3209,7 +3417,7 @@ function DashboardApp({ onLogout }) {
           if (error) {
             const message = error.message || "";
             if (status === "Need Attention" && message.toLowerCase().includes("check")) {
-              throw new Error("Supabase needs the status SQL update before Need Attention can save.");
+              throw new Error("Run supabase/required_dashboard_schema_updates.sql in Supabase SQL Editor before saving Need Attention.");
             }
             throw error;
           }
@@ -3220,7 +3428,7 @@ function DashboardApp({ onLogout }) {
           setPreviewEvent((prev) => (prev?.id === event.id ? event : prev));
           setSyncError(error.message || "Could not update status");
           setSyncStatus("");
-          showToast(error.message?.includes("status SQL") ? "Run the status SQL in Supabase first" : "Status save failed", "error");
+          showToast(error.message?.includes("required_dashboard_schema_updates.sql") ? "Run required_dashboard_schema_updates.sql in Supabase first" : "Status save failed", "error");
         }
       })();
       return;
@@ -3340,13 +3548,20 @@ function DashboardApp({ onLogout }) {
 
   useEffect(() => {
     if (view !== "Calendar" || !calendarFilteredEvents.length || (activeFilter === "All" && !search.trim())) return;
-    const firstMatchingMonth = monthStartFromISO(calendarFilteredEvents[0].date);
-    setCalendarCursor((current) =>
-      current.getFullYear() === firstMatchingMonth.getFullYear() && current.getMonth() === firstMatchingMonth.getMonth()
-        ? current
-        : firstMatchingMonth,
-    );
-  }, [activeFilter, calendarFilteredEvents, dateSort, search, view]);
+    setCalendarCursor((current) => {
+      const currentMonthISO = isoFromDate(new Date(current.getFullYear(), current.getMonth(), 1));
+      const matchingInCurrentMonth = calendarFilteredEvents.find((event) => {
+        const date = isoToDate(event.date);
+        return date.getFullYear() === current.getFullYear() && date.getMonth() === current.getMonth();
+      });
+      const targetEvent =
+        matchingInCurrentMonth ??
+        calendarFilteredEvents.find((event) => event.date >= currentMonthISO) ??
+        calendarFilteredEvents[calendarFilteredEvents.length - 1];
+      const targetMonth = monthStartFromISO(targetEvent.date);
+      return current.getFullYear() === targetMonth.getFullYear() && current.getMonth() === targetMonth.getMonth() ? current : targetMonth;
+    });
+  }, [activeFilter, calendarFilteredEvents, search, view]);
 
   return (
     <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-5 xl:p-6`}>
@@ -3458,7 +3673,7 @@ function DashboardApp({ onLogout }) {
               onClick={onLogout}
               className="h-11 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:px-3 sm:text-xs"
             >
-              Logout
+              {userRole ? `${userRole.toUpperCase()} Logout` : "Logout"}
             </Button>
           </div>
         </header>
@@ -3477,7 +3692,7 @@ function DashboardApp({ onLogout }) {
         <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-5 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
-          <Stat number={stats.unconfirmed} label="Unconfirmed" tone="text-yellow-300" />
+          <Stat number={stats.unconfirmed} label="Pending" tone="text-yellow-300" />
           <Stat number={stats.noLineup} label="No Lineup" tone="text-rose-300" />
           <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
         </section>
@@ -3485,6 +3700,7 @@ function DashboardApp({ onLogout }) {
 
         {view !== "Finance" ? (
         <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
+          {view === "List" ? (
           <div className="grid grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 md:flex md:max-w-full md:overflow-x-auto">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
@@ -3504,6 +3720,7 @@ function DashboardApp({ onLogout }) {
               );
             })}
           </div>
+          ) : null}
 
           <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
             {filterItems.map((item) => {
@@ -3658,24 +3875,105 @@ function DashboardApp({ onLogout }) {
 }
 
 export default function OABookingDashboard() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.sessionStorage.getItem("oa_dashboard_auth") === "admin";
-  });
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [session, setSession] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [roleError, setRoleError] = useState("");
 
-  const login = () => {
-    window.sessionStorage.setItem("oa_dashboard_auth", "admin");
-    setIsLoggedIn(true);
+  const loadUserRole = useCallback(async (user) => {
+    if (!isSupabaseConfigured || !user?.id) {
+      setUserRole(null);
+      setRoleError("");
+      return;
+    }
+
+    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
+    if (error) {
+      setUserRole(null);
+      setRoleError(error.message || "Could not load user role.");
+      return;
+    }
+
+    if (!data?.role) {
+      setUserRole(null);
+      setRoleError("No admin/staff role assigned for this account.");
+      return;
+    }
+
+    setUserRole(data.role);
+    setRoleError("");
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (cancelled) return;
+      setSession(data.session ?? null);
+      if (data.session?.user) await loadUserRole(data.session.user);
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null);
+      if (nextSession?.user) {
+        loadUserRole(nextSession.user);
+      } else {
+        setUserRole(null);
+        setRoleError("");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
+  }, [loadUserRole]);
+
+  const logout = async () => {
+    if (isSupabaseConfigured) await supabase.auth.signOut();
+    setSession(null);
+    setUserRole(null);
+    setRoleError("");
   };
 
-  const logout = () => {
-    window.sessionStorage.removeItem("oa_dashboard_auth");
-    setIsLoggedIn(false);
-  };
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
+        <div className="rounded-3xl border border-white/10 bg-[#0d0c17] px-6 py-5 text-sm font-black text-white/55">Checking login...</div>
+      </div>
+    );
+  }
 
-  if (!isLoggedIn) return <LoginScreen onLogin={login} />;
+  if (!session) return <LoginScreen />;
 
-  return <DashboardApp onLogout={logout} />;
+  if (!userRole) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50">
+          <div className="text-3xl font-black tracking-tight">
+            O<span className="text-purple-300">&</span>A
+          </div>
+          <div className="mt-4 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-100">
+            {roleError || "No role assigned for this account."}
+          </div>
+          <div className="mt-3 text-xs font-bold leading-5 text-white/45">
+            Add this user to `public.user_roles` as `admin` or `staff`, then log in again.
+          </div>
+          <Button onClick={logout} className="mt-5 h-11 w-full rounded-xl bg-white/5 text-sm font-black text-white/65 hover:bg-white/10 hover:text-white">
+            Logout
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return <DashboardApp onLogout={logout} userRole={userRole} />;
 }
 
 function Stat({ number, label, tone = "text-white" }) {
