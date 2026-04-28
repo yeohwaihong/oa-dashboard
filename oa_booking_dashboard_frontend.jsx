@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarDays,
+  Calculator,
   List,
   Plus,
+  RefreshCcw,
+  Save,
   Search,
   AlertTriangle,
   CheckCircle2,
@@ -149,6 +152,82 @@ const filterItems = [
 ];
 
 const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention", "No Lineup"];
+
+const financeDefaultInputs = {
+  eventName: "Angerfist (Evo) - Final GA Layout",
+  hasPartnerSplit: true,
+  partnerName: "Evo",
+  barSales: 36706.3,
+  serviceRate: 10,
+  sstRate: 8,
+  onlineTicketSales: 66708,
+  doorSales: 6060,
+  sponsorship: 10000,
+  ticketOaShare: 50,
+  doorOaShare: 50,
+  sponsorshipOaShare: 50,
+  barSplitPartnerRate: 10,
+  bottleCostRate: 40,
+  ambassadorCommission: 2000,
+  utilities: 1500,
+  manpower: 13100,
+  artistCost: 26300,
+  artistOaShare: 50,
+  puspal: 6003,
+  hotel: 500,
+  rider: 500,
+  supportingDj: 2000,
+  mc: 0,
+  marketing: 0,
+  tshirt: 0,
+  otherCost: 0,
+};
+
+const financeScenariosStorageKey = "oa_dashboard_finance_scenarios";
+
+function createFinanceScenario(inputs) {
+  const now = new Date().toISOString();
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: String(inputs.eventName || "Untitled Finance Event").trim() || "Untitled Finance Event",
+    partnerName: String(inputs.partnerName || "Partner").trim() || "Partner",
+    inputs: { ...inputs },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function readSavedFinanceScenarios() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(financeScenariosStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item?.id && item?.inputs) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedFinanceScenarios(scenarios) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(financeScenariosStorageKey, JSON.stringify(scenarios));
+}
+
+function currency(value) {
+  return new Intl.NumberFormat("en-MY", {
+    style: "currency",
+    currency: "MYR",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function percent(value) {
+  return `${(Number.isFinite(value) ? value : 0).toFixed(1)}%`;
+}
+
+function toAmount(value) {
+  const next = Number.parseFloat(value);
+  return Number.isFinite(next) ? next : 0;
+}
 
 function getStatusColor(status) {
   if (status === "No Lineup") return "bg-rose-400";
@@ -1697,6 +1776,366 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
   );
 }
 
+function FinanceMathPage() {
+  const [inputs, setInputs] = useState(financeDefaultInputs);
+  const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
+  const [activeScenarioId, setActiveScenarioId] = useState(null);
+
+  const persistScenarios = (next) => {
+    setSavedScenarios(next);
+    writeSavedFinanceScenarios(next);
+  };
+
+  const setInput = (key, value) => {
+    setInputs((prev) => ({
+      ...prev,
+      [key]: typeof prev[key] === "number" ? toAmount(value) : value,
+    }));
+  };
+
+  const saveScenario = () => {
+    const now = new Date().toISOString();
+    if (activeScenarioId) {
+      const next = savedScenarios.map((scenario) =>
+        scenario.id === activeScenarioId
+          ? {
+              ...scenario,
+              name: String(inputs.eventName || scenario.name || "Untitled Finance Event").trim() || "Untitled Finance Event",
+              partnerName: String(inputs.partnerName || scenario.partnerName || "Partner").trim() || "Partner",
+              inputs: { ...inputs },
+              updatedAt: now,
+            }
+          : scenario,
+      );
+      persistScenarios(next);
+      return;
+    }
+
+    const scenario = createFinanceScenario(inputs);
+    persistScenarios([scenario, ...savedScenarios]);
+    setActiveScenarioId(scenario.id);
+  };
+
+  const saveAsNewScenario = () => {
+    const scenario = createFinanceScenario(inputs);
+    persistScenarios([scenario, ...savedScenarios]);
+    setActiveScenarioId(scenario.id);
+  };
+
+  const loadScenario = (scenario) => {
+    setInputs({ ...financeDefaultInputs, ...scenario.inputs });
+    setActiveScenarioId(scenario.id);
+  };
+
+  const startNewScenario = () => {
+    setInputs(financeDefaultInputs);
+    setActiveScenarioId(null);
+  };
+
+  const deleteScenario = (scenarioId) => {
+    const scenario = savedScenarios.find((item) => item.id === scenarioId);
+    const confirmed = window.confirm(`Delete saved finance event "${scenario?.name || "Untitled Finance Event"}"?`);
+    if (!confirmed) return;
+    const next = savedScenarios.filter((item) => item.id !== scenarioId);
+    persistScenarios(next);
+    if (activeScenarioId === scenarioId) startNewScenario();
+  };
+
+  const hasPartnerSplit = Boolean(inputs.hasPartnerSplit);
+  const share = (value) => Math.max(0, Math.min(100, toAmount(value))) / 100;
+  const splitShare = (value) => (hasPartnerSplit ? share(value) : 1);
+  const serviceCharge = inputs.barSales * share(inputs.serviceRate);
+  const sst = inputs.barSales * share(inputs.sstRate);
+  const barSplitPartner = hasPartnerSplit ? inputs.barSales * share(inputs.barSplitPartnerRate) : 0;
+  const bottleCost = inputs.barSales * share(inputs.bottleCostRate);
+  const onlineTicketOa = inputs.onlineTicketSales * splitShare(inputs.ticketOaShare);
+  const doorOa = inputs.doorSales * splitShare(inputs.doorOaShare);
+  const sponsorshipOa = inputs.sponsorship * splitShare(inputs.sponsorshipOaShare);
+  const artistOa = inputs.artistCost * splitShare(inputs.artistOaShare);
+
+  const incomeRows = [
+    ["Bar Sales", inputs.barSales, inputs.barSales, 0],
+    [`Service Charge (${inputs.serviceRate}%)`, serviceCharge, serviceCharge, 0],
+    [`SST (${inputs.sstRate}%)`, sst, 0, 0],
+    ["Online Ticket & Door Sales", inputs.onlineTicketSales, onlineTicketOa, inputs.onlineTicketSales - onlineTicketOa],
+    ["Door Sales", inputs.doorSales, doorOa, inputs.doorSales - doorOa],
+    ["Sponsorship", inputs.sponsorship, sponsorshipOa, inputs.sponsorship - sponsorshipOa],
+    [`Bar Split (${inputs.barSplitPartnerRate}%)`, barSplitPartner, 0, barSplitPartner],
+  ];
+
+  const costRows = [
+    [`Bottle Cost (${inputs.bottleCostRate}% Bar Sales)`, bottleCost, bottleCost, 0],
+    ["Ambassador Commission", inputs.ambassadorCommission, inputs.ambassadorCommission, 0],
+    ["Utilities", inputs.utilities, inputs.utilities, 0],
+    ["Man Power", inputs.manpower, inputs.manpower, 0],
+    ["International Artist Cost", inputs.artistCost, artistOa, inputs.artistCost - artistOa],
+    ["Puspal", inputs.puspal, inputs.puspal, 0],
+    ["Hotel", inputs.hotel, inputs.hotel, 0],
+    ["Rider", inputs.rider, inputs.rider, 0],
+    ["Supporting DJ", inputs.supportingDj, inputs.supportingDj, 0],
+    ["MC", inputs.mc, inputs.mc, 0],
+    ["Marketing", inputs.marketing, inputs.marketing, 0],
+    ["Tshirt", inputs.tshirt, inputs.tshirt, 0],
+    ["Other Cost", inputs.otherCost, inputs.otherCost, 0],
+    ["Bar Split Paid Out", barSplitPartner, barSplitPartner, 0],
+  ];
+
+  const total = (rows, index) => rows.reduce((sum, row) => sum + row[index], 0);
+  const oaIncome = total(incomeRows, 2);
+  const partnerIncome = total(incomeRows, 3);
+  const oaCost = total(costRows, 2);
+  const partnerCost = total(costRows, 3);
+  const oaNett = oaIncome - oaCost;
+  const partnerNett = partnerIncome - partnerCost;
+  const oaRoi = oaCost ? (oaNett / oaCost) * 100 : 0;
+  const partnerRoi = partnerCost ? (partnerNett / partnerCost) * 100 : 0;
+
+  const numberFields = [
+    ["barSales", "Bar Sales"],
+    ["serviceRate", "Service %"],
+    ["sstRate", "SST %"],
+    ["onlineTicketSales", "Online Ticket Sales"],
+    ["doorSales", "Door Sales"],
+    ["sponsorship", "Sponsorship"],
+    ...(hasPartnerSplit
+      ? [
+          ["ticketOaShare", "Ticket O&A %"],
+          ["doorOaShare", "Door O&A %"],
+          ["sponsorshipOaShare", "Sponsorship O&A %"],
+          ["barSplitPartnerRate", "Bar Split Partner %"],
+        ]
+      : []),
+    ["bottleCostRate", "Bottle Cost %"],
+    ["ambassadorCommission", "Ambassador Commission"],
+    ["utilities", "Utilities"],
+    ["manpower", "Man Power"],
+    ["artistCost", "International Artist Cost"],
+    ...(hasPartnerSplit ? [["artistOaShare", "Artist Cost O&A %"]] : []),
+    ["puspal", "Puspal"],
+    ["hotel", "Hotel"],
+    ["rider", "Rider"],
+    ["supportingDj", "Supporting DJ"],
+    ["mc", "MC"],
+    ["marketing", "Marketing"],
+    ["tshirt", "Tshirt"],
+    ["otherCost", "Other Cost"],
+  ];
+
+  const renderRows = (rows) =>
+    rows.map(([label, amount, oa, partner]) => (
+      <tr key={label} className="border-b border-white/5 last:border-0">
+        <td className="py-2 pr-3 text-white/70">{label}</td>
+        <td className="py-2 text-right font-black text-white/55">{currency(amount)}</td>
+        <td className="py-2 text-right font-black text-purple-100">{currency(oa)}</td>
+        {hasPartnerSplit ? <td className="py-2 text-right font-black text-cyan-100">{currency(partner)}</td> : null}
+      </tr>
+    ));
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/60">Financial Math</div>
+            <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{inputs.eventName}</h1>
+            <div className="mt-1 text-sm font-bold text-white/35">
+              {activeScenarioId ? "Saved finance event loaded. Edit inputs, then save to update it." : "Defaults based on the workbook MATH tab. Edit any input and totals update instantly."}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={saveScenario}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300"
+            >
+              <Save className="h-4 w-4" />
+              {activeScenarioId ? "Update" : "Save"}
+            </Button>
+            <Button
+              onClick={saveAsNewScenario}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-xs font-black text-purple-100 hover:bg-purple-400/20"
+            >
+              <Plus className="h-4 w-4" />
+              Save New
+            </Button>
+            <Button
+              onClick={startNewScenario}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+            >
+              <RefreshCcw className="h-4 w-4" />
+              New
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryTile label="O&A Nett" value={currency(oaNett)} tone={oaNett >= 0 ? "text-emerald-200" : "text-rose-200"} />
+          <SummaryTile label="O&A ROI" value={percent(oaRoi)} tone={oaRoi >= 0 ? "text-emerald-200" : "text-rose-200"} />
+          {hasPartnerSplit ? (
+            <>
+              <SummaryTile label={`${inputs.partnerName || "Partner"} Nett`} value={currency(partnerNett)} tone={partnerNett >= 0 ? "text-cyan-100" : "text-rose-200"} />
+              <SummaryTile label={`${inputs.partnerName || "Partner"} ROI`} value={percent(partnerRoi)} tone={partnerRoi >= 0 ? "text-cyan-100" : "text-rose-200"} />
+            </>
+          ) : (
+            <SummaryTile label="Mode" value="O&A Only" tone="text-white/80" />
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-white/10 bg-[#12111f] p-4">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Saved Finance Events</div>
+            <div className="mt-3 space-y-2">
+              {savedScenarios.length ? (
+                savedScenarios.map((scenario) => {
+                  const active = scenario.id === activeScenarioId;
+                  return (
+                    <div
+                      key={scenario.id}
+                      className={`grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-xl border p-2 ${
+                        active ? "border-purple-300/50 bg-purple-400/10" : "border-white/10 bg-white/[0.03]"
+                      }`}
+                    >
+                      <button type="button" onClick={() => loadScenario(scenario)} className="min-w-0 text-left">
+                        <div className="truncate text-sm font-black text-white/85">{scenario.name}</div>
+                        <div className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.16em] text-white/30">
+                          {scenario.partnerName || "Partner"} · {new Date(scenario.updatedAt || scenario.createdAt).toLocaleDateString("en-MY")}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteScenario(scenario.id)}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/35 hover:bg-rose-400/20 hover:text-rose-100"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-4 text-sm font-bold text-white/35">
+                  No saved finance events yet.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Inputs</div>
+          <div className="mt-3 grid gap-3">
+            <label>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Event Name</span>
+              <input
+                value={inputs.eventName}
+                onChange={(e) => setInput("eventName", e.target.value)}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+              />
+            </label>
+            <label>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Partner</span>
+              <input
+                value={inputs.partnerName}
+                onChange={(e) => setInput("partnerName", e.target.value)}
+                disabled={!hasPartnerSplit}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60 disabled:cursor-not-allowed disabled:opacity-35"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+              <span>
+                <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Partner Split</span>
+                <span className="mt-1 block text-xs font-bold text-white/45">{hasPartnerSplit ? "Split revenue and selected costs with partner" : "O&A takes all revenue and costs"}</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={hasPartnerSplit}
+                onChange={(e) => setInput("hasPartnerSplit", e.target.checked)}
+                className="h-5 w-5 accent-purple-400"
+              />
+            </label>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              {numberFields.map(([key, label]) => (
+                <label key={key} className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">{label}</span>
+                  <input
+                    type="number"
+                    value={inputs[key]}
+                    onChange={(e) => setInput(key, e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <FinanceTable
+            title="Income"
+            rows={renderRows(incomeRows)}
+            totalLabel="Total Income"
+            oaTotal={oaIncome}
+            partnerTotal={partnerIncome}
+            partnerName={inputs.partnerName}
+            hasPartnerSplit={hasPartnerSplit}
+          />
+          <FinanceTable
+            title="Cost"
+            rows={renderRows(costRows)}
+            totalLabel="Total Cost"
+            oaTotal={oaCost}
+            partnerTotal={partnerCost}
+            partnerName={inputs.partnerName}
+            hasPartnerSplit={hasPartnerSplit}
+          />
+          <div className={`grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 ${hasPartnerSplit ? "sm:grid-cols-2" : ""}`}>
+            <SummaryTile label="O&A Nett / ROI" value={`${currency(oaNett)} · ${percent(oaRoi)}`} tone={oaNett >= 0 ? "text-emerald-200" : "text-rose-200"} />
+            {hasPartnerSplit ? (
+              <SummaryTile label={`${inputs.partnerName || "Partner"} Nett / ROI`} value={`${currency(partnerNett)} · ${percent(partnerRoi)}`} tone={partnerNett >= 0 ? "text-cyan-100" : "text-rose-200"} />
+            ) : null}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SummaryTile({ label, value, tone = "text-white" }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{label}</div>
+      <div className={`mt-1 text-lg font-black tracking-tight sm:text-xl ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerName, hasPartnerSplit }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#12111f]">
+      <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.24em] text-white/30">{title}</div>
+      <div className="overflow-x-auto px-4 py-3">
+        <table className={`w-full text-sm ${hasPartnerSplit ? "min-w-[560px]" : "min-w-[420px]"}`}>
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-white/30">
+            <tr>
+              <th className="pb-2 text-left">Item</th>
+              <th className="pb-2 text-right">Amount</th>
+              <th className="pb-2 text-right">O&A</th>
+              {hasPartnerSplit ? <th className="pb-2 text-right">{partnerName || "Partner"}</th> : null}
+            </tr>
+          </thead>
+          <tbody>{rows}</tbody>
+          <tfoot>
+            <tr className="border-t border-white/10 text-base">
+              <td className="pt-3 font-black text-white">{totalLabel}</td>
+              <td />
+              <td className="pt-3 text-right font-black text-purple-100">{currency(oaTotal)}</td>
+              {hasPartnerSplit ? <td className="pt-3 text-right font-black text-cyan-100">{currency(partnerTotal)}</td> : null}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -2345,7 +2784,7 @@ function DashboardApp({ onLogout }) {
     <div className="min-h-screen bg-[#080711] text-white sm:p-4 lg:p-6 xl:p-8">
       <div className="mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50 sm:min-h-0 sm:rounded-3xl sm:border">
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
-          <div className="grid w-full grid-cols-[auto_1fr_1fr] items-center gap-2 md:w-auto md:flex md:max-w-full md:flex-wrap">
+          <div className="grid w-full grid-cols-[auto_1fr_1fr_1fr] items-center gap-2 md:w-auto md:flex md:max-w-full md:flex-wrap">
             <div className="mr-1 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <Button
               onClick={() => setView("List")}
@@ -2366,6 +2805,17 @@ function DashboardApp({ onLogout }) {
             >
               <CalendarDays className="h-4 w-4" />
               <span>Calendar</span>
+            </Button>
+            <Button
+              onClick={() => setView("Finance")}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
+                view === "Finance"
+                  ? "bg-purple-400 text-black hover:bg-purple-300"
+                  : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Calculator className="h-4 w-4" />
+              <span>Finance</span>
             </Button>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:flex md:flex-wrap md:items-center">
@@ -2409,6 +2859,7 @@ function DashboardApp({ onLogout }) {
           </div>
         ) : null}
 
+        {view !== "Finance" ? (
         <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-5 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
@@ -2416,7 +2867,9 @@ function DashboardApp({ onLogout }) {
           <Stat number={stats.noLineup} label="No Lineup" tone="text-rose-300" />
           <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
         </section>
+        ) : null}
 
+        {view !== "Finance" ? (
         <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-3 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-white/[0.03] p-1">
             {[
@@ -2477,9 +2930,12 @@ function DashboardApp({ onLogout }) {
             </div>
           </div>
         </section>
+        ) : null}
 
         <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
-          {view === "List" ? (
+          {view === "Finance" ? (
+            <FinanceMathPage />
+          ) : view === "List" ? (
             <>
               {groupedEvents.map((group) => (
                 <section key={group.key} className="space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5">
