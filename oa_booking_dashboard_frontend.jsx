@@ -132,21 +132,29 @@ const eventsSeed = [
 const statusConfig = {
   Confirmed: "border-emerald-400/70 bg-emerald-400/10 text-emerald-300",
   Unconfirmed: "border-yellow-400/70 bg-yellow-400/10 text-yellow-300",
+  "Need Attention": "border-purple-400/70 bg-purple-400/10 text-purple-300",
   "No Lineup": "border-rose-400/70 bg-rose-400/10 text-rose-300",
   Urgent: "border-purple-400/70 bg-purple-400/10 text-purple-300",
 };
 
+function statusClass(status) {
+  return statusConfig[status] ?? statusConfig.Unconfirmed;
+}
+
 const filterItems = [
   { key: "All", label: "All", icon: null },
-  { key: "Attention", label: "Attention", icon: AlertTriangle },
+  { key: "Need Attention", label: "Need Attention", icon: AlertTriangle },
   { key: "Confirmed", label: "Confirmed", icon: CheckCircle2 },
   { key: "No Lineup", label: "No Lineup", icon: XCircle },
 ];
+
+const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention", "No Lineup"];
 
 function getStatusColor(status) {
   if (status === "No Lineup") return "bg-rose-400";
   if (status === "Unconfirmed") return "bg-yellow-300";
   if (status === "Confirmed") return "bg-emerald-400";
+  if (status === "Need Attention") return "bg-purple-400";
   return "bg-purple-400";
 }
 
@@ -154,6 +162,7 @@ function getStatusCalendarClass(status) {
   if (status === "No Lineup") return "border-rose-300/40 bg-rose-500/15 text-rose-100";
   if (status === "Unconfirmed") return "border-yellow-300/40 bg-yellow-400/15 text-yellow-100";
   if (status === "Confirmed") return "border-emerald-300/40 bg-emerald-400/15 text-emerald-100";
+  if (status === "Need Attention") return "border-purple-300/40 bg-purple-400/15 text-purple-100";
   return "border-purple-300/40 bg-purple-400/15 text-purple-100";
 }
 
@@ -368,8 +377,12 @@ function parseIc(notes) {
   return String(notes || "").match(icNotePattern)?.[1] || "";
 }
 
+function stripIcNote(notes) {
+  return String(notes || "").replace(icNotePattern, "").trim();
+}
+
 function setIcInNotes(notes, ic) {
-  const cleanNotes = String(notes || "").replace(icNotePattern, "").trim();
+  const cleanNotes = stripIcNote(notes);
   const cleanIc = String(ic || "").trim();
   return [cleanNotes, cleanIc ? `[dashboard:ic=${cleanIc}]` : ""].filter(Boolean).join("\n");
 }
@@ -418,7 +431,7 @@ function mapSupabaseEvent(row) {
     stage: row.stage || stageOptions[0],
     slots,
     ic: parseIc(row.notes),
-    notes: row.notes || "",
+    notes: stripIcNote(row.notes),
   };
 }
 
@@ -653,7 +666,8 @@ function AddEventDayModal({
         isoDate: iso,
         name: "",
         genre: "",
-        confirmed: false,
+        status: "No Lineup",
+        remarks: "",
         stage: stageOptions[0],
         slots: [],
       };
@@ -691,7 +705,8 @@ function AddEventDayModal({
             isoDate: iso,
             name: "",
             genre: "",
-            confirmed: false,
+            status: "No Lineup",
+            remarks: "",
             stage: stageOptions[0],
             slots: [],
           }
@@ -716,7 +731,8 @@ function AddEventDayModal({
           isoDate: iso,
           name: "",
           genre: "",
-          confirmed: false,
+          status: "No Lineup",
+          remarks: "",
           stage: stageOptions[0],
           slots: [],
         };
@@ -733,7 +749,8 @@ function AddEventDayModal({
         isoDate: iso,
         name: "",
         genre: "",
-        confirmed: false,
+        status: "No Lineup",
+        remarks: "",
         stage: stageOptions[0],
         slots: [],
       };
@@ -846,7 +863,8 @@ function AddEventDayModal({
           isoDate: iso,
           name: "",
           genre: "",
-          confirmed: false,
+          status: "No Lineup",
+          remarks: "",
           stage: stageOptions[0],
           slots: [],
         };
@@ -1001,9 +1019,10 @@ function AddEventDayModal({
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em]">
               <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/45">Selected: {selectedWeekName} · {selectedRangeLabel}</span>
               <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-1 text-emerald-100/70">Open</span>
-              <span className={`rounded-full border px-2 py-1 ${statusConfig.Confirmed}`}>Confirmed</span>
-              <span className={`rounded-full border px-2 py-1 ${statusConfig.Unconfirmed}`}>Unconfirmed</span>
-              <span className={`rounded-full border px-2 py-1 ${statusConfig["No Lineup"]}`}>No Lineup</span>
+              <span className={`rounded-full border px-2 py-1 ${statusClass("Confirmed")}`}>Confirmed</span>
+              <span className={`rounded-full border px-2 py-1 ${statusClass("Unconfirmed")}`}>Unconfirmed</span>
+              <span className={`rounded-full border px-2 py-1 ${statusClass("Need Attention")}`}>Need Attention</span>
+              <span className={`rounded-full border px-2 py-1 ${statusClass("No Lineup")}`}>No Lineup</span>
               <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-cyan-100/75">🎉 Holiday</span>
               {dateMode === "week" ? (
                 <span className="rounded-full border border-yellow-300/25 bg-yellow-400/10 px-2 py-1 text-yellow-100/75">Week has filled day</span>
@@ -1217,28 +1236,52 @@ function AddEventDayModal({
                     ) : null}
                   </div>
 
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="flex items-center gap-2 text-xs font-bold text-white/50">
-                      <input
-                        type="checkbox"
-                        checked={day.confirmed}
-                        onChange={(e) => setDayField(day.isoDate, { confirmed: e.target.checked })}
-                        className="h-4 w-4 rounded border-white/20 bg-white/5 text-purple-400 focus:ring-purple-300/50"
-                      />
-                      Confirmed
-                    </label>
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_180px]">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Status</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {statusOptions.map((status) => {
+                          const active = (day.status || "No Lineup") === status;
+                          return (
+                            <button
+                              key={status}
+                              type="button"
+                              onClick={() => setDayField(day.isoDate, { status })}
+                              className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
+                                active ? statusClass(status) : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                              }`}
+                            >
+                              {status}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                    <select
-                      value={day.stage}
-                      onChange={(e) => setDayField(day.isoDate, { stage: e.target.value })}
-                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-black text-white/70 outline-none focus:border-purple-300/60"
-                    >
-                      {stageOptions.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Stage</div>
+                      <select
+                        value={day.stage}
+                        onChange={(e) => setDayField(day.isoDate, { stage: e.target.value })}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-black text-white/70 outline-none focus:border-purple-300/60"
+                      >
+                        {stageOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Remarks</div>
+                    <textarea
+                      value={day.remarks || ""}
+                      onChange={(e) => setDayField(day.isoDate, { remarks: e.target.value })}
+                      className="mt-1 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-bold text-white/75 outline-none placeholder:text-white/25 focus:border-purple-300/60"
+                      placeholder="Add remarks for this night..."
+                    />
                   </div>
                 </div>
               );
@@ -1278,7 +1321,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
+function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const warnings = [];
@@ -1312,7 +1355,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="min-w-0 text-lg font-black tracking-wide text-white md:text-xl">{event.name}</h3>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
                   {event.status}
                 </span>
               </div>
@@ -1352,6 +1395,11 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                 )}
               </div>
               <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30 md:text-xs">{event.stage}</div>
+              {event.notes ? (
+                <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold text-white/55">
+                  {event.notes}
+                </div>
+              ) : null}
             </div>
 
             <div className="col-span-2 flex items-center justify-between gap-2 border-t border-white/10 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
@@ -1379,6 +1427,14 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
               >
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
+              {event.status !== "Confirmed" ? (
+                <button
+                  onClick={onConfirm}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 text-sm font-black text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -1451,7 +1507,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
   );
 }
 
-function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
+function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
   if (!event) return null;
 
   return (
@@ -1483,7 +1539,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
+            <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusClass(event.status)}`}>
               {event.status}
             </span>
             {splitGenreTags(event.genre).map((genre) => (
@@ -1495,6 +1551,13 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
               <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-3 py-1 text-xs font-black text-purple-100">PIC {event.ic}</span>
             ) : null}
           </div>
+
+          {event.notes ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Remarks</div>
+              <div className="mt-2 whitespace-pre-wrap text-sm font-bold text-white/70">{event.notes}</div>
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Set Times</div>
@@ -1551,6 +1614,15 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
               <Pencil className="h-4 w-4" />
               <span>Edit Day</span>
             </Button>
+            {event.status !== "Confirmed" ? (
+              <Button
+                onClick={() => onConfirm(event)}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Confirm Night</span>
+              </Button>
+            ) : null}
           </div>
         </div>
       </motion.div>
@@ -1658,7 +1730,7 @@ function LoginScreen({ onLogin }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-              placeholder="admin"
+              placeholder="Username"
               autoComplete="username"
             />
           </label>
@@ -1670,7 +1742,7 @@ function LoginScreen({ onLogin }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-              placeholder="admin"
+              placeholder="Password"
               autoComplete="current-password"
             />
           </label>
@@ -1776,7 +1848,13 @@ function DashboardApp({ onLogout }) {
         ? await supabase.from("events").update(payload).eq("id", event.id).select("id").single()
         : await supabase.from("events").insert(payload).select("id").single();
 
-      if (savedEvent.error) throw savedEvent.error;
+      if (savedEvent.error) {
+        const message = savedEvent.error.message || "";
+        if (event.status === "Need Attention" && message.toLowerCase().includes("check")) {
+          throw new Error("Supabase needs the status SQL update before Need Attention can save.");
+        }
+        throw savedEvent.error;
+      }
 
       const deletedSlots = await supabase.from("event_slots").delete().eq("event_id", savedEvent.data.id);
       if (deletedSlots.error) throw deletedSlots.error;
@@ -1956,20 +2034,22 @@ function DashboardApp({ onLogout }) {
     const confirmed = scopedEvents.filter((x) => x.status === "Confirmed").length;
     const unconfirmed = scopedEvents.filter((x) => x.status === "Unconfirmed").length;
     const noLineup = scopedEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
-    const urgent = scopedEvents.filter((x) => !x.slots.length || x.slots.some((s) => s.dj.includes("TBD"))).length;
-    return { total, confirmed, unconfirmed, noLineup, urgent };
+    const needAttention = scopedEvents.filter(
+      (x) => x.status === "Need Attention" || !x.slots.length || x.slots.some((s) => s.dj.includes("TBD")),
+    ).length;
+    return { total, confirmed, unconfirmed, noLineup, needAttention };
   }, [scopedEvents]);
 
   const filteredEvents = useMemo(() => {
     return scopedEvents
       .filter((event) => {
-        const matchesSearch = `${event.name} ${event.genre} ${event.stage} ${event.ic || ""} ${event.slots.map((x) => x.dj).join(" ")}`
+        const matchesSearch = `${event.name} ${event.genre} ${event.stage} ${event.notes || ""} ${event.ic || ""} ${event.slots.map((x) => x.dj).join(" ")}`
           .toLowerCase()
           .includes(search.toLowerCase());
 
         if (!matchesSearch) return false;
         if (activeFilter === "All") return true;
-        if (activeFilter === "Attention") return event.status === "No Lineup" || event.slots.some((s) => s.dj.includes("TBD"));
+        if (activeFilter === "Need Attention") return event.status === "Need Attention";
         return event.status === activeFilter;
       })
       .sort((a, b) => {
@@ -1995,7 +2075,9 @@ function DashboardApp({ onLogout }) {
         label: weekLabelFromKey(key),
         items,
         confirmed: items.filter((event) => event.status === "Confirmed").length,
-        needsAttention: items.filter((event) => event.status === "No Lineup" || event.slots.some((slot) => slot.dj.includes("TBD"))).length,
+        needsAttention: items.filter(
+          (event) => event.status === "Need Attention" || event.status === "No Lineup" || event.slots.some((slot) => slot.dj.includes("TBD")),
+        ).length,
       }))
       .sort((a, b) => (dateSort === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
   }, [dateSort, filteredEvents]);
@@ -2030,10 +2112,12 @@ function DashboardApp({ onLogout }) {
           warning: s.dj.toUpperCase().includes("TBD"),
         }));
 
-      const status = d.confirmed ? "Confirmed" : slots.length ? "Unconfirmed" : "No Lineup";
+      const requestedStatus = d.status || "No Lineup";
+      const status = requestedStatus === "No Lineup" && slots.length ? "Unconfirmed" : requestedStatus;
       const name = String(d.name || "").trim() || "Untitled";
       const genre = String(d.genre || "").trim() || "—";
       const stage = d.stage || stageOptions[0];
+      const remarks = String(d.remarks || "").trim();
 
       const existing = existingByDate.get(d.isoDate);
       const event = {
@@ -2048,7 +2132,7 @@ function DashboardApp({ onLogout }) {
         stage,
         slots,
         ic: existing?.ic || "",
-        notes: existing?.notes || "",
+        notes: remarks,
       };
 
       if (existing) {
@@ -2076,7 +2160,7 @@ function DashboardApp({ onLogout }) {
         const message = error.message || "Could not save to Supabase";
         setSyncError(message);
         setSyncStatus("");
-        showToast(message.includes("role SQL") ? "Run the role SQL in Supabase first" : "Save failed", "error");
+        showToast(message.includes("role SQL") ? "Run the role SQL in Supabase first" : message.includes("status SQL") ? "Run the status SQL in Supabase first" : "Save failed", "error");
         throw new Error(message);
       }
     }
@@ -2108,6 +2192,44 @@ function DashboardApp({ onLogout }) {
         }
       })();
     }
+  };
+
+  const updateEventStatus = (event, status) => {
+    const previousEvents = events;
+    const updatedEvent = { ...event, status };
+    setEvents((prev) => prev.map((item) => (item.id === event.id ? updatedEvent : item)));
+    setPreviewEvent((prev) => (prev?.id === event.id ? updatedEvent : prev));
+
+    if (isSupabaseConfigured && isSupabaseUuid(event.id)) {
+      (async () => {
+        try {
+          setSyncError("");
+          setSyncStatus("Saving status...");
+          const { error } = await supabase
+            .from("events")
+            .update({ status, notes: setIcInNotes(updatedEvent.notes, updatedEvent.ic) })
+            .eq("id", event.id);
+          if (error) {
+            const message = error.message || "";
+            if (status === "Need Attention" && message.toLowerCase().includes("check")) {
+              throw new Error("Supabase needs the status SQL update before Need Attention can save.");
+            }
+            throw error;
+          }
+          setSyncStatus("Status saved to Supabase");
+          showToast(status === "Confirmed" ? "Night confirmed" : "Status saved");
+        } catch (error) {
+          setEvents(previousEvents);
+          setPreviewEvent((prev) => (prev?.id === event.id ? event : prev));
+          setSyncError(error.message || "Could not update status");
+          setSyncStatus("");
+          showToast(error.message?.includes("status SQL") ? "Run the status SQL in Supabase first" : "Status save failed", "error");
+        }
+      })();
+      return;
+    }
+
+    showToast(status === "Confirmed" ? "Night confirmed locally" : "Status saved locally");
   };
 
   const deleteEventDay = async (event) => {
@@ -2168,7 +2290,8 @@ function DashboardApp({ onLogout }) {
         isoDate: event.date,
         name: event.name,
         genre: event.genre,
-        confirmed: event.status === "Confirmed",
+        status: event.status || "No Lineup",
+        remarks: stripIcNote(event.notes),
         stage: event.stage,
         slots: (event.slots ?? []).map((s) => ({
           dj: s.dj ?? "",
@@ -2291,7 +2414,7 @@ function DashboardApp({ onLogout }) {
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
           <Stat number={stats.unconfirmed} label="Unconfirmed" tone="text-yellow-300" />
           <Stat number={stats.noLineup} label="No Lineup" tone="text-rose-300" />
-          <Stat number={stats.urgent} label="Urgent" tone="text-purple-300" />
+          <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
         </section>
 
         <section className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-4 py-3 backdrop-blur md:px-6 xl:px-8">
@@ -2382,6 +2505,7 @@ function DashboardApp({ onLogout }) {
                       onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
+                      onConfirm={() => updateEventStatus(event, "Confirmed")}
                     />
                   ))}
                 </section>
@@ -2429,7 +2553,13 @@ function DashboardApp({ onLogout }) {
         lockDateSelection={modalLockDateSelection}
       />
 
-      <EventDetailsModal event={previewEvent} onClose={() => setPreviewEvent(null)} onEdit={openEditFromPreview} onDelete={deleteEventDay} />
+      <EventDetailsModal
+        event={previewEvent}
+        onClose={() => setPreviewEvent(null)}
+        onEdit={openEditFromPreview}
+        onDelete={deleteEventDay}
+        onConfirm={(event) => updateEventStatus(event, "Confirmed")}
+      />
 
       <MalaysiaHolidaysModal
         open={holidaysModalOpen}
