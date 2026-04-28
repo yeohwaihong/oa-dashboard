@@ -155,7 +155,10 @@ const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention", "No Lineup"
 
 const financeDefaultInputs = {
   eventName: "New Finance Event",
+  includeSuggestedFixedCosts: false,
   hasPartnerSplit: false,
+  currencyCode: "MYR",
+  exchangeRateToMyr: 1,
   partnerName: "",
   barSales: 0,
   serviceRate: 0,
@@ -181,6 +184,13 @@ const financeDefaultInputs = {
   marketing: 0,
   tshirt: 0,
   otherCost: 0,
+};
+
+const financeSuggestedFixedCosts = {
+  serviceRate: 10,
+  sstRate: 8,
+  bottleCostRate: 40,
+  utilities: 1500,
 };
 
 const financeScenariosStorageKey = "oa_dashboard_finance_scenarios";
@@ -212,11 +222,12 @@ function writeSavedFinanceScenarios(scenarios) {
   window.localStorage.setItem(financeScenariosStorageKey, JSON.stringify(scenarios));
 }
 
-function currency(value) {
+function currency(value, currencyCode = "MYR") {
   return new Intl.NumberFormat("en-MY", {
     style: "currency",
-    currency: "MYR",
-    maximumFractionDigits: 0,
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
 }
 
@@ -227,6 +238,10 @@ function percent(value) {
 function toAmount(value) {
   const next = Number.parseFloat(value);
   return Number.isFinite(next) ? next : 0;
+}
+
+function formatInputNumber(value) {
+  return toAmount(value).toFixed(2);
 }
 
 function getStatusColor(status) {
@@ -1481,10 +1496,11 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               ) : null}
             </div>
 
-            <div className="col-span-2 grid grid-cols-[40px_minmax(0,1fr)] gap-2 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
+            <div className="col-span-2 grid grid-cols-[40px_minmax(0,1fr)_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
               <button
                 onClick={onToggle}
                 className="flex h-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white sm:h-auto sm:p-1.5 md:p-2"
+                title="Show set details"
               >
                 <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
               </button>
@@ -1502,16 +1518,20 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               </div>
               <button
                 onClick={onEdit}
-                className="col-span-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                title="Edit day"
               >
-                <Pencil className="h-3.5 w-3.5" /> Edit
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Edit</span>
               </button>
               {event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
-                  className="col-span-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 text-sm font-black text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                  title="Confirm night"
                 >
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Confirm</span>
                 </button>
               ) : null}
             </div>
@@ -1793,6 +1813,25 @@ function FinanceMathPage() {
     }));
   };
 
+  const setSuggestedFixedCosts = (enabled) => {
+    const currentFx = inputs.currencyCode === "MYR" ? 1 : Math.max(toAmount(inputs.exchangeRateToMyr), 0.0001);
+    setInputs((prev) => ({
+      ...prev,
+      includeSuggestedFixedCosts: enabled,
+      ...(enabled
+        ? {
+            ...financeSuggestedFixedCosts,
+            utilities: financeSuggestedFixedCosts.utilities / currentFx,
+          }
+        : {
+            serviceRate: 0,
+            sstRate: 0,
+            bottleCostRate: 0,
+            utilities: 0,
+          }),
+    }));
+  };
+
   const saveScenario = () => {
     const now = new Date().toISOString();
     if (activeScenarioId) {
@@ -1842,41 +1881,65 @@ function FinanceMathPage() {
   };
 
   const hasPartnerSplit = Boolean(inputs.hasPartnerSplit);
+  const includeSuggestedFixedCosts = Boolean(inputs.includeSuggestedFixedCosts);
+  const inputCurrency = inputs.currencyCode || "MYR";
+  const exchangeRateToMyr = inputCurrency === "MYR" ? 1 : Math.max(toAmount(inputs.exchangeRateToMyr), 0);
+  const toMyr = (value) => toAmount(value) * exchangeRateToMyr;
   const share = (value) => Math.max(0, Math.min(100, toAmount(value))) / 100;
   const splitShare = (value) => (hasPartnerSplit ? share(value) : 1);
-  const serviceCharge = inputs.barSales * share(inputs.serviceRate);
-  const sst = inputs.barSales * share(inputs.sstRate);
-  const barSplitPartner = hasPartnerSplit ? inputs.barSales * share(inputs.barSplitPartnerRate) : 0;
-  const bottleCost = inputs.barSales * share(inputs.bottleCostRate);
-  const onlineTicketOa = inputs.onlineTicketSales * splitShare(inputs.ticketOaShare);
-  const doorOa = inputs.doorSales * splitShare(inputs.doorOaShare);
-  const sponsorshipOa = inputs.sponsorship * splitShare(inputs.sponsorshipOaShare);
-  const artistOa = inputs.artistCost * splitShare(inputs.artistOaShare);
+  const barSales = toMyr(inputs.barSales);
+  const onlineTicketSales = toMyr(inputs.onlineTicketSales);
+  const doorSales = toMyr(inputs.doorSales);
+  const sponsorship = toMyr(inputs.sponsorship);
+  const ambassadorCommission = toMyr(inputs.ambassadorCommission);
+  const utilities = includeSuggestedFixedCosts ? toMyr(inputs.utilities) : 0;
+  const manpower = toMyr(inputs.manpower);
+  const artistCost = toMyr(inputs.artistCost);
+  const puspal = toMyr(inputs.puspal);
+  const hotel = toMyr(inputs.hotel);
+  const rider = toMyr(inputs.rider);
+  const supportingDj = toMyr(inputs.supportingDj);
+  const mc = toMyr(inputs.mc);
+  const marketing = toMyr(inputs.marketing);
+  const tshirt = toMyr(inputs.tshirt);
+  const otherCost = toMyr(inputs.otherCost);
+  const serviceCharge = includeSuggestedFixedCosts ? barSales * share(inputs.serviceRate) : 0;
+  const sst = includeSuggestedFixedCosts ? barSales * share(inputs.sstRate) : 0;
+  const barSplitPartner = hasPartnerSplit ? barSales * share(inputs.barSplitPartnerRate) : 0;
+  const bottleCost = includeSuggestedFixedCosts ? barSales * share(inputs.bottleCostRate) : 0;
+  const onlineTicketOa = onlineTicketSales * splitShare(inputs.ticketOaShare);
+  const doorOa = doorSales * splitShare(inputs.doorOaShare);
+  const sponsorshipOa = sponsorship * splitShare(inputs.sponsorshipOaShare);
+  const artistOa = artistCost * splitShare(inputs.artistOaShare);
 
   const incomeRows = [
-    ["Bar Sales", inputs.barSales, inputs.barSales, 0],
-    [`Service Charge (${inputs.serviceRate}%)`, serviceCharge, serviceCharge, 0],
-    [`SST (${inputs.sstRate}%)`, sst, 0, 0],
-    ["Online Ticket & Door Sales", inputs.onlineTicketSales, onlineTicketOa, inputs.onlineTicketSales - onlineTicketOa],
-    ["Door Sales", inputs.doorSales, doorOa, inputs.doorSales - doorOa],
-    ["Sponsorship", inputs.sponsorship, sponsorshipOa, inputs.sponsorship - sponsorshipOa],
+    ["Bar Sales", barSales, barSales, 0],
+    ...(includeSuggestedFixedCosts
+      ? [
+          [`Service Charge (${inputs.serviceRate}%)`, serviceCharge, serviceCharge, 0],
+          [`SST (${inputs.sstRate}%)`, sst, 0, 0],
+        ]
+      : []),
+    ["Online Ticket & Door Sales", onlineTicketSales, onlineTicketOa, onlineTicketSales - onlineTicketOa],
+    ["Door Sales", doorSales, doorOa, doorSales - doorOa],
+    ["Sponsorship", sponsorship, sponsorshipOa, sponsorship - sponsorshipOa],
     [`Bar Split (${inputs.barSplitPartnerRate}%)`, barSplitPartner, 0, barSplitPartner],
   ];
 
   const costRows = [
-    [`Bottle Cost (${inputs.bottleCostRate}% Bar Sales)`, bottleCost, bottleCost, 0],
-    ["Ambassador Commission", inputs.ambassadorCommission, inputs.ambassadorCommission, 0],
-    ["Utilities", inputs.utilities, inputs.utilities, 0],
-    ["Man Power", inputs.manpower, inputs.manpower, 0],
-    ["International Artist Cost", inputs.artistCost, artistOa, inputs.artistCost - artistOa],
-    ["Puspal", inputs.puspal, inputs.puspal, 0],
-    ["Hotel", inputs.hotel, inputs.hotel, 0],
-    ["Rider", inputs.rider, inputs.rider, 0],
-    ["Supporting DJ", inputs.supportingDj, inputs.supportingDj, 0],
-    ["MC", inputs.mc, inputs.mc, 0],
-    ["Marketing", inputs.marketing, inputs.marketing, 0],
-    ["Tshirt", inputs.tshirt, inputs.tshirt, 0],
-    ["Other Cost", inputs.otherCost, inputs.otherCost, 0],
+    ...(includeSuggestedFixedCosts ? [[`Bottle Cost (${inputs.bottleCostRate}% Bar Sales)`, bottleCost, bottleCost, 0]] : []),
+    ["Ambassador Commission", ambassadorCommission, ambassadorCommission, 0],
+    ...(includeSuggestedFixedCosts ? [["Utilities", utilities, utilities, 0]] : []),
+    ["Man Power", manpower, manpower, 0],
+    ["International Artist Cost", artistCost, artistOa, artistCost - artistOa],
+    ["Puspal", puspal, puspal, 0],
+    ["Hotel", hotel, hotel, 0],
+    ["Rider", rider, rider, 0],
+    ["Supporting DJ", supportingDj, supportingDj, 0],
+    ["MC", mc, mc, 0],
+    ["Marketing", marketing, marketing, 0],
+    ["Tshirt", tshirt, tshirt, 0],
+    ["Other Cost", otherCost, otherCost, 0],
     ["Bar Split Paid Out", barSplitPartner, barSplitPartner, 0],
   ];
 
@@ -1892,8 +1955,12 @@ function FinanceMathPage() {
 
   const numberFields = [
     ["barSales", "Bar Sales"],
-    ["serviceRate", "Service %"],
-    ["sstRate", "SST %"],
+    ...(includeSuggestedFixedCosts
+      ? [
+          ["serviceRate", "Service %"],
+          ["sstRate", "SST %"],
+        ]
+      : []),
     ["onlineTicketSales", "Online Ticket Sales"],
     ["doorSales", "Door Sales"],
     ["sponsorship", "Sponsorship"],
@@ -1905,9 +1972,9 @@ function FinanceMathPage() {
           ["barSplitPartnerRate", "Bar Split Partner %"],
         ]
       : []),
-    ["bottleCostRate", "Bottle Cost %"],
+    ...(includeSuggestedFixedCosts ? [["bottleCostRate", "Bottle Cost %"]] : []),
     ["ambassadorCommission", "Ambassador Commission"],
-    ["utilities", "Utilities"],
+    ...(includeSuggestedFixedCosts ? [["utilities", "Utilities"]] : []),
     ["manpower", "Man Power"],
     ["artistCost", "International Artist Cost"],
     ...(hasPartnerSplit ? [["artistOaShare", "Artist Cost O&A %"]] : []),
@@ -1931,10 +1998,33 @@ function FinanceMathPage() {
       </tr>
     ));
 
+  const renderMobileRows = (rows) =>
+    rows.map(([label, amount, oa, partner]) => (
+      <div key={label} className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="text-xs font-black text-white/80">{label}</div>
+        <div className={`mt-2 grid gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-white/30 ${hasPartnerSplit ? "grid-cols-3" : "grid-cols-2"}`}>
+          <div>
+            Amount
+            <div className="mt-0.5 text-sm tracking-normal text-white/55">{currency(amount)}</div>
+          </div>
+          <div>
+            O&A
+            <div className="mt-0.5 text-sm tracking-normal text-purple-100">{currency(oa)}</div>
+          </div>
+          {hasPartnerSplit ? (
+            <div>
+              {inputs.partnerName || "Partner"}
+              <div className="mt-0.5 text-sm tracking-normal text-cyan-100">{currency(partner)}</div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    ));
+
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
+        <div className="grid gap-3 md:flex md:flex-wrap md:items-start md:justify-between">
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/60">Financial Math</div>
             <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{inputs.eventName}</h1>
@@ -1942,24 +2032,24 @@ function FinanceMathPage() {
               {activeScenarioId ? "Saved finance event loaded. Edit inputs, then save to update it." : "Defaults based on the workbook MATH tab. Edit any input and totals update instantly."}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <Button
               onClick={saveScenario}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-400 px-2 text-[11px] font-black text-black hover:bg-purple-300 sm:gap-2 sm:px-4 sm:text-xs"
             >
               <Save className="h-4 w-4" />
               {activeScenarioId ? "Update" : "Save"}
             </Button>
             <Button
               onClick={saveAsNewScenario}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-xs font-black text-purple-100 hover:bg-purple-400/20"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-purple-300/40 bg-purple-400/10 px-2 text-[11px] font-black text-purple-100 hover:bg-purple-400/20 sm:gap-2 sm:px-4 sm:text-xs"
             >
               <Plus className="h-4 w-4" />
               Save New
             </Button>
             <Button
               onClick={startNewScenario}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/55 hover:bg-white/10 hover:text-white sm:gap-2 sm:px-4 sm:text-xs"
             >
               <RefreshCcw className="h-4 w-4" />
               New
@@ -1981,8 +2071,8 @@ function FinanceMathPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
-        <div className="rounded-2xl border border-white/10 bg-[#12111f] p-4">
+      <section className="grid gap-3 lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-white/10 bg-[#12111f] p-3 sm:p-4">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Saved Finance Events</div>
             <div className="mt-3 space-y-2">
@@ -2030,6 +2120,41 @@ function FinanceMathPage() {
                 className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
               />
             </label>
+            <div className="grid gap-2 sm:grid-cols-[1fr_1fr] lg:grid-cols-1">
+              <label>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Input Currency</span>
+                <select
+                  value={inputCurrency}
+                  onChange={(e) => {
+                    const nextCurrency = e.target.value;
+                    setInputs((prev) => ({
+                      ...prev,
+                      currencyCode: nextCurrency,
+                      exchangeRateToMyr: nextCurrency === "MYR" ? 1 : prev.exchangeRateToMyr || 1,
+                    }));
+                  }}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                >
+                  <option value="MYR">MYR / RM</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="SGD">SGD</option>
+                  <option value="GBP">GBP</option>
+                  <option value="AUD">AUD</option>
+                </select>
+              </label>
+              <label>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Rate to RM</span>
+                <DecimalInput
+                  value={inputs.exchangeRateToMyr}
+                  onChange={(value) => setInput("exchangeRateToMyr", value)}
+                  disabled={inputCurrency === "MYR"}
+                />
+              </label>
+            </div>
+            <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 px-3 py-2 text-xs font-bold text-purple-100/80">
+              Enter amounts in {inputCurrency}. Totals convert to RM at {currency(exchangeRateToMyr, "MYR")} per 1 {inputCurrency}.
+            </div>
             <label>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Partner</span>
               <input
@@ -2051,15 +2176,27 @@ function FinanceMathPage() {
                 className="h-5 w-5 accent-purple-400"
               />
             </label>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+              <span>
+                <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Suggested Fixed Costs</span>
+                <span className="mt-1 block text-xs font-bold text-white/45">
+                  {includeSuggestedFixedCosts ? "Includes service 10%, SST 8%, bottle 40%, utilities RM1,500" : "Skip service, SST, bottle cost, and utilities"}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={includeSuggestedFixedCosts}
+                onChange={(e) => setSuggestedFixedCosts(e.target.checked)}
+                className="h-5 w-5 accent-purple-400"
+              />
+            </label>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
               {numberFields.map(([key, label]) => (
                 <label key={key} className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">{label}</span>
-                  <input
-                    type="number"
+                  <DecimalInput
                     value={inputs[key]}
-                    onChange={(e) => setInput(key, e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                    onChange={(value) => setInput(key, value)}
                   />
                 </label>
               ))}
@@ -2067,7 +2204,28 @@ function FinanceMathPage() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="grid gap-3 md:hidden">
+            <FinanceMobileSection
+              title="Income"
+              rows={renderMobileRows(incomeRows)}
+              totalLabel="Total Income"
+              oaTotal={oaIncome}
+              partnerTotal={partnerIncome}
+              partnerName={inputs.partnerName}
+              hasPartnerSplit={hasPartnerSplit}
+            />
+            <FinanceMobileSection
+              title="Cost"
+              rows={renderMobileRows(costRows)}
+              totalLabel="Total Cost"
+              oaTotal={oaCost}
+              partnerTotal={partnerCost}
+              partnerName={inputs.partnerName}
+              hasPartnerSplit={hasPartnerSplit}
+            />
+          </div>
+          <div className="hidden md:block">
           <FinanceTable
             title="Income"
             rows={renderRows(incomeRows)}
@@ -2077,6 +2235,8 @@ function FinanceMathPage() {
             partnerName={inputs.partnerName}
             hasPartnerSplit={hasPartnerSplit}
           />
+          </div>
+          <div className="hidden md:block">
           <FinanceTable
             title="Cost"
             rows={renderRows(costRows)}
@@ -2086,6 +2246,7 @@ function FinanceMathPage() {
             partnerName={inputs.partnerName}
             hasPartnerSplit={hasPartnerSplit}
           />
+          </div>
           <div className={`grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 ${hasPartnerSplit ? "sm:grid-cols-2" : ""}`}>
             <SummaryTile label="O&A Nett / ROI" value={`${currency(oaNett)} · ${percent(oaRoi)}`} tone={oaNett >= 0 ? "text-emerald-200" : "text-rose-200"} />
             {hasPartnerSplit ? (
@@ -2098,11 +2259,56 @@ function FinanceMathPage() {
   );
 }
 
+function DecimalInput({ value, onChange, disabled = false }) {
+  const [draft, setDraft] = useState(null);
+  const displayValue = draft ?? formatInputNumber(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={displayValue}
+      disabled={disabled}
+      onFocus={(event) => {
+        setDraft(formatInputNumber(value));
+        event.currentTarget.select();
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onChange(event.target.value);
+      }}
+      onBlur={() => setDraft(null)}
+      className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60 disabled:cursor-not-allowed disabled:opacity-35"
+    />
+  );
+}
+
 function SummaryTile({ label, value, tone = "text-white" }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3 sm:px-4">
       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{label}</div>
       <div className={`mt-1 text-lg font-black tracking-tight sm:text-xl ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function FinanceMobileSection({ title, rows, totalLabel, oaTotal, partnerTotal, partnerName, hasPartnerSplit }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#12111f] p-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">{title}</div>
+      <div className="mt-3 grid gap-2">{rows}</div>
+      <div className={`mt-3 grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 ${hasPartnerSplit ? "grid-cols-2" : ""}`}>
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{totalLabel} O&A</div>
+          <div className="mt-1 text-base font-black text-purple-100">{currency(oaTotal)}</div>
+        </div>
+        {hasPartnerSplit ? (
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{partnerName || "Partner"}</div>
+            <div className="mt-1 text-base font-black text-cyan-100">{currency(partnerTotal)}</div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -2784,65 +2990,67 @@ function DashboardApp({ onLogout }) {
     <div className="min-h-screen bg-[#080711] text-white sm:p-4 lg:p-6 xl:p-8">
       <div className="mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50 sm:min-h-0 sm:rounded-3xl sm:border">
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
-          <div className="grid w-full grid-cols-[auto_1fr_1fr_1fr] items-center gap-2 md:w-auto md:flex md:max-w-full md:flex-wrap">
-            <div className="mr-1 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
+          <div className="flex items-center gap-2">
+            <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
+            <div className="grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none">
             <Button
               onClick={() => setView("List")}
-              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <List className="h-4 w-4" />
+              <List className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>List</span>
             </Button>
             <Button
               onClick={() => setView("Calendar")}
-              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <CalendarDays className="h-4 w-4" />
+              <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Calendar</span>
             </Button>
             <Button
               onClick={() => setView("Finance")}
-              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                 view === "Finance"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <Calculator className="h-4 w-4" />
+              <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Finance</span>
             </Button>
+            </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:flex md:flex-wrap md:items-center">
+          <div className="grid w-full grid-cols-4 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-11 sm:text-sm md:px-5"
+              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
             >
-              <CalendarDays className="h-4 w-4" />
+              <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
             </Button>
             <Button
               onClick={() => openAddDayModal()}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-3 text-xs font-black text-purple-100 hover:bg-purple-400/20 sm:h-11 sm:text-sm md:px-5"
+              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 shrink-0" />
               <span>Add Day</span>
             </Button>
             <Button
               onClick={() => openAddModal()}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-11 sm:text-sm md:px-6"
+              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 shrink-0" />
               <span>Add Week</span>
             </Button>
             <Button
               onClick={onLogout}
-              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-11 sm:text-sm"
+              className="h-11 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:px-3 sm:text-xs"
             >
               Logout
             </Button>
@@ -2870,8 +3078,8 @@ function DashboardApp({ onLogout }) {
         ) : null}
 
         {view !== "Finance" ? (
-        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-3 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
-          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-white/[0.03] p-1">
+        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
+          <div className="grid grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 md:flex md:max-w-full md:overflow-x-auto">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
               { key: "Past", label: "Past Events", count: pastCount },
@@ -2881,7 +3089,7 @@ function DashboardApp({ onLogout }) {
                 <button
                   key={item.key}
                   onClick={() => setDateScope(item.key)}
-                  className={`shrink-0 rounded-full px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
+                  className={`shrink-0 rounded-xl px-3 py-2 text-[11px] font-black transition md:rounded-full md:px-4 md:text-sm ${
                     active ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
                   }`}
                 >
@@ -2891,7 +3099,7 @@ function DashboardApp({ onLogout }) {
             })}
           </div>
 
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
             {filterItems.map((item) => {
               const Icon = item.icon;
               const active = activeFilter === item.key;
@@ -2899,7 +3107,7 @@ function DashboardApp({ onLogout }) {
                 <button
                   key={item.key}
                   onClick={() => setActiveFilter(item.key)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
+                  className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-black transition md:rounded-full md:px-4 md:text-sm ${
                     active ? "border-purple-300 bg-purple-400 text-black" : "border-white/10 bg-white/5 text-white/45 hover:text-white"
                   }`}
                 >
@@ -2909,17 +3117,17 @@ function DashboardApp({ onLogout }) {
             })}
           </div>
 
-          <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 md:contents">
+          <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
             <select
               value={dateSort}
               onChange={(e) => setDateSort(e.target.value)}
-              className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:text-sm lg:ml-auto"
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:px-3 sm:text-sm lg:ml-auto"
             >
               <option value="asc">Date ↑</option>
               <option value="desc">Date ↓</option>
             </select>
 
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 value={search}
