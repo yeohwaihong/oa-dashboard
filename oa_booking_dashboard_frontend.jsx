@@ -801,8 +801,8 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
         </div>
       </div>
 
-      <div className="overflow-hidden">
-        <div className="grid grid-cols-7 gap-1 sm:gap-2">
+      <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:px-0">
+        <div className="grid min-w-[720px] grid-cols-7 gap-1 sm:min-w-0 sm:gap-2">
           {weekdayLabels.map((label) => (
             <div key={label} className="px-0.5 text-center text-[9px] font-black uppercase text-white/30 sm:px-2 sm:text-left sm:text-[10px] sm:tracking-[0.25em] md:text-xs">
               {label}
@@ -831,7 +831,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                     }
                   }
                 }}
-                className={`group min-h-[74px] rounded-xl border p-1 text-left transition sm:min-h-[108px] sm:rounded-2xl sm:p-2 md:min-h-[126px] md:p-3 ${
+                className={`group min-h-[96px] rounded-xl border p-1.5 text-left transition sm:min-h-[108px] sm:rounded-2xl sm:p-2 md:min-h-[126px] md:p-3 ${
                   isToday
                     ? "border-purple-200/70 bg-purple-400/10 shadow-[0_0_0_1px_rgba(216,180,254,0.25)]"
                     : isCurrentMonth
@@ -862,14 +862,14 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                       className="truncate rounded-md border border-cyan-300/30 bg-cyan-400/10 px-1 py-0.5 text-[9px] font-black text-cyan-100 sm:rounded-lg sm:px-2 sm:py-1 sm:text-[10px]"
                       title={holidayLabel(holiday)}
                     >
-                      🎉 <span className="hidden sm:inline">{holiday.localName || holiday.name}</span>
+                      🎉 {holiday.localName || holiday.name}
                     </div>
                   ))}
                   {dayEvents.slice(0, 3).map((event) => (
                     <button
                       key={event.id}
                       type="button"
-                      className={`block w-full truncate rounded-md border px-1 py-1 text-left text-[9px] font-black sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-[10px] md:text-xs ${getStatusCalendarClass(event.status)}`}
+                      className={`oa-clamp-2 block w-full rounded-md border px-1 py-1 text-left text-[10px] font-black leading-tight sm:oa-clamp-1 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-[10px] md:text-xs ${getStatusCalendarClass(event.status)}`}
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -4081,6 +4081,8 @@ function DashboardApp({ onLogout, userRole }) {
         .oa-theme-light input,
         .oa-theme-light select,
         .oa-theme-light textarea { color: #171321 !important; background-color: rgba(23, 19, 33, 0.045) !important; }
+        .oa-clamp-1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .oa-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       `}</style>
       <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
