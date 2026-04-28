@@ -570,6 +570,27 @@ function splitGenreTags(value) {
     .filter(Boolean);
 }
 
+function hashString(value) {
+  const text = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function genreTagClass(tag) {
+  const palette = [
+    "border-cyan-300/25 bg-cyan-400/10 text-cyan-100",
+    "border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-100",
+    "border-emerald-300/25 bg-emerald-400/10 text-emerald-100",
+    "border-amber-300/25 bg-amber-400/10 text-amber-100",
+    "border-sky-300/25 bg-sky-400/10 text-sky-100",
+    "border-purple-300/25 bg-purple-400/10 text-purple-100",
+  ];
+  return palette[hashString(tag) % palette.length];
+}
+
 function joinGenreTags(tags) {
   return Array.from(new Set(tags.map((tag) => String(tag || "").trim()).filter(Boolean))).join(" / ");
 }
@@ -1582,16 +1603,10 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, canEdit, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
-  const warnings = [];
-  if (!event.slots.length) warnings.push("No lineup assigned");
-  if (event.slots.some((x) => x.warning || x.dj.includes("TBD"))) warnings.push("Opening slot TBD");
-  if (event.slots.length && !event.slots.some((x) => ["Main", "Closer"].includes(x.role))) warnings.push("Missing main DJ");
-  if (event.slots.length && confirmationBlockers.length) warnings.push(...confirmationBlockers);
-  if (scheduleValidation.errorsByDate[event.date]) warnings.push(...scheduleValidation.errorsByDate[event.date]);
 
   return (
     <motion.div
@@ -1624,7 +1639,7 @@ function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onC
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {splitGenreTags(event.genre).map((genre) => (
-                  <span key={genre} className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
+                  <span key={genre} className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${genreTagClass(genre)}`}>
                     {genre}
                   </span>
                 ))}
@@ -1675,14 +1690,7 @@ function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onC
               ) : null}
             </div>
 
-            <div className="col-span-2 grid grid-cols-[40px_minmax(0,1fr)_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
-              <button
-                onClick={onToggle}
-                className="flex h-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white sm:h-auto sm:p-1.5 md:p-2"
-                title="Show set details"
-              >
-                <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
-              </button>
+            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
               {canEdit ? (
                 <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
@@ -1719,70 +1727,6 @@ function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onC
               ) : null}
             </div>
           </div>
-
-          {expanded && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="border-t border-white/10 px-4 pb-5 pt-4 md:px-7"
-            >
-              {event.slots.length ? (
-                <>
-                  <div className="relative mt-2 h-4 rounded-full bg-white/5">
-                    {event.slots.map((slot, index) => {
-                      const left = timeToPercent(slot.start);
-                      const right = timeToPercent(slot.end);
-                      const width = Math.max(5, right - left);
-                      const bg = slot.energy >= 5 ? "bg-rose-400" : slot.energy >= 4 ? "bg-yellow-300" : slot.energy >= 3 ? "bg-emerald-400" : "bg-purple-300";
-                      return (
-                        <div
-                          key={index}
-                          className={`absolute top-0 h-4 rounded-sm ${bg}`}
-                          style={{ left: `${left}%`, width: `${width}%` }}
-                          title={`${slot.dj} — ${slot.role} (${slot.start}-${slot.end})`}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="mt-2 flex justify-between text-[10px] font-bold text-white/25">
-                    <span>10PM</span><span>12AM</span><span>2AM</span><span>4AM</span>
-                  </div>
-
-                  <div className="mt-4 grid gap-2 md:grid-cols-2">
-                    {event.slots.map((slot, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
-                          conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/10" : "border-white/10 bg-black/20"
-                        }`}
-                      >
-                        <div>
-                          <div className="mb-1 w-fit rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/45">
-                            {slot.role}
-                          </div>
-                          <div className="text-sm font-black text-white">{slot.dj}</div>
-                          <div className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-white/35">
-                            <Clock className="h-3 w-3" /> {slot.start}–{slot.end} · Energy {slot.energy}/5
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : null}
-
-              {warnings.length > 0 && (
-                <div className="mt-4 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3">
-                  {warnings.map((warning, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs font-bold text-yellow-200">
-                      <AlertTriangle className="h-3.5 w-3.5" /> {warning}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
         </CardContent>
       </Card>
     </motion.div>
@@ -2545,7 +2489,7 @@ function PublicEventCard({ event }) {
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {splitGenreTags(event.genre).slice(0, 4).map((genre) => (
-          <span key={genre} className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/45">
+          <span key={genre} className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${genreTagClass(genre)}`}>
             {genre}
           </span>
         ))}
@@ -3214,7 +3158,6 @@ function DashboardApp({ onLogout, userRole }) {
   const [dateScope, setDateScope] = useState("Upcoming");
   const [dateSort, setDateSort] = useState("asc");
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState("5");
   const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
   const [view, setView] = useState("List");
   const [listGrouping, setListGrouping] = useState("month");
@@ -4318,9 +4261,7 @@ function DashboardApp({ onLogout, userRole }) {
                     <EventCard
                       key={event.id}
                       event={event}
-                      expanded={expandedId === event.id}
                       canEdit={canEdit}
-                      onToggle={() => setExpandedId(expandedId === event.id ? null : event.id)}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
                       onConfirm={() => updateEventStatus(event, "Confirmed")}
