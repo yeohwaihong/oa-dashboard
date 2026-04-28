@@ -209,6 +209,7 @@ function validateScheduleDays(days) {
       .map((slot, index) => ({
         index,
         dj: String(slot.dj || "").trim() || `Slot ${index + 1}`,
+        role: slot.role,
         start: slot.start,
         end: slot.end,
         startM: minutesFromTime(slot.start),
@@ -226,7 +227,9 @@ function validateScheduleDays(days) {
       }
     }
 
-    const validSlots = slots.filter((slot) => slot.endM > slot.startM).sort((a, b) => a.startM - b.startM);
+    const validSlots = slots
+      .filter((slot) => slot.role !== "MC" && slot.endM > slot.startM)
+      .sort((a, b) => a.startM - b.startM);
     for (let i = 0; i < validSlots.length; i += 1) {
       for (let j = i + 1; j < validSlots.length; j += 1) {
         const a = validSlots[i];
@@ -259,7 +262,7 @@ function buildTimeOptions() {
 }
 
 const timeOptions = buildTimeOptions();
-const roleOptions = ["Warm-up", "Driver", "Peak", "Closer"];
+const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
 const supabaseEventSelect = `
@@ -296,6 +299,11 @@ function timeForInput(time) {
   return String(time || "00:00").slice(0, 5);
 }
 
+function normalizeSlotRole(role) {
+  if (role === "Driver" || role === "Peak") return "Main";
+  return role || "Warm-up";
+}
+
 function parseIc(notes) {
   return String(notes || "").match(icNotePattern)?.[1] || "";
 }
@@ -329,7 +337,7 @@ function mapSupabaseEvent(row) {
             id: String(slot.id),
             assignmentId: assignment?.id ? String(assignment.id) : null,
             dj,
-            role: slot.role || "Warm-up",
+            role: normalizeSlotRole(slot.role),
             start: timeForInput(slot.start_time),
             end: timeForInput(slot.end_time),
             energy: slot.expected_energy ?? 3,
@@ -699,7 +707,7 @@ function AddEventDayModal({
           ...d,
           slots: [
             { dj: "", role: "Warm-up", start: "22:30", end: "00:00", energy: 2 },
-            { dj: "", role: "Peak", start: "00:00", end: "01:30", energy: 4 },
+            { dj: "", role: "Main", start: "00:00", end: "01:30", energy: 4 },
             { dj: "", role: "Closer", start: "01:30", end: "03:00", energy: 4 },
           ],
         };
@@ -1112,7 +1120,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
   const warnings = [];
   if (!event.slots.length) warnings.push("No lineup assigned");
   if (event.slots.some((x) => x.warning || x.dj.includes("TBD"))) warnings.push("Opening slot TBD");
-  if (event.slots.length && !event.slots.some((x) => ["Peak", "Closer"].includes(x.role))) warnings.push("Missing peak DJ");
+  if (event.slots.length && !event.slots.some((x) => ["Main", "Closer"].includes(x.role))) warnings.push("Missing main DJ");
   if (scheduleValidation.errorsByDate[event.date]) warnings.push(...scheduleValidation.errorsByDate[event.date]);
 
   return (
@@ -1151,11 +1159,22 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                   event.slots.map((slot, idx) => (
                     <span
                       key={idx}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs font-black md:px-3 md:py-2 md:text-sm ${
+                      className={`inline-flex flex-col gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-black md:px-3 md:py-2 md:text-sm ${
                         conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
                       }`}
                     >
-                      {slot.dj} <span className={conflictSlots.has(idx) ? "text-rose-100/70" : "text-white/40"}>{slot.start}-{slot.end}</span>
+                      <span
+                        className={`w-fit rounded-md border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] ${
+                          slot.role === "MC"
+                            ? "border-purple-300/30 bg-purple-400/15 text-purple-100"
+                            : "border-white/10 bg-black/20 text-white/45"
+                        }`}
+                      >
+                        {slot.role}
+                      </span>
+                      <span>
+                        {slot.dj} <span className={conflictSlots.has(idx) ? "text-rose-100/70" : "text-white/40"}>{slot.start}-{slot.end}</span>
+                      </span>
                     </span>
                   ))
                 ) : (
@@ -1231,7 +1250,10 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                         }`}
                       >
                         <div>
-                          <div className="text-sm font-black text-white">{slot.role} · {slot.dj}</div>
+                          <div className="mb-1 w-fit rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-white/45">
+                            {slot.role}
+                          </div>
+                          <div className="text-sm font-black text-white">{slot.dj}</div>
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-white/35">
                             <Clock className="h-3 w-3" /> {slot.start}–{slot.end} · Energy {slot.energy}/5
                           </div>
@@ -1307,8 +1329,16 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
                 {event.slots.map((slot, idx) => (
                   <div key={`${event.id}-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
                     <div>
+                      <div
+                        className={`mb-1 w-fit rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] ${
+                          slot.role === "MC"
+                            ? "border-purple-300/30 bg-purple-400/15 text-purple-100"
+                            : "border-white/10 bg-white/5 text-white/45"
+                        }`}
+                      >
+                        {slot.role}
+                      </div>
                       <div className="text-sm font-black text-white">{slot.dj}</div>
-                      <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{slot.role}</div>
                     </div>
                     <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
                       <Clock className="h-3.5 w-3.5" />
@@ -1454,13 +1484,19 @@ export default function OABookingDashboard() {
             slot_order: slotIndex + 1,
             start_time: slot.start,
             end_time: slot.end,
-            role: slot.role,
+            role: normalizeSlotRole(slot.role),
             expected_energy: slot.energy ?? 3,
           })
           .select("id")
           .single();
 
-        if (savedSlot.error) throw savedSlot.error;
+        if (savedSlot.error) {
+          const message = savedSlot.error.message || "";
+          if ((slot.role === "MC" || normalizeSlotRole(slot.role) === "Main") && message.toLowerCase().includes("check")) {
+            throw new Error("Supabase needs the role SQL update before Main/MC slots can save.");
+          }
+          throw savedSlot.error;
+        }
 
         const djId = await findOrCreateDj(slot.dj);
         const savedAssignment = await supabase.from("event_assignments").insert({
@@ -1509,7 +1545,7 @@ export default function OABookingDashboard() {
     const set = new Set(["(OPENING TBD)"]);
     for (const e of events) {
       for (const s of e.slots) {
-        if (s.dj) set.add(s.dj);
+        if (s.dj && s.role !== "MC") set.add(s.dj);
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
@@ -1657,7 +1693,7 @@ export default function OABookingDashboard() {
         const message = error.message || "Could not save to Supabase";
         setSyncError(message);
         setSyncStatus("");
-        showToast("Save failed", "error");
+        showToast(message.includes("role SQL") ? "Run the role SQL in Supabase first" : "Save failed", "error");
         throw new Error(message);
       }
     }
@@ -1753,7 +1789,7 @@ export default function OABookingDashboard() {
         stage: event.stage,
         slots: (event.slots ?? []).map((s) => ({
           dj: s.dj ?? "",
-          role: s.role ?? "Warm-up",
+          role: normalizeSlotRole(s.role),
           start: s.start ?? "22:30",
           end: s.end ?? "00:00",
           energy: s.energy ?? 3,
