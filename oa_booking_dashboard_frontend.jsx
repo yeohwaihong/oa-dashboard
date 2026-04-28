@@ -41,7 +41,7 @@ const eventsSeed = [
     month: "MAY",
     name: "AFRO / AMAPIANO",
     genre: "AFRO / AMAPIANO",
-    status: "No Lineup",
+    status: "Need Attention",
     stage: "Centre Stage",
     slots: [],
   },
@@ -53,7 +53,7 @@ const eventsSeed = [
     month: "MAY",
     name: "OVERDRIVE",
     genre: "TECH HOUSE / MELODIC TECHNO",
-    status: "No Lineup",
+    status: "Need Attention",
     stage: "Centre Stage",
     slots: [],
   },
@@ -81,7 +81,7 @@ const eventsSeed = [
     month: "MAY",
     name: "NO SLEEP CLUB",
     genre: "TECHNO / HARD TECHNO",
-    status: "No Lineup",
+    status: "Need Attention",
     stage: "Main Stage",
     slots: [],
   },
@@ -109,7 +109,7 @@ const eventsSeed = [
     month: "MAY",
     name: "EDM HUB NIGHT",
     genre: "AFRO / AMAPIANO / HIP-HOP",
-    status: "No Lineup",
+    status: "Need Attention",
     stage: "Centre Stage",
     slots: [],
   },
@@ -136,7 +136,7 @@ const eventsSeed = [
     month: "MAY",
     name: "FACE 2 FACE",
     genre: "TECHNO / HARD TECHNO",
-    status: "No Lineup",
+    status: "Need Attention",
     stage: "Main Stage",
     slots: [],
   },
@@ -146,7 +146,7 @@ const statusConfig = {
   Confirmed: "border-emerald-400/70 bg-emerald-400/10 text-emerald-300",
   Unconfirmed: "border-yellow-400/70 bg-yellow-400/10 text-yellow-300",
   "Need Attention": "border-purple-400/70 bg-purple-400/10 text-purple-300",
-  "No Lineup": "border-rose-400/70 bg-rose-400/10 text-rose-300",
+  "No Lineup": "border-purple-400/70 bg-purple-400/10 text-purple-300",
   Urgent: "border-purple-400/70 bg-purple-400/10 text-purple-300",
 };
 
@@ -155,6 +155,7 @@ function statusClass(status) {
 }
 
 function statusLabel(status) {
+  if (status === "No Lineup") return "Need Attention";
   return status === "Unconfirmed" ? "Pending" : status;
 }
 
@@ -163,10 +164,9 @@ const filterItems = [
   { key: "Need Attention", label: "Need Attention", icon: AlertTriangle },
   { key: "Unconfirmed", label: "Pending", icon: Clock },
   { key: "Confirmed", label: "Confirmed", icon: CheckCircle2 },
-  { key: "No Lineup", label: "No Lineup", icon: XCircle },
 ];
 
-const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention", "No Lineup"];
+const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention"];
 
 function eventNeedsAttention(event) {
   return event.status === "Need Attention" || event.status === "No Lineup" || !event.slots.length || event.slots.some((slot) => slot.dj.includes("TBD"));
@@ -175,7 +175,6 @@ function eventNeedsAttention(event) {
 function eventMatchesStatusFilter(event, activeFilter) {
   if (activeFilter === "All") return true;
   if (activeFilter === "Need Attention") return eventNeedsAttention(event);
-  if (activeFilter === "No Lineup") return event.status === "No Lineup" || !event.slots.length;
   return event.status === activeFilter;
 }
 
@@ -271,18 +270,16 @@ function formatInputNumber(value) {
 }
 
 function getStatusColor(status) {
-  if (status === "No Lineup") return "bg-rose-400";
   if (status === "Unconfirmed") return "bg-yellow-300";
   if (status === "Confirmed") return "bg-emerald-400";
-  if (status === "Need Attention") return "bg-purple-400";
+  if (status === "Need Attention" || status === "No Lineup") return "bg-purple-400";
   return "bg-purple-400";
 }
 
 function getStatusCalendarClass(status) {
-  if (status === "No Lineup") return "border-rose-300/40 bg-rose-500/15 text-rose-100";
   if (status === "Unconfirmed") return "border-yellow-300/40 bg-yellow-400/15 text-yellow-100";
   if (status === "Confirmed") return "border-emerald-300/40 bg-emerald-400/15 text-emerald-100";
-  if (status === "Need Attention") return "border-purple-300/40 bg-purple-400/15 text-purple-100";
+  if (status === "Need Attention" || status === "No Lineup") return "border-purple-300/40 bg-purple-400/15 text-purple-100";
   return "border-purple-300/40 bg-purple-400/15 text-purple-100";
 }
 
@@ -661,6 +658,14 @@ function mapSupabaseEvent(row) {
         })
     : [];
 
+  const statusRaw = row.status || "";
+  const normalizedStatus =
+    statusRaw === "No Lineup"
+      ? slots.length
+        ? "Unconfirmed"
+        : "Need Attention"
+      : statusRaw || (slots.length ? "Unconfirmed" : "Need Attention");
+
   return {
     id: String(row.id),
     date,
@@ -669,7 +674,7 @@ function mapSupabaseEvent(row) {
     month,
     name: row.event_name || "Untitled",
     genre: row.genre_profile || "—",
-    status: row.status || "No Lineup",
+    status: normalizedStatus,
     stage: row.stage || stageOptions[0],
     slots,
     ic: parseIc(row.notes),
@@ -913,7 +918,7 @@ function AddEventDayModal({
         isoDate: iso,
         name: "",
         genre: "",
-        status: "No Lineup",
+        status: "Need Attention",
         remarks: "",
         stage: stageOptions[0],
         slots: [],
@@ -953,7 +958,7 @@ function AddEventDayModal({
             isoDate: iso,
             name: "",
             genre: "",
-            status: "No Lineup",
+            status: "Need Attention",
             remarks: "",
             stage: stageOptions[0],
             slots: [],
@@ -979,7 +984,7 @@ function AddEventDayModal({
           isoDate: iso,
           name: "",
           genre: "",
-          status: "No Lineup",
+          status: "Need Attention",
           remarks: "",
           stage: stageOptions[0],
           slots: [],
@@ -997,7 +1002,7 @@ function AddEventDayModal({
         isoDate: iso,
         name: "",
         genre: "",
-        status: "No Lineup",
+        status: "Need Attention",
         remarks: "",
         stage: stageOptions[0],
         slots: [],
@@ -1122,7 +1127,7 @@ function AddEventDayModal({
           isoDate: iso,
           name: "",
           genre: "",
-          status: "No Lineup",
+          status: "Need Attention",
           remarks: "",
           stage: stageOptions[0],
           slots: [],
@@ -1281,7 +1286,6 @@ function AddEventDayModal({
               <span className={`rounded-full border px-2 py-1 ${statusClass("Confirmed")}`}>Confirmed</span>
               <span className={`rounded-full border px-2 py-1 ${statusClass("Unconfirmed")}`}>Pending</span>
               <span className={`rounded-full border px-2 py-1 ${statusClass("Need Attention")}`}>Need Attention</span>
-              <span className={`rounded-full border px-2 py-1 ${statusClass("No Lineup")}`}>No Lineup</span>
               <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-cyan-100/75">🎉 Holiday</span>
               {dateMode === "week" ? (
                 <span className="rounded-full border border-yellow-300/25 bg-yellow-400/10 px-2 py-1 text-yellow-100/75">Week has filled day</span>
@@ -1551,7 +1555,8 @@ function AddEventDayModal({
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Status</div>
                       <div className="mt-1 grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
                         {statusOptions.map((status) => {
-                          const active = (day.status || "No Lineup") === status;
+                          const effectiveStatus = day.status || (day.slots.length ? "Unconfirmed" : "Need Attention");
+                          const active = effectiveStatus === status;
                           const confirmBlocked = status === "Confirmed" && dayConfirmationBlockers.length > 0;
                           return (
                             <button
@@ -3545,9 +3550,8 @@ function DashboardApp({ onLogout, userRole }) {
     const total = statEvents.length;
     const confirmed = statEvents.filter((x) => x.status === "Confirmed").length;
     const unconfirmed = statEvents.filter((x) => x.status === "Unconfirmed").length;
-    const noLineup = statEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
     const needAttention = statEvents.filter(eventNeedsAttention).length;
-    return { total, confirmed, unconfirmed, noLineup, needAttention };
+    return { total, confirmed, unconfirmed, needAttention };
   }, [statEvents]);
 
   const filteredEvents = useMemo(() => {
@@ -3739,8 +3743,9 @@ function DashboardApp({ onLogout, userRole }) {
           warning: s.dj.toUpperCase().includes("TBD"),
         }));
 
-      const requestedStatus = d.status || "No Lineup";
-      const status = requestedStatus === "No Lineup" && slots.length ? "Unconfirmed" : requestedStatus;
+      let requestedStatus = d.status || (slots.length ? "Unconfirmed" : "Need Attention");
+      if (requestedStatus === "No Lineup") requestedStatus = slots.length ? "Unconfirmed" : "Need Attention";
+      const status = requestedStatus;
       const name = String(d.name || "").trim() || "Untitled";
       const genre = String(d.genre || "").trim() || "—";
       const stage = d.stage || stageOptions[0];
@@ -3966,7 +3971,10 @@ function DashboardApp({ onLogout, userRole }) {
         isoDate: event.date,
         name: event.name,
         genre: event.genre,
-        status: event.status || "No Lineup",
+        status:
+          event.status === "No Lineup"
+            ? (event.slots?.length ? "Unconfirmed" : "Need Attention")
+            : event.status || (event.slots?.length ? "Unconfirmed" : "Need Attention"),
         remarks: stripIcNote(event.notes),
         stage: event.stage,
         slots: (event.slots ?? []).map((s) => ({
@@ -4280,11 +4288,10 @@ function DashboardApp({ onLogout, userRole }) {
         ) : null}
 
         {view !== "Finance" ? (
-        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-5 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
+        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-4 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
           <Stat number={stats.unconfirmed} label="Pending" tone="text-yellow-300" />
-          <Stat number={stats.noLineup} label="No Lineup" tone="text-rose-300" />
           <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
         </section>
         ) : null}
