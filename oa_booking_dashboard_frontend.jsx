@@ -23,6 +23,8 @@ import {
   Trash2,
   Pencil,
   Sun,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -2599,10 +2601,13 @@ function PublicEventCard({ event }) {
 function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [registerName, setRegisterName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authBusy, setAuthBusy] = useState(false);
   const [error, setError] = useState("");
@@ -2765,9 +2770,6 @@ function LoginScreen() {
             <h1 className="mt-4 max-w-2xl text-4xl font-black tracking-tight text-white sm:text-6xl">
               What’s happening this week
             </h1>
-            <p className="mt-4 max-w-xl text-base font-bold leading-7 text-white/55">
-              Browse the current lineup, set times, genres, and stages before heading into the admin dashboard.
-            </p>
             <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white/65">
               <CalendarDays className="mr-2 h-5 w-5 text-purple-200" />
               {weekLabel}
@@ -2775,10 +2777,7 @@ function LoginScreen() {
           </section>
 
           <section className="rounded-3xl border border-white/10 bg-[#0d0c17] p-3 shadow-2xl shadow-black/40 sm:p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-300/15 bg-emerald-400/10 px-4 py-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100">
-                {isSupabaseConfigured ? "Live from Supabase" : "Demo data"}
-              </div>
+            <div className="mb-3 flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-emerald-300/15 bg-emerald-400/10 px-4 py-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/45">
                 {publicLoading ? "Syncing..." : `${displayEvents.length} events${publicLastSync ? ` • Updated ${publicLastSync}` : ""}`}
               </div>
@@ -2873,15 +2872,25 @@ function LoginScreen() {
 
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-                    placeholder="Password"
-                    autoComplete="current-password"
-                    required
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-11 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                      placeholder="Password"
+                      autoComplete="current-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </label>
               </div>
             ) : (
@@ -2912,28 +2921,48 @@ function LoginScreen() {
 
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
-                  <input
-                    type="password"
-                    value={registerPassword}
-                    onChange={(e) => setRegisterPassword(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-                    placeholder="Password"
-                    autoComplete="new-password"
-                    required
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type={showRegisterPassword ? "text" : "password"}
+                      value={registerPassword}
+                      onChange={(e) => setRegisterPassword(e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-11 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                      placeholder="Password"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                      title={showRegisterPassword ? "Hide password" : "Show password"}
+                    >
+                      {showRegisterPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </label>
 
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Confirm Password</span>
-                  <input
-                    type="password"
-                    value={registerConfirmPassword}
-                    onChange={(e) => setRegisterConfirmPassword(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-                    placeholder="Confirm Password"
-                    autoComplete="new-password"
-                    required
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      type={showRegisterConfirmPassword ? "text" : "password"}
+                      value={registerConfirmPassword}
+                      onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 pr-11 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                      placeholder="Confirm Password"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterConfirmPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                      title={showRegisterConfirmPassword ? "Hide password" : "Show password"}
+                    >
+                      {showRegisterConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </label>
               </div>
             )}
@@ -2962,6 +2991,7 @@ function UserManagementPage({ onToast }) {
   const [search, setSearch] = useState("");
   const [savingUserId, setSavingUserId] = useState(null);
   const [passwordByUserId, setPasswordByUserId] = useState({});
+  const [showPasswordByUserId, setShowPasswordByUserId] = useState({});
   const [roleByUserId, setRoleByUserId] = useState({});
 
   const adminApiRequest = useCallback(async (path, { method = "GET", body } = {}) => {
@@ -3157,13 +3187,23 @@ function UserManagementPage({ onToast }) {
                       </div>
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_132px]">
-                        <input
-                          type="password"
-                          value={passwordByUserId[u.id] || ""}
-                          onChange={(e) => setPasswordByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                          placeholder="New password (min 8)"
-                          className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showPasswordByUserId[u.id] ? "text" : "password"}
+                            value={passwordByUserId[u.id] || ""}
+                            onChange={(e) => setPasswordByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                            placeholder="New password (min 8)"
+                            className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 pr-10 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPasswordByUserId((prev) => ({ ...prev, [u.id]: !prev[u.id] }))}
+                            className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                            title={showPasswordByUserId[u.id] ? "Hide password" : "Show password"}
+                          >
+                            {showPasswordByUserId[u.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
                         <Button
                           onClick={() => setUserPassword(u.id)}
                           disabled={busy}
@@ -3272,7 +3312,7 @@ function DashboardApp({ onLogout, userRole }) {
     if (!Array.isArray(data)) return;
 
     setSyncError("");
-    setSyncStatus("Live from Supabase");
+    setSyncStatus("");
     setEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
   }, []);
 
