@@ -1590,7 +1590,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                   event.slots.map((slot, idx) => (
                     <span
                       key={idx}
-                      className={`inline-flex min-w-[46%] flex-1 flex-col gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-black sm:min-w-0 sm:flex-none sm:text-xs md:px-3 md:py-2 md:text-sm ${
+                      className={`inline-flex min-w-[46%] flex-1 flex-col gap-1.5 rounded-lg border px-2 py-2 text-[11px] font-black sm:min-w-[150px] sm:flex-none sm:text-xs md:px-3 md:py-2.5 ${
                         conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
                       }`}
                     >
@@ -1603,8 +1603,18 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                       >
                         {slot.role}
                       </span>
-                      <span className="min-w-0 truncate">
-                        {slot.dj} <span className={conflictSlots.has(idx) ? "text-rose-100/70" : "text-white/40"}>{slot.start}-{slot.end}</span>
+                      <span className="min-w-0 truncate text-sm leading-tight text-white sm:text-base">
+                        {slot.dj}
+                      </span>
+                      <span
+                        className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-black leading-none sm:text-xs ${
+                          conflictSlots.has(idx)
+                            ? "border-rose-200/50 bg-rose-400/15 text-rose-100"
+                            : "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
+                        }`}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        {slot.start}-{slot.end}
                       </span>
                     </span>
                   ))
@@ -2152,9 +2162,7 @@ function FinanceMathPage() {
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/60">Financial Math</div>
             <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{inputs.eventName}</h1>
-            <div className="mt-1 text-sm font-bold text-white/35">
-              {activeScenarioId ? "Saved finance event loaded. Edit inputs, then save to update it." : "Defaults based on the workbook MATH tab. Edit any input and totals update instantly."}
-            </div>
+            {activeScenarioId ? <div className="mt-1 text-sm font-bold text-white/35">Saved finance event loaded. Edit inputs, then save to update it.</div> : null}
           </div>
           <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <Button
@@ -2466,10 +2474,77 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
   );
 }
 
+function PublicEventCard({ event }) {
+  const headliners = event.slots.filter((slot) => slot.role !== "MC").slice(0, 3);
+  const mcSlots = event.slots.filter((slot) => slot.role === "MC");
+  const mcNames = mcSlots.map((slot) => String(slot.dj || "").replace(/^MC\s+/i, "").trim()).filter(Boolean);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-xl shadow-black/20 backdrop-blur">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-purple-200/70">{dayLabelFromISO(event.date)}</div>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-white">{event.name}</h3>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClass(event.status)}`}>
+          {event.status}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {splitGenreTags(event.genre).slice(0, 4).map((genre) => (
+          <span key={genre} className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/45">
+            {genre}
+          </span>
+        ))}
+      </div>
+
+      {headliners.length ? (
+        <div className="mt-4 grid gap-2">
+          {headliners.map((slot, index) => (
+            <div key={`${event.id}-${index}`} className="rounded-xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2">
+              <div className="text-[9px] font-black uppercase tracking-[0.16em] text-cyan-100/65">{slot.role}</div>
+              <div className="mt-1 text-sm font-black text-white">{slot.dj}</div>
+              <div className="mt-1 inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-black/20 px-2 py-1 text-xs font-black text-cyan-100">
+                <Clock className="h-3.5 w-3.5" />
+                {slot.start}-{slot.end}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm font-bold text-white/40">Lineup coming soon.</div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/35">
+        <span>{event.stage}</span>
+        {mcNames.length ? <span className="text-purple-100">MC {mcNames.join(", ")}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [publicEvents, setPublicEvents] = useState(() => eventsSeed.map((event) => ({ ...event, id: String(event.id) })));
+  const todayISO = useMemo(() => isoFromDate(new Date()), []);
+  const weekStartISO = useMemo(() => isoFromDate(startOfWeekMonday(new Date())), []);
+  const weekEndISO = useMemo(() => isoFromDate(endOfWeekMonday(new Date())), []);
+  const loadPublicEvents = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+
+    const { data, error: loadError } = await supabase
+      .from("events")
+      .select(supabaseEventSelect)
+      .order("event_date", { ascending: true })
+      .order("slot_order", { foreignTable: "event_slots", ascending: true });
+
+    if (loadError || !Array.isArray(data)) return;
+    setPublicEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
+  }, []);
 
   const submit = (event) => {
     event.preventDefault();
@@ -2481,48 +2556,154 @@ function LoginScreen({ onLogin }) {
     setError("Invalid username or password");
   };
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadPublicEvents, 250);
+    };
+
+    loadPublicEvents();
+    const channel = supabase
+      .channel("oa-public-events-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_slots" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_assignments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [loadPublicEvents]);
+
+  const weekEvents = useMemo(() => {
+    return publicEvents
+      .filter((event) => event.date >= weekStartISO && event.date <= weekEndISO)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.name || "").localeCompare(b.name || ""));
+  }, [publicEvents, weekEndISO, weekStartISO]);
+
+  const nextEvents = useMemo(() => {
+    return publicEvents
+      .filter((event) => event.date >= todayISO)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.name || "").localeCompare(b.name || ""))
+      .slice(0, 4);
+  }, [publicEvents, todayISO]);
+
+  const displayEvents = weekEvents.length ? weekEvents : nextEvents;
+  const weekLabel = `${dayLabelFromISO(weekStartISO)} - ${dayLabelFromISO(weekEndISO)}`;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
-      >
-        <div className="text-3xl font-black tracking-tight">
-          O<span className="text-purple-300">&</span>A
+    <div className="min-h-screen bg-[#080711] text-white">
+      <div className="mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8">
+        <header className="flex items-center justify-between gap-3">
+          <div className="text-3xl font-black tracking-tight">
+            O<span className="text-purple-300">&</span>A
+          </div>
+          <Button
+            onClick={() => setLoginOpen(true)}
+            className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/70 hover:bg-purple-400 hover:text-black"
+          >
+            Login
+          </Button>
+        </header>
+
+        <main className="grid flex-1 gap-8 py-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:py-12">
+          <section>
+            <div className="text-[11px] font-black uppercase tracking-[0.26em] text-purple-200/70">This week at O&A</div>
+            <h1 className="mt-4 max-w-2xl text-4xl font-black tracking-tight text-white sm:text-6xl">
+              What’s happening this week
+            </h1>
+            <p className="mt-4 max-w-xl text-base font-bold leading-7 text-white/55">
+              Browse the current lineup, set times, genres, and stages before heading into the admin dashboard.
+            </p>
+            <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white/65">
+              <CalendarDays className="mr-2 h-5 w-5 text-purple-200" />
+              {weekLabel}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-[#0d0c17] p-3 shadow-2xl shadow-black/40 sm:p-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {displayEvents.length ? (
+                displayEvents.map((event) => <PublicEventCard key={event.id} event={event} />)
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-10 text-center text-sm font-bold text-white/40 md:col-span-2">
+                  No events published for this week yet.
+                </div>
+              )}
+            </div>
+            {!weekEvents.length && nextEvents.length ? (
+              <div className="mt-3 rounded-2xl border border-yellow-300/20 bg-yellow-400/10 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-yellow-100">
+                Showing next upcoming events because this week has no published lineup.
+              </div>
+            ) : null}
+          </section>
+        </main>
+      </div>
+
+      {loginOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setLoginOpen(false);
+          }}
+        >
+          <form
+            onSubmit={submit}
+            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-3xl font-black tracking-tight">
+                  O<span className="text-purple-300">&</span>A
+                </div>
+                <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">Dashboard Login</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLoginOpen(false)}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Username</span>
+                <input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                  placeholder="Username"
+                  autoComplete="username"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                  placeholder="Password"
+                  autoComplete="current-password"
+                />
+              </label>
+            </div>
+
+            {error ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">{error}</div> : null}
+
+            <Button type="submit" className="mt-5 h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300">
+              Login
+            </Button>
+          </form>
         </div>
-        <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">Dashboard Login</div>
-
-        <div className="mt-6 space-y-3">
-          <label className="block">
-            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Username</span>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-              placeholder="Username"
-              autoComplete="username"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-              placeholder="Password"
-              autoComplete="current-password"
-            />
-          </label>
-        </div>
-
-        {error ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">{error}</div> : null}
-
-        <Button type="submit" className="mt-5 h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300">
-          Login
-        </Button>
-      </form>
+      ) : null}
     </div>
   );
 }
