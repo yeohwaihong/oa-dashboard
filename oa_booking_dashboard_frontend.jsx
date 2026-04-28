@@ -26,6 +26,7 @@ import {
   Eye,
   EyeOff,
   Bell,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -4129,10 +4130,10 @@ function DashboardApp({ onLogout, userRole }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-7 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 sm:grid-cols-6 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+              className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
             >
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
@@ -4145,7 +4146,7 @@ function DashboardApp({ onLogout, userRole }) {
                     updateNotificationsPopoverPosition();
                     setNotificationsOpen(true);
                   }}
-                  className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                  className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
                 >
                   <Bell className="h-4 w-4 shrink-0" />
                   <span>Alerts</span>
@@ -4160,7 +4161,7 @@ function DashboardApp({ onLogout, userRole }) {
             {canEdit ? (
               <Button
                 onClick={() => openAddDayModal()}
-                className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Add Day</span>
@@ -4169,7 +4170,7 @@ function DashboardApp({ onLogout, userRole }) {
             {canEdit ? (
               <Button
                 onClick={() => openAddModal()}
-                className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
+                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Add Week</span>
@@ -4178,23 +4179,26 @@ function DashboardApp({ onLogout, userRole }) {
             <Button
               onClick={() => setTimeFormat(timeFormat === "24" ? "12" : "24")}
               title={timeFormat === "24" ? "24-hour time" : "AM/PM time"}
-              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
+              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
-              <span className="text-xs font-black leading-none">{timeFormat === "24" ? "24" : "AM"}</span>
-              <span className="hidden sm:inline">{timeFormat === "24" ? "24h" : "AM/PM"}</span>
+              <Clock className="h-4 w-4 shrink-0" />
+              <span className="sr-only">{timeFormat === "24" ? "24-hour time" : "AM/PM time"}</span>
             </Button>
             <Button
               onClick={() => setTheme(isLightTheme ? "dark" : "light")}
-              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
+              title={isLightTheme ? "Switch to dark mode" : "Switch to light mode"}
+              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
               {isLightTheme ? <Moon className="h-4 w-4 shrink-0" /> : <Sun className="h-4 w-4 shrink-0" />}
-              <span>{isLightTheme ? "Dark" : "Light"}</span>
+              <span className="sr-only">{isLightTheme ? "Dark mode" : "Light mode"}</span>
             </Button>
             <Button
               onClick={onLogout}
-              className="h-11 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:px-3 sm:text-xs"
+              title={userRole ? `${userRole.toUpperCase()} Logout` : "Logout"}
+              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
-              {userRole ? `${userRole.toUpperCase()} Logout` : "Logout"}
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span className="sr-only">Logout</span>
             </Button>
           </div>
         </header>
