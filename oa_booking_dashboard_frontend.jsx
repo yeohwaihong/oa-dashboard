@@ -304,6 +304,17 @@ function normalizeSlotRole(role) {
   return role || "Warm-up";
 }
 
+function splitGenreTags(value) {
+  return String(value || "")
+    .split(/[\/,]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function joinGenreTags(tags) {
+  return Array.from(new Set(tags.map((tag) => String(tag || "").trim()).filter(Boolean))).join(" / ");
+}
+
 function parseIc(notes) {
   return String(notes || "").match(icNotePattern)?.[1] || "";
 }
@@ -545,6 +556,7 @@ function AddEventDayModal({
   onChangeSeedDate,
   onSave,
   djOptions,
+  genreOptions,
   existingEventsByDate,
   onPreviewEvent,
   editEvent,
@@ -570,6 +582,7 @@ function AddEventDayModal({
 
   const [hasAutofilled, setHasAutofilled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [genreDrafts, setGenreDrafts] = useState({});
   const [pickerMonth, setPickerMonth] = useState(() => new Date(isoToDate(seedDateISO).getFullYear(), isoToDate(seedDateISO).getMonth(), 1));
 
   const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
@@ -650,6 +663,25 @@ function AddEventDayModal({
 
   const setDayField = (isoDate, patch) => {
     setDays((prev) => prev.map((d) => (d.isoDate === isoDate ? { ...d, ...patch } : d)));
+  };
+
+  const addGenreTag = (isoDate, rawTag) => {
+    const tag = String(rawTag || "").trim();
+    if (!tag) return;
+    setDays((prev) =>
+      prev.map((d) => (d.isoDate === isoDate ? { ...d, genre: joinGenreTags([...splitGenreTags(d.genre), tag]) } : d)),
+    );
+    setGenreDrafts((prev) => ({ ...prev, [isoDate]: "" }));
+  };
+
+  const removeGenreTag = (isoDate, tagToRemove) => {
+    setDays((prev) =>
+      prev.map((d) =>
+        d.isoDate === isoDate
+          ? { ...d, genre: joinGenreTags(splitGenreTags(d.genre).filter((tag) => tag.toLowerCase() !== tagToRemove.toLowerCase())) }
+          : d,
+      ),
+    );
   };
 
   const addSlot = (isoDate) => {
@@ -912,6 +944,9 @@ function AddEventDayModal({
               const month = date.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
               const header = `${weekday} · ${date.getDate()} ${month}`;
               const djListId = `dj-options-${day.isoDate}`;
+              const genreListId = `genre-options-${day.isoDate}`;
+              const genreTags = splitGenreTags(day.genre);
+              const genreDraft = genreDrafts[day.isoDate] ?? "";
               const dayErrors = validation.errorsByDate[day.isoDate] ?? [];
               const dayConflictSlots = validation.conflictSlots[day.isoDate] ?? new Set();
 
@@ -934,12 +969,48 @@ function AddEventDayModal({
                     </div>
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Genre</div>
-                      <input
-                        value={day.genre}
-                        onChange={(e) => setDayField(day.isoDate, { genre: e.target.value })}
-                        className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
-                        placeholder="AFRO / AMAPIANO"
-                      />
+                      <div className="mt-1 rounded-xl border border-white/10 bg-black/20 p-2 focus-within:border-purple-300/60">
+                        <div className="flex flex-wrap gap-1.5">
+                          {genreTags.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => removeGenreTag(day.isoDate, tag)}
+                              className="rounded-lg border border-purple-300/25 bg-purple-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-purple-100 hover:bg-rose-500/20 hover:text-rose-100"
+                              title="Remove genre"
+                            >
+                              {tag} x
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            list={genreListId}
+                            value={genreDraft}
+                            onChange={(e) => setGenreDrafts((prev) => ({ ...prev, [day.isoDate]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addGenreTag(day.isoDate, genreDraft);
+                              }
+                            }}
+                            className="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm font-black text-white/75 outline-none placeholder:text-white/25"
+                            placeholder={genreTags.length ? "Add genre..." : "AFRO, HIP-HOP, TECHNO..."}
+                          />
+                          <datalist id={genreListId}>
+                            {genreOptions.map((genre) => (
+                              <option key={genre} value={genre} />
+                            ))}
+                          </datalist>
+                          <button
+                            type="button"
+                            onClick={() => addGenreTag(day.isoDate, genreDraft)}
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-purple-400 hover:text-black"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1152,7 +1223,13 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
                   {event.status}
                 </span>
               </div>
-              <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-white/35 md:text-xs">{event.genre}</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {splitGenreTags(event.genre).map((genre) => (
+                  <span key={genre} className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
+                    {genre}
+                  </span>
+                ))}
+              </div>
 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {event.slots.length ? (
@@ -1316,7 +1393,11 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusConfig[event.status]}`}>
               {event.status}
             </span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">{event.genre}</span>
+            {splitGenreTags(event.genre).map((genre) => (
+              <span key={genre} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">
+                {genre}
+              </span>
+            ))}
             {event.ic ? (
               <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-3 py-1 text-xs font-black text-purple-100">PIC {event.ic}</span>
             ) : null}
@@ -1546,6 +1627,29 @@ export default function OABookingDashboard() {
     for (const e of events) {
       for (const s of e.slots) {
         if (s.dj && s.role !== "MC") set.add(s.dj);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [events]);
+
+  const genreOptions = useMemo(() => {
+    const set = new Set([
+      "AFRO",
+      "AMAPIANO",
+      "BAILE",
+      "HIP-HOP",
+      "TECH HOUSE",
+      "MELODIC TECHNO",
+      "TECHNO",
+      "HARD TECHNO",
+      "HARD GROOVE",
+      "TRANCE",
+      "BOUNCE",
+      "URBAN",
+    ]);
+    for (const event of events) {
+      for (const genre of splitGenreTags(event.genre)) {
+        set.add(genre);
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
@@ -2020,6 +2124,7 @@ export default function OABookingDashboard() {
         onChangeSeedDate={setSeedDateISO}
         onSave={saveModalDays}
         djOptions={djOptions}
+        genreOptions={genreOptions}
         existingEventsByDate={existingEventsByDate}
         onPreviewEvent={setPreviewEvent}
         editEvent={modalEditEvent}
