@@ -3191,6 +3191,7 @@ function DashboardApp({ onLogout, userRole }) {
   const weekSectionRefs = React.useRef({});
   const [activeWeekKey, setActiveWeekKey] = useState(null);
   const activeWeekKeyRef = React.useRef(null);
+  const listWeekNavInitRef = React.useRef({ view: null, grouping: null, monthKey: null });
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -3541,11 +3542,11 @@ function DashboardApp({ onLogout, userRole }) {
     return groupedEvents.some((g) => g.key === activeWeekKey) ? activeWeekKey : groupedEvents[0]?.key || null;
   }, [activeWeekKey, groupedEvents]);
 
-  const scrollToWeekKey = (key) => {
+  const scrollToWeekKey = useCallback((key) => {
     const node = weekSectionRefs.current?.[key];
     if (!node) return;
     node.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  }, []);
 
   const weekKeys = useMemo(() => groupedEvents.map((g) => g.key), [groupedEvents]);
   const weekIndex = useMemo(() => {
@@ -3556,15 +3557,26 @@ function DashboardApp({ onLogout, userRole }) {
   const canJumpNextWeek = weekIndex >= 0 && weekIndex < weekKeys.length - 1;
 
   useEffect(() => {
-    if (view !== "List") return;
+    if (view !== "List") {
+      listWeekNavInitRef.current = { view, grouping: listGrouping, monthKey: `${listMonthCursor.getFullYear()}-${listMonthCursor.getMonth()}` };
+      return;
+    }
+
     if (!weekKeys.length) {
       setActiveWeekKey(null);
       return;
     }
+
+    const nextMonthKey = `${listMonthCursor.getFullYear()}-${listMonthCursor.getMonth()}`;
+    const prev = listWeekNavInitRef.current;
+    const shouldAutoJump = prev.view !== "List" || prev.grouping !== listGrouping || prev.monthKey !== nextMonthKey;
+    listWeekNavInitRef.current = { view, grouping: listGrouping, monthKey: nextMonthKey };
+    if (!shouldAutoJump) return;
+
     setActiveWeekKey(weekKeys[0]);
     window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 0);
     window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 160);
-  }, [listGrouping, listMonthRange.endISO, listMonthRange.startISO, view, weekKeys]);
+  }, [listGrouping, listMonthCursor, scrollToWeekKey, view, weekKeys]);
 
   const jumpWeek = (direction) => {
     if (view !== "List") return;
