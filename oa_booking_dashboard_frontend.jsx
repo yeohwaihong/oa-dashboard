@@ -525,34 +525,34 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 md:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-3 md:px-5">
         <div className="text-base font-black tracking-tight text-white md:text-lg">{monthLabel}</div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2">
           <button
             onClick={() => onChangeMonth(-1)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-black text-white/60 hover:bg-white/10 hover:text-white sm:px-3 sm:text-xs md:px-4"
           >
             Prev
           </button>
           <button
             onClick={() => onChangeMonth(0)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-black text-white/60 hover:bg-white/10 hover:text-white sm:px-3 sm:text-xs md:px-4"
           >
             Today
           </button>
           <button
             onClick={() => onChangeMonth(1)}
-            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white md:px-4"
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-black text-white/60 hover:bg-white/10 hover:text-white sm:px-3 sm:text-xs md:px-4"
           >
             Next
           </button>
         </div>
       </div>
 
-      <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-        <div className="grid min-w-[720px] grid-cols-7 gap-2 md:min-w-0">
+      <div className="overflow-hidden">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {weekdayLabels.map((label) => (
-            <div key={label} className="px-2 text-[10px] font-black uppercase tracking-[0.25em] text-white/30 md:text-xs">
+            <div key={label} className="px-0.5 text-center text-[9px] font-black uppercase text-white/30 sm:px-2 sm:text-left sm:text-[10px] sm:tracking-[0.25em] md:text-xs">
               {label}
             </div>
           ))}
@@ -568,18 +568,18 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
               <div
                 key={iso}
                 tabIndex={0}
-              onClick={() => (dayEvents.length ? onPreviewEvent(dayEvents[0]) : onSelectDate(iso))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  if (dayEvents.length) {
-                    onPreviewEvent(dayEvents[0]);
-                  } else {
-                    onSelectDate(iso);
+                onClick={() => (dayEvents.length ? onPreviewEvent(dayEvents[0]) : onSelectDate(iso))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    if (dayEvents.length) {
+                      onPreviewEvent(dayEvents[0]);
+                    } else {
+                      onSelectDate(iso);
+                    }
                   }
-                }
-              }}
-                className={`group min-h-[108px] rounded-2xl border p-2 text-left transition md:min-h-[126px] md:p-3 ${
+                }}
+                className={`group min-h-[74px] rounded-xl border p-1 text-left transition sm:min-h-[108px] sm:rounded-2xl sm:p-2 md:min-h-[126px] md:p-3 ${
                   isToday
                     ? "border-purple-200/70 bg-purple-400/10 shadow-[0_0_0_1px_rgba(216,180,254,0.25)]"
                     : isCurrentMonth
@@ -587,49 +587,49 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                       : "border-white/5 bg-white/[0.01] opacity-60"
                 } hover:border-purple-300/30 hover:bg-purple-400/5`}
               >
-                <div className="flex items-center justify-between">
-                  <div className={`text-sm font-black ${isToday ? "text-purple-100" : "text-white/80"}`}>{d.getDate()}</div>
-                  <div className="flex items-center gap-1">
+                <div className="flex items-start justify-between gap-1">
+                  <div className={`text-xs font-black sm:text-sm ${isToday ? "text-purple-100" : "text-white/80"}`}>{d.getDate()}</div>
+                  <div className="flex min-w-0 items-center gap-1">
                     {isToday ? (
-                      <div className="rounded-full border border-purple-200/40 bg-purple-300/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-purple-100">
+                      <div className="hidden rounded-full border border-purple-200/40 bg-purple-300/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-purple-100 sm:block">
                         Today
                       </div>
                     ) : null}
                     {dayEvents.length ? (
-                      <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/50">
+                      <div className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-black text-white/50 sm:px-2 sm:text-[10px]">
                         {dayEvents.length}
                       </div>
                     ) : null}
                   </div>
                 </div>
 
-                <div className="mt-2 space-y-1.5">
+                <div className="mt-1 space-y-1 sm:mt-2 sm:space-y-1.5">
                   {holidays.slice(0, 2).map((holiday) => (
                     <div
                       key={`${holiday.date}-${holiday.name}`}
-                      className="truncate rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100"
+                      className="truncate rounded-md border border-cyan-300/30 bg-cyan-400/10 px-1 py-0.5 text-[9px] font-black text-cyan-100 sm:rounded-lg sm:px-2 sm:py-1 sm:text-[10px]"
                       title={holidayLabel(holiday)}
                     >
-                      🎉 {holiday.localName || holiday.name}
+                      🎉 <span className="hidden sm:inline">{holiday.localName || holiday.name}</span>
                     </div>
                   ))}
                   {dayEvents.slice(0, 3).map((event) => (
                     <button
                       key={event.id}
                       type="button"
-                      className={`block w-full truncate rounded-lg border px-2 py-1.5 text-left text-[10px] font-black md:text-xs ${getStatusCalendarClass(event.status)}`}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPreviewEvent(event);
-                    }}
+                      className={`block w-full truncate rounded-md border px-1 py-1 text-left text-[9px] font-black sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-[10px] md:text-xs ${getStatusCalendarClass(event.status)}`}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPreviewEvent(event);
+                      }}
                       title={`${event.name} · ${event.status}`}
                     >
                       {event.name}
                     </button>
                   ))}
                   {dayEvents.length > 3 ? (
-                    <div className="text-[10px] font-black text-white/30">+{dayEvents.length - 3} more</div>
+                    <div className="text-[9px] font-black text-white/30 sm:text-[10px]">+{dayEvents.length - 3} more</div>
                   ) : null}
                 </div>
               </div>
@@ -900,7 +900,7 @@ function AddEventDayModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -909,12 +909,12 @@ function AddEventDayModal({
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="flex h-[100svh] w-full max-w-4xl flex-col overflow-hidden border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:h-auto sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-6 sm:py-5">
           <div>
-            <div className="text-lg font-black tracking-tight sm:text-xl">{title}</div>
-            <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">
+            <div className="text-base font-black tracking-tight sm:text-xl">{title}</div>
+            <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/35 sm:text-[11px] sm:tracking-[0.2em]">
               {selectedWeekName} · {selectedRangeLabel}
             </div>
           </div>
@@ -926,7 +926,7 @@ function AddEventDayModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:space-y-4 sm:px-6 sm:py-5">
           {!lockDateSelection ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -934,22 +934,22 @@ function AddEventDayModal({
                 <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick available day" : "Pick available week"}</div>
                 <div className="mt-1 text-sm font-black text-white/85">{pickerMonthLabel}</div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:flex sm:items-center sm:gap-2">
                 <button
                   onClick={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white sm:px-3"
                 >
                   Prev
                 </button>
                 <button
                   onClick={() => setPickerMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white sm:px-3"
                 >
                   Today
                 </button>
                 <button
                   onClick={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white sm:px-3"
                 >
                   Next
                 </button>
@@ -983,7 +983,7 @@ function AddEventDayModal({
                       }
                       changeSelectedPeriod(iso);
                     }}
-                    className={`min-h-16 rounded-xl border px-1.5 py-1 text-left text-xs font-black transition ${
+                    className={`min-h-12 rounded-lg border px-1 py-1 text-left text-[11px] font-black transition sm:min-h-16 sm:rounded-xl sm:px-1.5 sm:text-xs ${
                       isFilled
                         ? getStatusCalendarClass(existingEvent.status)
                         : isSelected
@@ -996,20 +996,20 @@ function AddEventDayModal({
                     } ${isCurrentMonth ? "" : "opacity-35"}`}
                     title={isFilled ? `${existingEvent.name || "Schedule"} · ${existingEvent.status}` : hasHoliday ? dayHolidays.map(holidayLabel).join(", ") : "Available"}
                   >
-                    <span className="flex items-center justify-center gap-1 text-center text-xs font-black">
+                    <span className="flex items-center justify-center gap-0.5 text-center text-[11px] font-black sm:gap-1 sm:text-xs">
                       <span>{d.getDate()}</span>
                       {hasHoliday ? <span aria-label="Holiday">🎉</span> : null}
                     </span>
                     {isFilled ? (
-                      <span className="mt-1 block truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">
+                      <span className="mt-1 block truncate text-center text-[8px] font-black uppercase leading-tight sm:text-[9px] sm:tracking-[0.08em]">
                         {existingEvent.name}
                       </span>
                     ) : hasHoliday ? (
-                      <span className="mt-1 block truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">
+                      <span className="mt-1 hidden truncate text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em] sm:block">
                         {dayHolidays[0].localName || dayHolidays[0].name}
                       </span>
                     ) : weekFilled && dateMode === "week" ? (
-                      <span className="mt-1 block text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em]">Busy week</span>
+                      <span className="mt-1 hidden text-center text-[9px] font-black uppercase leading-tight tracking-[0.08em] sm:block">Busy week</span>
                     ) : null}
                   </button>
                 );
@@ -1038,10 +1038,10 @@ function AddEventDayModal({
           ) : null}
 
           {dateMode === "week" ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
             <Button
               onClick={autoFill}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-xs font-black text-purple-100 hover:bg-purple-400/20"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-xs font-black text-purple-100 hover:bg-purple-400/20"
             >
               <Zap className="h-4 w-4" /> Auto-fill Wed – Sat
             </Button>
@@ -1065,7 +1065,7 @@ function AddEventDayModal({
               return (
                 <div
                   key={day.isoDate}
-                  className={`rounded-2xl border bg-white/[0.03] p-4 ${dayErrors.length ? "border-rose-300/40" : "border-white/10"}`}
+                  className={`rounded-2xl border bg-white/[0.03] p-3 sm:p-4 ${dayErrors.length ? "border-rose-300/40" : "border-white/10"}`}
                 >
                   <div className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200/80">{header}</div>
 
@@ -1117,7 +1117,7 @@ function AddEventDayModal({
                           <button
                             type="button"
                             onClick={() => addGenreTag(day.isoDate, genreDraft)}
-                            className="rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/55 hover:bg-purple-400 hover:text-black"
+                            className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55 hover:bg-purple-400 hover:text-black"
                           >
                             Add
                           </button>
@@ -1239,7 +1239,7 @@ function AddEventDayModal({
                   <div className="mt-3 grid gap-3 md:grid-cols-[1fr_180px]">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Status</div>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
+                      <div className="mt-1 grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
                         {statusOptions.map((status) => {
                           const active = (day.status || "No Lineup") === status;
                           return (
@@ -1247,7 +1247,7 @@ function AddEventDayModal({
                               key={status}
                               type="button"
                               onClick={() => setDayField(day.isoDate, { status })}
-                              className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition ${
+                              className={`rounded-lg border px-2 py-2 text-[10px] font-black uppercase tracking-[0.08em] transition sm:px-3 sm:tracking-[0.12em] ${
                                 active ? statusClass(status) : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
                               }`}
                             >
@@ -1289,19 +1289,19 @@ function AddEventDayModal({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
+        <div className="grid gap-2 border-t border-white/10 px-3 py-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/50 hover:bg-white/10 hover:text-white"
           >
             Cancel
           </Button>
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <div className="grid gap-2 sm:flex sm:flex-1 sm:flex-wrap sm:items-center sm:justify-end">
             {lockDateSelection && editEvent ? (
               <Button
                 onClick={() => onDeleteDay(editEvent)}
                 disabled={isSaving}
-                className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Trash2 className="h-4 w-4" />
                 <span>Delete Day</span>
@@ -1345,16 +1345,16 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
         <CardContent className="relative p-0">
           <div className={`absolute left-0 top-0 h-full w-1.5 ${getStatusColor(event.status)}`} />
 
-          <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-3 px-4 py-4 pl-6 sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:gap-4 sm:px-5 md:grid-cols-[72px_minmax(0,1fr)_auto] md:px-7 md:py-5">
+          <div className="grid grid-cols-[42px_minmax(0,1fr)] gap-2 px-3 py-3 pl-5 sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:gap-4 sm:px-5 md:grid-cols-[72px_minmax(0,1fr)_auto] md:px-7 md:py-5">
             <div className="text-center leading-none text-white/70">
-              <div className="text-[10px] font-bold tracking-widest md:text-xs">{event.day}</div>
-              <div className="mt-1 text-3xl font-black text-white md:text-4xl">{event.dayNo}</div>
-              <div className="mt-1 text-[10px] font-bold tracking-widest md:text-xs">{event.month}</div>
+              <div className="text-[9px] font-bold tracking-widest md:text-xs">{event.day}</div>
+              <div className="mt-1 text-2xl font-black text-white sm:text-3xl md:text-4xl">{event.dayNo}</div>
+              <div className="mt-1 text-[9px] font-bold tracking-widest md:text-xs">{event.month}</div>
             </div>
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="min-w-0 text-lg font-black tracking-wide text-white md:text-xl">{event.name}</h3>
+                <h3 className="min-w-0 text-base font-black tracking-wide text-white sm:text-lg md:text-xl">{event.name}</h3>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
                   {event.status}
                 </span>
@@ -1372,7 +1372,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                   event.slots.map((slot, idx) => (
                     <span
                       key={idx}
-                      className={`inline-flex flex-col gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-black md:px-3 md:py-2 md:text-sm ${
+                      className={`inline-flex min-w-[46%] flex-1 flex-col gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-black sm:min-w-0 sm:flex-none sm:text-xs md:px-3 md:py-2 md:text-sm ${
                         conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
                       }`}
                     >
@@ -1385,7 +1385,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
                       >
                         {slot.role}
                       </span>
-                      <span>
+                      <span className="min-w-0 truncate">
                         {slot.dj} <span className={conflictSlots.has(idx) ? "text-rose-100/70" : "text-white/40"}>{slot.start}-{slot.end}</span>
                       </span>
                     </span>
@@ -1402,19 +1402,19 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               ) : null}
             </div>
 
-            <div className="col-span-2 flex items-center justify-between gap-2 border-t border-white/10 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
+            <div className="col-span-2 grid grid-cols-[40px_minmax(0,1fr)] gap-2 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
               <button
                 onClick={onToggle}
-                className="rounded-lg border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white sm:p-1.5 md:p-2"
+                className="flex h-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white sm:h-auto sm:p-1.5 md:p-2"
               >
                 <ChevronDown className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
               </button>
-              <div className="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
+              <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
                 <select
                   value={event.ic || ""}
                   onChange={(e) => onAssignIC(e.target.value)}
-                  className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:px-2 sm:text-xs md:h-9 md:text-sm"
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-8 sm:flex-none sm:px-2 sm:text-xs md:h-9 md:text-sm"
                 >
                   <option value="">PIC</option>
                   <option value="Wai Hong">Wai Hong</option>
@@ -1423,14 +1423,14 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC, onConfirm })
               </div>
               <button
                 onClick={onEdit}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
+                className="col-span-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/60 hover:bg-purple-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
               >
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
               {event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 text-sm font-black text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
+                  className="col-span-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 text-sm font-black text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:text-xs md:h-9 md:text-sm"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
                 </button>
@@ -1592,24 +1592,24 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
+        <div className="grid gap-2 border-t border-white/10 px-4 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
           >
             Close
           </Button>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
             <Button
               onClick={() => onDelete(event)}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black"
             >
               <Trash2 className="h-4 w-4" />
               <span>Delete Day</span>
             </Button>
             <Button
               onClick={() => onEdit(event)}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
             >
               <Pencil className="h-4 w-4" />
               <span>Edit Day</span>
@@ -1617,7 +1617,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm }) {
             {event.status !== "Confirmed" ? (
               <Button
                 onClick={() => onConfirm(event)}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 <span>Confirm Night</span>
@@ -1709,7 +1709,7 @@ function LoginScreen({ onLogin }) {
       onLogin();
       return;
     }
-    setError("Use admin / admin");
+    setError("Invalid username or password");
   };
 
   return (
@@ -2342,14 +2342,14 @@ function DashboardApp({ onLogout }) {
   }, [filteredEvents]);
 
   return (
-    <div className="min-h-screen bg-[#080711] p-3 text-white sm:p-4 lg:p-6 xl:p-8">
-      <div className="mx-auto max-w-[1600px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-6 xl:px-8">
-          <div className="flex max-w-full flex-wrap items-center gap-2">
-            <div className="mr-1 text-2xl font-black leading-none tracking-tight md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
+    <div className="min-h-screen bg-[#080711] text-white sm:p-4 lg:p-6 xl:p-8">
+      <div className="mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50 sm:min-h-0 sm:rounded-3xl sm:border">
+        <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
+          <div className="grid w-full grid-cols-[auto_1fr_1fr] items-center gap-2 md:w-auto md:flex md:max-w-full md:flex-wrap">
+            <div className="mr-1 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <Button
               onClick={() => setView("List")}
-              className={`inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black md:px-5 ${
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
@@ -2358,7 +2358,7 @@ function DashboardApp({ onLogout }) {
             </Button>
             <Button
               onClick={() => setView("Calendar")}
-              className={`inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black md:px-5 ${
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black sm:h-11 sm:text-sm md:px-5 ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
@@ -2368,31 +2368,31 @@ function DashboardApp({ onLogout }) {
               <span>Calendar</span>
             </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:flex md:flex-wrap md:items-center">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 text-sm font-black text-cyan-100 hover:bg-cyan-400/20 md:px-5"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-11 sm:text-sm md:px-5"
             >
               <CalendarDays className="h-4 w-4" />
-              <span>HOLIDAYS</span>
+              <span>Holidays</span>
             </Button>
             <Button
               onClick={() => openAddDayModal()}
-              className="inline-flex h-11 items-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-4 text-sm font-black text-purple-100 hover:bg-purple-400/20 md:px-5"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-purple-300/40 bg-purple-400/10 px-3 text-xs font-black text-purple-100 hover:bg-purple-400/20 sm:h-11 sm:text-sm md:px-5"
             >
               <Plus className="h-4 w-4" />
-              <span>ADD DAY</span>
+              <span>Add Day</span>
             </Button>
             <Button
               onClick={() => openAddModal()}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-4 text-sm font-black text-black hover:bg-purple-300 md:px-6"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-11 sm:text-sm md:px-6"
             >
               <Plus className="h-4 w-4" />
-              <span>ADD WEEK</span>
+              <span>Add Week</span>
             </Button>
             <Button
               onClick={onLogout}
-              className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/45 hover:bg-white/10 hover:text-white"
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-11 sm:text-sm"
             >
               Logout
             </Button>
@@ -2409,7 +2409,7 @@ function DashboardApp({ onLogout }) {
           </div>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-4 py-4 sm:grid-cols-5 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
+        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-5 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
           <Stat number={stats.unconfirmed} label="Unconfirmed" tone="text-yellow-300" />
@@ -2417,7 +2417,7 @@ function DashboardApp({ onLogout }) {
           <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
         </section>
 
-        <section className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-4 py-3 backdrop-blur md:px-6 xl:px-8">
+        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-3 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-white/10 bg-white/[0.03] p-1">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
@@ -2438,43 +2438,47 @@ function DashboardApp({ onLogout }) {
             })}
           </div>
 
-          {filterItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeFilter === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => setActiveFilter(item.key)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
-                  active ? "border-purple-300 bg-purple-400 text-black" : "border-white/10 bg-white/5 text-white/45 hover:text-white"
-                }`}
-              >
-                {Icon && <Icon className="h-3.5 w-3.5" />} {item.label}
-              </button>
-            );
-          })}
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
+            {filterItems.map((item) => {
+              const Icon = item.icon;
+              const active = activeFilter === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveFilter(item.key)}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-black transition md:px-4 md:text-sm ${
+                    active ? "border-purple-300 bg-purple-400 text-black" : "border-white/10 bg-white/5 text-white/45 hover:text-white"
+                  }`}
+                >
+                  {Icon && <Icon className="h-3.5 w-3.5" />} {item.label}
+                </button>
+              );
+            })}
+          </div>
 
-          <select
-            value={dateSort}
-            onChange={(e) => setDateSort(e.target.value)}
-            className="h-11 rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 lg:ml-auto"
-          >
-            <option value="asc">Date ↑</option>
-            <option value="desc">Date ↓</option>
-          </select>
+          <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 md:contents">
+            <select
+              value={dateSort}
+              onChange={(e) => setDateSort(e.target.value)}
+              className="h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:text-sm lg:ml-auto"
+            >
+              <option value="asc">Date ↑</option>
+              <option value="desc">Date ↓</option>
+            </select>
 
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
-            <Search className="h-4 w-4" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-            />
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search..."
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
+              />
+            </div>
           </div>
         </section>
 
-        <main className="space-y-4 px-4 py-4 md:px-6 xl:px-8 xl:py-6">
+        <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
           {view === "List" ? (
             <>
               {groupedEvents.map((group) => (
@@ -2606,9 +2610,9 @@ export default function OABookingDashboard() {
 
 function Stat({ number, label, tone = "text-white" }) {
   return (
-    <div className="rounded-2xl bg-white/[0.02] p-3 text-center md:p-4 xl:p-5">
-      <div className={`text-3xl font-black md:text-4xl ${tone}`}>{number}</div>
-      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-white/25 md:text-xs">{label}</div>
+    <div className="rounded-2xl bg-white/[0.02] p-2.5 text-center md:p-4 xl:p-5">
+      <div className={`text-2xl font-black sm:text-3xl md:text-4xl ${tone}`}>{number}</div>
+      <div className="mt-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/25 sm:text-[10px] sm:tracking-[0.2em] md:text-xs">{label}</div>
     </div>
   );
 }
