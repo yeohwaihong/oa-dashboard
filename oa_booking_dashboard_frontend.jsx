@@ -539,6 +539,8 @@ function AddEventDayModal({
   djOptions,
   existingEventsByDate,
   onPreviewEvent,
+  editEvent,
+  onDeleteDay,
   title = "Add Event Day",
   initialDays,
   dateMode = "week",
@@ -1072,20 +1074,32 @@ function AddEventDayModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/50 hover:bg-white/10 hover:text-white"
           >
             Cancel
           </Button>
-          <Button
-            onClick={save}
-            disabled={isSaving}
-            className="h-11 flex-1 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Saving..." : validation.hasErrors ? "Fix Time Overlaps" : dateMode === "day" ? "Save Day" : "Save Week"}
-          </Button>
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            {lockDateSelection && editEvent ? (
+              <Button
+                onClick={() => onDeleteDay(editEvent)}
+                disabled={isSaving}
+                className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete Day</span>
+              </Button>
+            ) : null}
+            <Button
+              onClick={save}
+              disabled={isSaving}
+              className="h-11 min-w-[160px] flex-1 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
+            >
+              {isSaving ? "Saving..." : validation.hasErrors ? "Fix Time Overlaps" : dateMode === "day" ? "Save Day" : "Save Week"}
+            </Button>
+          </div>
         </div>
       </motion.div>
     </div>
@@ -1245,7 +1259,7 @@ function EventCard({ event, expanded, onToggle, onEdit, onAssignIC }) {
   );
 }
 
-function EventDetailsModal({ event, onClose, onEdit }) {
+function EventDetailsModal({ event, onClose, onEdit, onDelete }) {
   if (!event) return null;
 
   return (
@@ -1311,20 +1325,29 @@ function EventDetailsModal({ event, onClose, onEdit }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-4 sm:px-6">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
           >
             Close
           </Button>
-          <Button
-            onClick={() => onEdit(event)}
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
-          >
-            <Pencil className="h-4 w-4" />
-            <span>Edit Day</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => onDelete(event)}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-300/30 bg-rose-500/15 px-5 text-sm font-black text-rose-100 hover:bg-rose-400 hover:text-black"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Delete Day</span>
+            </Button>
+            <Button
+              onClick={() => onEdit(event)}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300"
+            >
+              <Pencil className="h-4 w-4" />
+              <span>Edit Day</span>
+            </Button>
+          </div>
         </div>
       </motion.div>
     </div>
@@ -1345,6 +1368,7 @@ export default function OABookingDashboard() {
   const [modalInitialDays, setModalInitialDays] = useState(null);
   const [modalDateMode, setModalDateMode] = useState("week");
   const [modalLockDateSelection, setModalLockDateSelection] = useState(false);
+  const [modalEditEvent, setModalEditEvent] = useState(null);
   const [previewEvent, setPreviewEvent] = useState(null);
   const [syncError, setSyncError] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
@@ -1667,12 +1691,45 @@ export default function OABookingDashboard() {
     }
   };
 
+  const deleteEventDay = async (event) => {
+    const confirmed = window.confirm(`Delete ${event.name} on ${dayLabelFromISO(event.date)}? This removes the day and its set times.`);
+    if (!confirmed) return;
+
+    const previousEvents = events;
+    setPreviewEvent(null);
+    setModalOpen(false);
+    setModalInitialDays(null);
+    setModalEditEvent(null);
+    setEvents((prev) => prev.filter((item) => item.id !== event.id));
+
+    if (isSupabaseConfigured && isSupabaseUuid(event.id)) {
+      try {
+        setSyncError("");
+        setSyncStatus("Deleting day...");
+        const { error } = await supabase.from("events").delete().eq("id", event.id);
+        if (error) throw error;
+        await loadEvents();
+        setSyncStatus("Day deleted");
+        showToast("Day deleted");
+      } catch (error) {
+        setEvents(previousEvents);
+        setSyncError(error.message || "Could not delete day");
+        setSyncStatus("");
+        showToast("Delete failed", "error");
+      }
+      return;
+    }
+
+    showToast("Day deleted locally");
+  };
+
   const openAddModal = (dateISO) => {
     if (dateISO) setSeedDateISO(dateISO);
     setModalTitle("Add Event Week");
     setModalInitialDays(null);
     setModalDateMode("week");
     setModalLockDateSelection(false);
+    setModalEditEvent(null);
     setModalOpen(true);
   };
 
@@ -1682,6 +1739,7 @@ export default function OABookingDashboard() {
     setModalInitialDays(null);
     setModalDateMode("day");
     setModalLockDateSelection(false);
+    setModalEditEvent(null);
     setModalOpen(true);
   };
 
@@ -1708,6 +1766,7 @@ export default function OABookingDashboard() {
     setModalInitialDays(initialDays);
     setModalDateMode("day");
     setModalLockDateSelection(true);
+    setModalEditEvent(event);
     setModalOpen(true);
   };
 
@@ -1919,6 +1978,7 @@ export default function OABookingDashboard() {
           setModalOpen(false);
           setModalInitialDays(null);
           setModalLockDateSelection(false);
+          setModalEditEvent(null);
         }}
         seedDateISO={seedDateISO}
         onChangeSeedDate={setSeedDateISO}
@@ -1926,13 +1986,15 @@ export default function OABookingDashboard() {
         djOptions={djOptions}
         existingEventsByDate={existingEventsByDate}
         onPreviewEvent={setPreviewEvent}
+        editEvent={modalEditEvent}
+        onDeleteDay={deleteEventDay}
         title={modalTitle}
         initialDays={modalInitialDays}
         dateMode={modalDateMode}
         lockDateSelection={modalLockDateSelection}
       />
 
-      <EventDetailsModal event={previewEvent} onClose={() => setPreviewEvent(null)} onEdit={openEditFromPreview} />
+      <EventDetailsModal event={previewEvent} onClose={() => setPreviewEvent(null)} onEdit={openEditFromPreview} onDelete={deleteEventDay} />
 
       {toast ? (
         <div
