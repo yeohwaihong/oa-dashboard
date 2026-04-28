@@ -13,10 +13,12 @@ import {
   XCircle,
   ChevronDown,
   Clock,
+  Moon,
   X,
   Zap,
   Trash2,
   Pencil,
+  Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,6 +154,17 @@ const filterItems = [
 ];
 
 const statusOptions = ["Unconfirmed", "Confirmed", "Need Attention", "No Lineup"];
+
+function eventNeedsAttention(event) {
+  return event.status === "Need Attention" || event.status === "No Lineup" || !event.slots.length || event.slots.some((slot) => slot.dj.includes("TBD"));
+}
+
+function eventMatchesStatusFilter(event, activeFilter) {
+  if (activeFilter === "All") return true;
+  if (activeFilter === "Need Attention") return eventNeedsAttention(event);
+  if (activeFilter === "No Lineup") return event.status === "No Lineup" || !event.slots.length;
+  return event.status === activeFilter;
+}
 
 const financeDefaultInputs = {
   eventName: "New Finance Event",
@@ -531,6 +544,11 @@ function mapSupabaseEvent(row) {
 
 function isoFromDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthStartFromISO(iso) {
+  const date = isoToDate(iso);
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function startOfWeekMonday(date) {
@@ -1901,7 +1919,7 @@ function FinanceMathPage() {
   const supportingDj = toMyr(inputs.supportingDj);
   const mc = toMyr(inputs.mc);
   const marketing = toMyr(inputs.marketing);
-  const tshirt = toMyr(inputs.tshirt);
+  const merchandise = toMyr(inputs.tshirt);
   const otherCost = toMyr(inputs.otherCost);
   const serviceCharge = includeSuggestedFixedCosts ? barSales * share(inputs.serviceRate) : 0;
   const sst = includeSuggestedFixedCosts ? barSales * share(inputs.sstRate) : 0;
@@ -1938,7 +1956,7 @@ function FinanceMathPage() {
     ["Supporting DJ", supportingDj, supportingDj, 0],
     ["MC", mc, mc, 0],
     ["Marketing", marketing, marketing, 0],
-    ["Tshirt", tshirt, tshirt, 0],
+    ["Merchandise", merchandise, merchandise, 0],
     ["Other Cost", otherCost, otherCost, 0],
     ["Bar Split Paid Out", barSplitPartner, barSplitPartner, 0],
   ];
@@ -1984,7 +2002,7 @@ function FinanceMathPage() {
     ["supportingDj", "Supporting DJ"],
     ["mc", "MC"],
     ["marketing", "Marketing"],
-    ["tshirt", "Tshirt"],
+    ["tshirt", "Merchandise"],
     ["otherCost", "Other Cost"],
   ];
 
@@ -2425,10 +2443,19 @@ function DashboardApp({ onLogout }) {
   const [syncError, setSyncError] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
   const [toast, setToast] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "dark";
+    return window.localStorage.getItem("oa_dashboard_theme") || "dark";
+  });
   const [seedDateISO, setSeedDateISO] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
+  const isLightTheme = theme === "light";
+
+  useEffect(() => {
+    window.localStorage.setItem("oa_dashboard_theme", theme);
+  }, [theme]);
 
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
@@ -2679,9 +2706,7 @@ function DashboardApp({ onLogout }) {
     const confirmed = scopedEvents.filter((x) => x.status === "Confirmed").length;
     const unconfirmed = scopedEvents.filter((x) => x.status === "Unconfirmed").length;
     const noLineup = scopedEvents.filter((x) => x.status === "No Lineup" || !x.slots.length).length;
-    const needAttention = scopedEvents.filter(
-      (x) => x.status === "Need Attention" || !x.slots.length || x.slots.some((s) => s.dj.includes("TBD")),
-    ).length;
+    const needAttention = scopedEvents.filter(eventNeedsAttention).length;
     return { total, confirmed, unconfirmed, noLineup, needAttention };
   }, [scopedEvents]);
 
@@ -2693,9 +2718,7 @@ function DashboardApp({ onLogout }) {
           .includes(search.toLowerCase());
 
         if (!matchesSearch) return false;
-        if (activeFilter === "All") return true;
-        if (activeFilter === "Need Attention") return event.status === "Need Attention";
-        return event.status === activeFilter;
+        return eventMatchesStatusFilter(event, activeFilter);
       })
       .sort((a, b) => {
         const dateCompare = a.date.localeCompare(b.date);
@@ -2703,6 +2726,23 @@ function DashboardApp({ onLogout }) {
         return (a.name || "").localeCompare(b.name || "");
       });
   }, [activeFilter, dateSort, scopedEvents, search]);
+
+  const calendarFilteredEvents = useMemo(() => {
+    return events
+      .filter((event) => {
+        const matchesSearch = `${event.name} ${event.genre} ${event.stage} ${event.notes || ""} ${event.ic || ""} ${event.slots.map((x) => x.dj).join(" ")}`
+          .toLowerCase()
+          .includes(search.toLowerCase());
+
+        if (!matchesSearch) return false;
+        return eventMatchesStatusFilter(event, activeFilter);
+      })
+      .sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateSort === "asc" ? dateCompare : -dateCompare;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+  }, [activeFilter, dateSort, events, search]);
 
   const groupedEvents = useMemo(() => {
     const groups = new Map();
@@ -2720,9 +2760,7 @@ function DashboardApp({ onLogout }) {
         label: weekLabelFromKey(key),
         items,
         confirmed: items.filter((event) => event.status === "Confirmed").length,
-        needsAttention: items.filter(
-          (event) => event.status === "Need Attention" || event.status === "No Lineup" || event.slots.some((slot) => slot.dj.includes("TBD")),
-        ).length,
+        needsAttention: items.filter(eventNeedsAttention).length,
       }))
       .sort((a, b) => (dateSort === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)));
   }, [dateSort, filteredEvents]);
@@ -2974,7 +3012,7 @@ function DashboardApp({ onLogout }) {
 
   const calendarEventsByDate = useMemo(() => {
     const map = new Map();
-    for (const e of filteredEvents) {
+    for (const e of calendarFilteredEvents) {
       const list = map.get(e.date) ?? [];
       list.push(e);
       map.set(e.date, list);
@@ -2984,11 +3022,58 @@ function DashboardApp({ onLogout }) {
       map.set(key, list);
     }
     return map;
-  }, [filteredEvents]);
+  }, [calendarFilteredEvents]);
+
+  useEffect(() => {
+    if (view !== "Calendar" || !calendarFilteredEvents.length || (activeFilter === "All" && !search.trim())) return;
+    const firstMatchingMonth = monthStartFromISO(calendarFilteredEvents[0].date);
+    setCalendarCursor((current) =>
+      current.getFullYear() === firstMatchingMonth.getFullYear() && current.getMonth() === firstMatchingMonth.getMonth()
+        ? current
+        : firstMatchingMonth,
+    );
+  }, [activeFilter, calendarFilteredEvents, dateSort, search, view]);
 
   return (
-    <div className="min-h-screen bg-[#080711] text-white sm:p-4 lg:p-6 xl:p-8">
-      <div className="mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/50 sm:min-h-0 sm:rounded-3xl sm:border">
+    <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-6 xl:p-8`}>
+      <style>{`
+        .oa-theme-light { color-scheme: light; }
+        .oa-theme-light [class*="bg-[#0d0c17]"],
+        .oa-theme-light [class*="bg-[#12111f]"],
+        .oa-theme-light [class*="bg-[#16152a]"],
+        .oa-theme-light [class*="bg-[#0a0912]"] { background: #ffffff !important; }
+        .oa-theme-light [class*="bg-black"],
+        .oa-theme-light [class*="bg-white/5"],
+        .oa-theme-light [class*="bg-white/[0.02]"],
+        .oa-theme-light [class*="bg-white/[0.03]"] { background-color: rgba(23, 19, 33, 0.045) !important; }
+        .oa-theme-light [class*="bg-black/70"],
+        .oa-theme-light [class*="bg-black/75"] { background-color: rgba(23, 19, 33, 0.34) !important; }
+        .oa-theme-light [class*="from-[#16152a]"][class*="to-[#0a0912]"] {
+          --tw-gradient-from: #ffffff var(--tw-gradient-from-position) !important;
+          --tw-gradient-to: rgba(255, 255, 255, 0) var(--tw-gradient-to-position) !important;
+          --tw-gradient-stops: var(--tw-gradient-from), #fbf9ff var(--tw-gradient-via-position), #f6f3fb var(--tw-gradient-to-position) !important;
+          background-image: linear-gradient(to bottom, #ffffff, #fbf9ff, #f6f3fb) !important;
+        }
+        .oa-theme-light [class*="border-white"] { border-color: rgba(23, 19, 33, 0.14) !important; }
+        .oa-theme-light [class*="text-white"] { color: rgba(23, 19, 33, 0.72) !important; }
+        .oa-theme-light .text-white { color: #171321 !important; }
+        .oa-theme-light [class*="text-purple-100"] { color: #6d28d9 !important; }
+        .oa-theme-light [class*="text-purple-200"] { color: #7c3aed !important; }
+        .oa-theme-light [class*="text-cyan-100"] { color: #0e7490 !important; }
+        .oa-theme-light [class*="text-yellow-100"] { color: #854d0e !important; }
+        .oa-theme-light [class*="text-emerald-100"] { color: #047857 !important; }
+        .oa-theme-light [class*="text-rose-100"] { color: #be123c !important; }
+        .oa-theme-light [class*="text-emerald-200"] { color: #047857 !important; }
+        .oa-theme-light [class*="text-rose-200"] { color: #be123c !important; }
+        .oa-theme-light [class*="bg-yellow-400/15"] { background-color: rgba(250, 204, 21, 0.2) !important; }
+        .oa-theme-light [class*="bg-emerald-400/15"] { background-color: rgba(52, 211, 153, 0.18) !important; }
+        .oa-theme-light [class*="bg-rose-500/15"] { background-color: rgba(244, 63, 94, 0.16) !important; }
+        .oa-theme-light [class*="bg-purple-400/15"] { background-color: rgba(168, 85, 247, 0.16) !important; }
+        .oa-theme-light input,
+        .oa-theme-light select,
+        .oa-theme-light textarea { color: #171321 !important; background-color: rgba(23, 19, 33, 0.045) !important; }
+      `}</style>
+      <div className={`mx-auto min-h-screen max-w-[1600px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
           <div className="flex items-center gap-2">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
@@ -3026,7 +3111,7 @@ function DashboardApp({ onLogout }) {
             </Button>
             </div>
           </div>
-          <div className="grid w-full grid-cols-4 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className="grid w-full grid-cols-5 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
@@ -3047,6 +3132,13 @@ function DashboardApp({ onLogout }) {
             >
               <Plus className="h-4 w-4 shrink-0" />
               <span>Add Week</span>
+            </Button>
+            <Button
+              onClick={() => setTheme(isLightTheme ? "dark" : "light")}
+              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
+            >
+              {isLightTheme ? <Moon className="h-4 w-4 shrink-0" /> : <Sun className="h-4 w-4 shrink-0" />}
+              <span>{isLightTheme ? "Dark" : "Light"}</span>
             </Button>
             <Button
               onClick={onLogout}
