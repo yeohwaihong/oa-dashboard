@@ -896,6 +896,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
 function AddEventDayModal({
   open,
   onClose,
+  timeFormat,
   seedDateISO,
   onChangeSeedDate,
   onSave,
@@ -4520,6 +4521,7 @@ function DashboardApp({ onLogout, userRole }) {
           setModalLockDateSelection(false);
           setModalEditEvent(null);
         }}
+        timeFormat={timeFormat}
         seedDateISO={seedDateISO}
         onChangeSeedDate={setSeedDateISO}
         onSave={saveModalDays}
