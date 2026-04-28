@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Calculator,
   List,
+  Users,
   Plus,
   RefreshCcw,
   Save,
@@ -2930,6 +2931,247 @@ function LoginScreen() {
   );
 }
 
+function UserManagementPage({ onToast }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [onlyUnassigned, setOnlyUnassigned] = useState(true);
+  const [savingUserId, setSavingUserId] = useState(null);
+  const [passwordByUserId, setPasswordByUserId] = useState({});
+  const [roleByUserId, setRoleByUserId] = useState({});
+
+  const adminApiRequest = useCallback(async (path, { method = "GET", body } = {}) => {
+    if (!isSupabaseConfigured) {
+      throw new Error("Supabase is not configured.");
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("No active session.");
+
+    const res = await fetch(path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : null),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const text = await res.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = { error: text || `Request failed (${res.status})` };
+    }
+
+    if (!res.ok) {
+      throw new Error(payload?.error || `Request failed (${res.status})`);
+    }
+
+    return payload;
+  }, []);
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const payload = await adminApiRequest("/api/admin/users");
+      const nextUsers = Array.isArray(payload?.users) ? payload.users : [];
+      setUsers(nextUsers);
+      setRoleByUserId((prev) => {
+        const next = { ...prev };
+        for (const u of nextUsers) next[u.id] = u.role || "";
+        return next;
+      });
+    } catch (e) {
+      setError(e?.message || "Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
+  }, [adminApiRequest]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users
+      .filter((u) => {
+        const role = roleByUserId[u.id] ?? u.role ?? "";
+        if (onlyUnassigned && role) return false;
+        if (!q) return true;
+        return String(u.email || "")
+          .toLowerCase()
+          .includes(q) || String(u.id || "").toLowerCase().includes(q);
+      })
+      .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
+  }, [onlyUnassigned, roleByUserId, search, users]);
+
+  const updateUserRole = async (userId) => {
+    const nextRole = String(roleByUserId[userId] || "").trim();
+    setSavingUserId(userId);
+    setError("");
+    try {
+      await adminApiRequest("/api/admin/set-role", {
+        method: "POST",
+        body: { userId, role: nextRole || null },
+      });
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: nextRole || null } : u)));
+      onToast?.("Role updated");
+    } catch (e) {
+      setError(e?.message || "Failed to update role.");
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
+  const setUserPassword = async (userId) => {
+    const password = String(passwordByUserId[userId] || "");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setSavingUserId(userId);
+    setError("");
+    try {
+      await adminApiRequest("/api/admin/set-password", {
+        method: "POST",
+        body: { userId, password },
+      });
+      setPasswordByUserId((prev) => ({ ...prev, [userId]: "" }));
+      onToast?.("Password updated");
+    } catch (e) {
+      setError(e?.message || "Failed to set password.");
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-lg font-black tracking-tight text-white/90">User Management</div>
+          <div className="mt-1 text-xs font-bold text-white/35">Assign roles and reset passwords for Supabase Auth users.</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={loadUsers}
+            disabled={loading}
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCcw className="h-4 w-4" /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      {error ? <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-100">{error}</div> : null}
+
+      <Card className="rounded-3xl border border-white/10 bg-white/[0.02]">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search email or user id..."
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
+              />
+            </div>
+            <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-white/55">
+              <input
+                type="checkbox"
+                checked={onlyUnassigned}
+                onChange={(e) => setOnlyUnassigned(e.target.checked)}
+                className="h-4 w-4 accent-purple-400"
+              />
+              Unassigned only
+            </label>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+            <div className="grid grid-cols-[minmax(0,1fr)_148px] gap-0 border-b border-white/10 bg-white/[0.03] px-4 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30 md:grid-cols-[minmax(0,1fr)_170px_1fr]">
+              <div>User</div>
+              <div className="hidden md:block">Created</div>
+              <div className="text-right">Actions</div>
+            </div>
+
+            {loading ? (
+              <div className="px-4 py-6 text-center text-sm font-bold text-white/35">Loading users...</div>
+            ) : !filteredUsers.length ? (
+              <div className="px-4 py-8 text-center text-sm font-bold text-white/35">No users match this filter.</div>
+            ) : (
+              filteredUsers.map((u) => {
+                const currentRole = roleByUserId[u.id] ?? u.role ?? "";
+                const busy = savingUserId === u.id;
+                return (
+                  <div key={u.id} className="grid grid-cols-1 gap-3 border-b border-white/10 px-4 py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_170px_1fr] md:items-center">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-black text-white/85">{u.email || "(no email)"}</div>
+                      <div className="mt-1 truncate text-xs font-bold text-white/35">{u.id}</div>
+                      {u.last_sign_in_at ? (
+                        <div className="mt-1 text-[11px] font-bold text-white/30">Last sign-in: {new Date(u.last_sign_in_at).toLocaleString()}</div>
+                      ) : (
+                        <div className="mt-1 text-[11px] font-bold text-white/30">Never signed in</div>
+                      )}
+                    </div>
+
+                    <div className="hidden text-xs font-bold text-white/35 md:block">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}</div>
+
+                    <div className="grid gap-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_104px]">
+                        <select
+                          value={currentRole}
+                          onChange={(e) => setRoleByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                          className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+                        >
+                          <option value="">Unassigned</option>
+                          <option value="staff">staff</option>
+                          <option value="admin">admin</option>
+                        </select>
+                        <Button
+                          onClick={() => updateUserRole(u.id)}
+                          disabled={busy}
+                          className="h-10 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                        >
+                          Save
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_132px]">
+                        <input
+                          type="password"
+                          value={passwordByUserId[u.id] || ""}
+                          onChange={(e) => setPasswordByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                          placeholder="New password (min 8)"
+                          className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+                        />
+                        <Button
+                          onClick={() => setUserPassword(u.id)}
+                          disabled={busy}
+                          className="h-10 rounded-xl border border-emerald-300/25 bg-emerald-400/10 text-xs font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Set Password
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function DashboardApp({ onLogout, userRole }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
@@ -2963,6 +3205,7 @@ function DashboardApp({ onLogout, userRole }) {
   const isLightTheme = theme === "light";
   const canEdit = userRole === "admin";
   const canAccessFinance = userRole === "admin";
+  const canManageUsers = userRole === "admin";
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -2979,6 +3222,10 @@ function DashboardApp({ onLogout, userRole }) {
   useEffect(() => {
     if (!canAccessFinance && view === "Finance") setView("List");
   }, [canAccessFinance, view]);
+
+  useEffect(() => {
+    if (!canManageUsers && view === "Users") setView("List");
+  }, [canManageUsers, view]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -3651,7 +3898,7 @@ function DashboardApp({ onLogout, userRole }) {
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
               className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${
-                canAccessFinance ? "grid-cols-3" : "grid-cols-2"
+                canAccessFinance && canManageUsers ? "grid-cols-4" : canAccessFinance ? "grid-cols-3" : "grid-cols-2"
               }`}
             >
             <Button
@@ -3674,6 +3921,19 @@ function DashboardApp({ onLogout, userRole }) {
               <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Calendar</span>
             </Button>
+            {canManageUsers ? (
+              <Button
+                onClick={() => setView("Users")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                  view === "Users"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>Users</span>
+              </Button>
+            ) : null}
             {canAccessFinance ? (
               <Button
                 onClick={() => setView("Finance")}
@@ -3817,7 +4077,9 @@ function DashboardApp({ onLogout, userRole }) {
         ) : null}
 
         <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
-          {view === "Finance" ? (
+          {view === "Users" ? (
+            <UserManagementPage onToast={showToast} />
+          ) : view === "Finance" ? (
             <FinanceMathPage />
           ) : view === "List" ? (
             <>
