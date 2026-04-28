@@ -328,6 +328,24 @@ function minutesFromTime(time) {
   return h * 60 + mRaw;
 }
 
+function formatClockTime(time, mode = "24") {
+  const [hRaw = 0, mRaw = 0] = String(time || "00:00").split(":").map(Number);
+  const h = ((Number.isFinite(hRaw) ? hRaw : 0) % 24 + 24) % 24;
+  const mm = String(Number.isFinite(mRaw) ? mRaw : 0).padStart(2, "0");
+
+  if (mode === "12") {
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour12 = h % 12 || 12;
+    return `${hour12}:${mm}${suffix}`;
+  }
+
+  return `${String(h).padStart(2, "0")}:${mm}`;
+}
+
+function formatTimeRange(start, end, mode = "24") {
+  return `${formatClockTime(start, mode)}-${formatClockTime(end, mode)}`;
+}
+
 function timeFromMinutes(totalMinutes) {
   const displayHour = Math.floor(totalMinutes / 60) % 24;
   const minutes = totalMinutes % 60;
@@ -1395,7 +1413,7 @@ function AddEventDayModal({
                         >
                           {timeOptions.map((t) => (
                             <option key={t} value={t}>
-                              {t}
+                              {formatClockTime(t, timeFormat)}
                             </option>
                           ))}
                         </select>
@@ -1409,7 +1427,7 @@ function AddEventDayModal({
                         >
                           {timeOptions.map((t) => (
                             <option key={t} value={t}>
-                              {t}
+                              {formatClockTime(t, timeFormat)}
                             </option>
                           ))}
                         </select>
@@ -1471,7 +1489,7 @@ function AddEventDayModal({
                             >
                               {timeOptions.map((t) => (
                                 <option key={t} value={t}>
-                                  {t}
+                                  {formatClockTime(t, timeFormat)}
                                 </option>
                               ))}
                             </select>
@@ -1487,7 +1505,7 @@ function AddEventDayModal({
                             >
                               {timeOptions.map((t) => (
                                 <option key={t} value={t}>
-                                  {t}
+                                  {formatClockTime(t, timeFormat)}
                                 </option>
                               ))}
                             </select>
@@ -1604,7 +1622,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, canEdit, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, holidays, timeFormat, canEdit, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -1688,7 +1706,7 @@ function EventCard({ event, holidays, canEdit, onEdit, onAssignIC, onConfirm }) 
                         }`}
                       >
                         <Clock className="h-3.5 w-3.5" />
-                        {slot.start}-{slot.end}
+                        {formatTimeRange(slot.start, slot.end, timeFormat)}
                       </span>
                     </span>
                   ))
@@ -1747,7 +1765,7 @@ function EventCard({ event, holidays, canEdit, onEdit, onAssignIC, onConfirm }) 
   );
 }
 
-function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm, canEdit }) {
+function EventDetailsModal({ event, timeFormat, onClose, onEdit, onDelete, onConfirm, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
 
@@ -1820,7 +1838,7 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm, canEdi
                     </div>
                     <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
                       <Clock className="h-3.5 w-3.5" />
-                      {slot.start}-{slot.end}
+                      {formatTimeRange(slot.start, slot.end, timeFormat)}
                     </div>
                   </div>
                 ))}
@@ -3178,6 +3196,8 @@ function DashboardApp({ onLogout, userRole }) {
   const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsPopoverStyle, setNotificationsPopoverStyle] = useState(null);
+  const notificationsButtonRef = React.useRef(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
@@ -3195,6 +3215,10 @@ function DashboardApp({ onLogout, userRole }) {
     if (typeof window === "undefined") return "dark";
     return window.localStorage.getItem("oa_dashboard_theme") || "dark";
   });
+  const [timeFormat, setTimeFormat] = useState(() => {
+    if (typeof window === "undefined") return "24";
+    return window.localStorage.getItem("oa_dashboard_time_format") || "24";
+  });
   const [seedDateISO, setSeedDateISO] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -3211,6 +3235,10 @@ function DashboardApp({ onLogout, userRole }) {
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem("oa_dashboard_time_format", timeFormat);
+  }, [timeFormat]);
 
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
@@ -3436,11 +3464,10 @@ function DashboardApp({ onLogout, userRole }) {
         const deduped = Array.from(new Map(source.map((holiday) => [`${holiday.date}-${holiday.name}`, holiday])).values());
         deduped.sort((a, b) => a.date.localeCompare(b.date));
         setMalaysiaHolidays(deduped);
-        if (!merged.length) setHolidayError("Using built-in Malaysia holiday list because the public API returned no MY data.");
       } catch (error) {
         if (!cancelled) {
           setMalaysiaHolidays(fallbackMalaysiaHolidays(holidayYears));
-          setHolidayError("Using built-in Malaysia holiday list because live holiday data could not load.");
+          setHolidayError("");
         }
       }
     }
@@ -3461,28 +3488,45 @@ function DashboardApp({ onLogout, userRole }) {
     return map;
   }, [malaysiaHolidays]);
 
-  const currentMonthRange = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return {
-      label: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-      startISO: isoFromDate(start),
-      endISO: isoFromDate(end),
-    };
-  }, []);
-
-  const unconfirmedThisMonth = useMemo(() => {
+  const pendingUpcomingEvents = useMemo(() => {
     return events
-      .filter((event) => event.date >= currentMonthRange.startISO && event.date <= currentMonthRange.endISO && event.status !== "Confirmed")
+      .filter((event) => event.date >= todayISO && event.status !== "Confirmed")
       .sort((a, b) => {
         const dateCompare = a.date.localeCompare(b.date);
         if (dateCompare !== 0) return dateCompare;
         return (a.name || "").localeCompare(b.name || "");
       });
-  }, [currentMonthRange.endISO, currentMonthRange.startISO, events]);
+  }, [events, todayISO]);
 
-  const unconfirmedThisMonthCount = unconfirmedThisMonth.length;
+  const pendingUpcomingCount = pendingUpcomingEvents.length;
+
+  const updateNotificationsPopoverPosition = useCallback(() => {
+    const node = notificationsButtonRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const gutter = 12;
+    const width = Math.min(560, Math.max(280, window.innerWidth - gutter * 2));
+    const left = Math.max(gutter, Math.min(window.innerWidth - width - gutter, rect.right - width));
+    const top = Math.min(window.innerHeight - gutter, rect.bottom + 8);
+    setNotificationsPopoverStyle({ position: "fixed", left, top, width });
+  }, []);
+
+  useEffect(() => {
+    if (!canEdit || !notificationsOpen) return undefined;
+    updateNotificationsPopoverPosition();
+    let raf = 0;
+    const handle = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateNotificationsPopoverPosition);
+    };
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [canEdit, notificationsOpen, updateNotificationsPopoverPosition]);
 
   const upcomingMalaysiaHolidays = useMemo(() => {
     return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
@@ -4085,7 +4129,7 @@ function DashboardApp({ onLogout, userRole }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-6 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className="grid w-full grid-cols-7 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
@@ -4096,15 +4140,19 @@ function DashboardApp({ onLogout, userRole }) {
             {canEdit ? (
               <div className="relative">
                 <Button
-                  onClick={() => setNotificationsOpen(true)}
+                  ref={notificationsButtonRef}
+                  onClick={() => {
+                    updateNotificationsPopoverPosition();
+                    setNotificationsOpen(true);
+                  }}
                   className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
                 >
                   <Bell className="h-4 w-4 shrink-0" />
                   <span>Alerts</span>
                 </Button>
-                {unconfirmedThisMonthCount ? (
+                {pendingUpcomingCount ? (
                   <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
-                    {unconfirmedThisMonthCount}
+                    {pendingUpcomingCount}
                   </span>
                 ) : null}
               </div>
@@ -4128,6 +4176,14 @@ function DashboardApp({ onLogout, userRole }) {
               </Button>
             ) : null}
             <Button
+              onClick={() => setTimeFormat(timeFormat === "24" ? "12" : "24")}
+              title={timeFormat === "24" ? "24-hour time" : "AM/PM time"}
+              className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
+            >
+              <span className="text-xs font-black leading-none">{timeFormat === "24" ? "24" : "AM"}</span>
+              <span className="hidden sm:inline">{timeFormat === "24" ? "24h" : "AM/PM"}</span>
+            </Button>
+            <Button
               onClick={() => setTheme(isLightTheme ? "dark" : "light")}
               className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-white/5 px-1 text-[9px] font-black text-white/45 hover:bg-white/10 hover:text-white sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs"
             >
@@ -4150,12 +4206,12 @@ function DashboardApp({ onLogout, userRole }) {
               if (e.target === e.currentTarget) setNotificationsOpen(false);
             }}
           >
-            <div className="absolute right-3 top-[92px] w-[min(560px,calc(100vw-1.5rem))] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/60 sm:right-6 sm:top-[110px]">
+            <div style={notificationsPopoverStyle || undefined} className="overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/60">
               <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
                 <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notification Center</div>
                   <div className="mt-0.5 truncate text-sm font-black text-white/85">
-                    {currentMonthRange.label} · {unconfirmedThisMonthCount} pending
+                    Upcoming · {pendingUpcomingCount} pending
                   </div>
                 </div>
                 <button
@@ -4167,9 +4223,9 @@ function DashboardApp({ onLogout, userRole }) {
                 </button>
               </div>
 
-              {unconfirmedThisMonthCount ? (
+              {pendingUpcomingCount ? (
                 <div className="max-h-[60svh] overflow-auto p-2">
-                  {unconfirmedThisMonth.map((event) => {
+                  {pendingUpcomingEvents.map((event) => {
                     const holidayList = holidaysByDate.get(event.date) ?? [];
                     const holidayName = holidayList[0] ? holidayList[0].localName || holidayList[0].name : "";
                     return (
@@ -4203,7 +4259,7 @@ function DashboardApp({ onLogout, userRole }) {
                   })}
                 </div>
               ) : (
-                <div className="px-4 py-8 text-center text-sm font-bold text-white/45">All days are confirmed for this month.</div>
+                <div className="px-4 py-8 text-center text-sm font-bold text-white/45">No upcoming pending events.</div>
               )}
             </div>
           </div>
@@ -4394,6 +4450,7 @@ function DashboardApp({ onLogout, userRole }) {
                       key={event.id}
                       event={event}
                       holidays={holidaysByDate.get(event.date) ?? []}
+                      timeFormat={timeFormat}
                       canEdit={canEdit}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
@@ -4470,6 +4527,7 @@ function DashboardApp({ onLogout, userRole }) {
 
       <EventDetailsModal
         event={previewEvent}
+        timeFormat={timeFormat}
         onClose={() => setPreviewEvent(null)}
         onEdit={openEditFromPreview}
         onDelete={deleteEventDay}
