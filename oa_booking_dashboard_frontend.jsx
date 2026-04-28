@@ -1505,7 +1505,7 @@ function AddEventDayModal({
                     ) : null}
                   </div>
 
-                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_180px]">
+                  <div className="mt-3 grid gap-3 md:grid-cols-1">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Status</div>
                       <div className="mt-1 grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
@@ -1532,21 +1532,6 @@ function AddEventDayModal({
                           );
                         })}
                       </div>
-                    </div>
-
-                    <div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Stage</div>
-                      <select
-                        value={day.stage}
-                        onChange={(e) => setDayField(day.isoDate, { stage: e.target.value })}
-                        className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-black text-white/70 outline-none focus:border-purple-300/60"
-                      >
-                        {stageOptions.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
                     </div>
                   </div>
 
@@ -4172,7 +4157,7 @@ function DashboardApp({ onLogout, userRole }) {
         {view !== "Finance" ? (
         <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           {view === "List" ? (
-          <div className="grid grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 md:flex md:max-w-full md:overflow-x-auto">
+          <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
               { key: "Past", label: "Past Events", count: pastCount },
@@ -4193,7 +4178,7 @@ function DashboardApp({ onLogout, userRole }) {
           </div>
           ) : null}
 
-          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
+          <div className="-mx-1 flex justify-center gap-1.5 overflow-x-auto px-1 md:mx-0 md:justify-start md:flex-wrap md:overflow-visible md:px-0">
             {filterItems.map((item) => {
               const Icon = item.icon;
               const active = activeFilter === item.key;
@@ -4212,7 +4197,7 @@ function DashboardApp({ onLogout, userRole }) {
           </div>
 
           {view === "List" ? (
-            <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+            <div className="flex flex-wrap items-center justify-center gap-2 md:ml-auto md:justify-start">
               <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
                 <button
                   onClick={() => setListGrouping("month")}
