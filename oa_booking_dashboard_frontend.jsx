@@ -12,8 +12,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  ChevronLeft,
-  ChevronRight,
+  ChevronUp,
   ChevronDown,
   Clock,
   Moon,
@@ -427,10 +426,32 @@ function getConfirmationBlockers(event) {
     return name && !name.toUpperCase().includes("TBD");
   });
   const latestEnd = slots.reduce((latest, slot) => Math.max(latest, minutesFromTime(slot.end || "00:00")), 0);
+  const windowStart = minutesFromTime("23:00");
+  const windowEnd = minutesFromTime("03:00");
+  const coverageIntervals = slots
+    .filter((slot) => slot.role !== "MC")
+    .map((slot) => ({
+      startM: minutesFromTime(slot.start || "00:00"),
+      endM: minutesFromTime(slot.end || "00:00"),
+    }))
+    .filter((slot) => slot.endM > slot.startM)
+    .sort((a, b) => a.startM - b.startM);
+  const coversWindow = (() => {
+    if (!coverageIntervals.length) return false;
+    let cursor = windowStart;
+    for (const interval of coverageIntervals) {
+      if (interval.endM <= cursor) continue;
+      if (interval.startM > cursor) return false;
+      cursor = Math.max(cursor, interval.endM);
+      if (cursor >= windowEnd) return true;
+    }
+    return false;
+  })();
 
   if (!assignedSlots.length) blockers.push("Add at least one DJ/MC before confirming.");
   if (validation.hasErrors) blockers.push("Fix set time clashes before confirming.");
-  if (latestEnd < minutesFromTime("03:00")) blockers.push("Lineup must end at 03:00 or later before confirming.");
+  if (!coversWindow) blockers.push("Set times must be filled from 11:00PM to 03:00AM (no gaps) before confirming.");
+  if (latestEnd < windowEnd) blockers.push("Lineup must end at 03:00 or later before confirming.");
 
   return blockers;
 }
@@ -1700,8 +1721,7 @@ function EventCard({ event, expanded, canEdit, onToggle, onEdit, onAssignIC, onC
               {canEdit && event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
-                  disabled={confirmationBlockers.length > 0}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400 hover:text-black disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25 sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
                   title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
@@ -1892,9 +1912,8 @@ function EventDetailsModal({ event, onClose, onEdit, onDelete, onConfirm, canEdi
               {event.status !== "Confirmed" ? (
                 <Button
                   onClick={() => onConfirm(event)}
-                  disabled={confirmationBlockers.length > 0}
                   title={confirmationBlockers.length ? confirmationBlockers.join(" ") : "Confirm night"}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   <span>Confirm Night</span>
@@ -3199,6 +3218,7 @@ function DashboardApp({ onLogout, userRole }) {
   const canManageUsers = userRole === "admin";
   const weekSectionRefs = React.useRef({});
   const [activeWeekKey, setActiveWeekKey] = useState(null);
+  const activeWeekKeyRef = React.useRef(null);
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -3219,6 +3239,10 @@ function DashboardApp({ onLogout, userRole }) {
   useEffect(() => {
     if (!canManageUsers && view === "Users") setView("List");
   }, [canManageUsers, view]);
+
+  useEffect(() => {
+    activeWeekKeyRef.current = activeWeekKey;
+  }, [activeWeekKey]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -3555,6 +3579,39 @@ function DashboardApp({ onLogout, userRole }) {
     scrollToWeekKey(nextKey);
   };
 
+  useEffect(() => {
+    if (view !== "List") return undefined;
+    if (!weekKeys.length) return undefined;
+
+    let raf = 0;
+    const threshold = 184;
+
+    const handleScroll = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        let current = weekKeys[0] || null;
+        for (const key of weekKeys) {
+          const node = weekSectionRefs.current?.[key];
+          if (!node) continue;
+          const top = node.getBoundingClientRect().top;
+          if (top - threshold <= 0) {
+            current = key;
+          } else {
+            break;
+          }
+        }
+        if (current && current !== activeWeekKeyRef.current) setActiveWeekKey(current);
+      });
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [view, weekKeys]);
+
   const saveModalDays = async (modalDays) => {
     if (!canEdit) {
       denyEdit();
@@ -3692,7 +3749,7 @@ function DashboardApp({ onLogout, userRole }) {
     if (status === "Confirmed") {
       const blockers = getConfirmationBlockers(event);
       if (blockers.length) {
-        showToast(blockers[0], "error");
+        showToast(blockers.join(" "), "error");
         return;
       }
     }
@@ -4113,12 +4170,24 @@ function DashboardApp({ onLogout, userRole }) {
                     if (!node) return;
                     weekSectionRefs.current[group.key] = node;
                   }}
-                  className="scroll-mt-32 space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5"
+                  className="scroll-mt-40 space-y-3 border-t border-white/10 pt-4 first:border-t-0 first:pt-0 xl:space-y-4 xl:pt-5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/25">{group.weekName}</div>
-                      <h2 className="mt-1 text-base font-black text-white/85 md:text-lg">{group.label}</h2>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-black text-white/85 md:text-lg">{group.label}</h2>
+                        {canEdit ? (
+                          <button
+                            onClick={() => openAddDayModal(group.key)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-purple-300/25 bg-purple-400/10 px-3 text-[11px] font-black text-purple-100 hover:bg-purple-400/20"
+                            title="Add a day in this week"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Add Day
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/35">
                       <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">{group.items.length} events</span>
@@ -4175,7 +4244,7 @@ function DashboardApp({ onLogout, userRole }) {
               className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20"
               title="Previous week"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronUp className="h-5 w-5" />
             </Button>
             <Button
               onClick={() => jumpWeek(1)}
@@ -4183,7 +4252,7 @@ function DashboardApp({ onLogout, userRole }) {
               className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-white/20"
               title="Next week"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronDown className="h-5 w-5" />
             </Button>
           </div>
         </div>
