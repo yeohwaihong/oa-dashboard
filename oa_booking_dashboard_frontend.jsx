@@ -25,6 +25,7 @@ import {
   Sun,
   Eye,
   EyeOff,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1603,10 +1604,14 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, canEdit, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, holidays, canEdit, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
+  const dayHolidays = holidays ?? [];
+  const holidaySummary = dayHolidays[0] ? dayHolidays[0].localName || dayHolidays[0].name : "";
+  const holidayExtra = dayHolidays.length > 1 ? ` +${dayHolidays.length - 1}` : "";
+  const holidayTitle = dayHolidays.length ? dayHolidays.map(holidayLabel).join(", ") : "";
 
   return (
     <motion.div
@@ -1636,6 +1641,15 @@ function EventCard({ event, canEdit, onEdit, onAssignIC, onConfirm }) {
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
                   {statusLabel(event.status)}
                 </span>
+                {holidaySummary ? (
+                  <span
+                    title={holidayTitle}
+                    className="inline-flex items-center gap-1 rounded-full border border-cyan-300/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-100"
+                  >
+                    <span aria-hidden>🎉</span>
+                    <span className="max-w-[240px] truncate">{holidaySummary}{holidayExtra}</span>
+                  </span>
+                ) : null}
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {splitGenreTags(event.genre).map((genre) => (
@@ -3160,9 +3174,10 @@ function DashboardApp({ onLogout, userRole }) {
   const [search, setSearch] = useState("");
   const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
   const [view, setView] = useState("List");
-  const [listGrouping, setListGrouping] = useState("month");
+  const [listGrouping, setListGrouping] = useState("all");
   const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
@@ -3445,6 +3460,29 @@ function DashboardApp({ onLogout, userRole }) {
     }
     return map;
   }, [malaysiaHolidays]);
+
+  const currentMonthRange = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      label: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+      startISO: isoFromDate(start),
+      endISO: isoFromDate(end),
+    };
+  }, []);
+
+  const unconfirmedThisMonth = useMemo(() => {
+    return events
+      .filter((event) => event.date >= currentMonthRange.startISO && event.date <= currentMonthRange.endISO && event.status !== "Confirmed")
+      .sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+  }, [currentMonthRange.endISO, currentMonthRange.startISO, events]);
+
+  const unconfirmedThisMonthCount = unconfirmedThisMonth.length;
 
   const upcomingMalaysiaHolidays = useMemo(() => {
     return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
@@ -4047,7 +4085,7 @@ function DashboardApp({ onLogout, userRole }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-5 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className="grid w-full grid-cols-6 gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
@@ -4055,6 +4093,22 @@ function DashboardApp({ onLogout, userRole }) {
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
             </Button>
+            {canEdit ? (
+              <div className="relative">
+                <Button
+                  onClick={() => setNotificationsOpen(true)}
+                  className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                >
+                  <Bell className="h-4 w-4 shrink-0" />
+                  <span>Alerts</span>
+                </Button>
+                {unconfirmedThisMonthCount ? (
+                  <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
+                    {unconfirmedThisMonthCount}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             {canEdit ? (
               <Button
                 onClick={() => openAddDayModal()}
@@ -4088,6 +4142,72 @@ function DashboardApp({ onLogout, userRole }) {
             </Button>
           </div>
         </header>
+
+        {canEdit && notificationsOpen ? (
+          <div
+            className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setNotificationsOpen(false);
+            }}
+          >
+            <div className="absolute right-3 top-[92px] w-[min(560px,calc(100vw-1.5rem))] overflow-hidden rounded-3xl border border-white/10 bg-[#0d0c17] shadow-2xl shadow-black/60 sm:right-6 sm:top-[110px]">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notification Center</div>
+                  <div className="mt-0.5 truncate text-sm font-black text-white/85">
+                    {currentMonthRange.label} · {unconfirmedThisMonthCount} pending
+                  </div>
+                </div>
+                <button
+                  onClick={() => setNotificationsOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {unconfirmedThisMonthCount ? (
+                <div className="max-h-[60svh] overflow-auto p-2">
+                  {unconfirmedThisMonth.map((event) => {
+                    const holidayList = holidaysByDate.get(event.date) ?? [];
+                    const holidayName = holidayList[0] ? holidayList[0].localName || holidayList[0].name : "";
+                    return (
+                      <button
+                        key={`${event.id}-${event.date}`}
+                        onClick={() => {
+                          const weekKey = weekKeyFromISO(event.date);
+                          setNotificationsOpen(false);
+                          setView("List");
+                          setActiveWeekKey(weekKey);
+                          window.setTimeout(() => scrollToWeekKey(weekKey), 0);
+                          window.setTimeout(() => scrollToWeekKey(weekKey), 140);
+                        }}
+                        className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left hover:bg-white/[0.06]"
+                        title={holidayList.length ? holidayList.map(holidayLabel).join(", ") : undefined}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-black text-white/85">{dayLabelFromISO(event.date)}</div>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
+                            {statusLabel(event.status)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm font-black text-white">{event.name}</div>
+                        {holidayName ? (
+                          <div className="mt-1 text-[11px] font-bold text-cyan-100/80">
+                            🎉 {holidayName}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-4 py-8 text-center text-sm font-bold text-white/45">All days are confirmed for this month.</div>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {syncError ? (
           <div className="border-b border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-bold text-rose-100 md:px-6 xl:px-8">
@@ -4273,6 +4393,7 @@ function DashboardApp({ onLogout, userRole }) {
                     <EventCard
                       key={event.id}
                       event={event}
+                      holidays={holidaysByDate.get(event.date) ?? []}
                       canEdit={canEdit}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
