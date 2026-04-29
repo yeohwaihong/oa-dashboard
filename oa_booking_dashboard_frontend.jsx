@@ -1923,7 +1923,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, onEdit, onAssignIC, onConfirm, onOpenDetails }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -1931,6 +1931,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, onEdit,
   const holidaySummary = dayHolidays[0] ? dayHolidays[0].localName || dayHolidays[0].name : "";
   const holidayExtra = dayHolidays.length > 1 ? ` +${dayHolidays.length - 1}` : "";
   const holidayTitle = dayHolidays.length ? dayHolidays.map(holidayLabel).join(", ") : "";
+  const latestComments = comments.slice(-2).reverse();
 
   return (
     <motion.div
@@ -2021,6 +2022,47 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, onEdit,
                   <MentionText text={event.notes} users={mentionUsers} />
                 </div>
               ) : null}
+              <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">Comments</div>
+                  <button
+                    type="button"
+                    onClick={onOpenDetails}
+                    className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/20"
+                  >
+                    {comments.length} {comments.length === 1 ? "comment" : "comments"}
+                  </button>
+                </div>
+                {latestComments.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {latestComments.map((comment) => (
+                      <button
+                        key={comment.id}
+                        type="button"
+                        onClick={onOpenDetails}
+                        className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-left hover:bg-white/[0.06]"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="truncate text-[11px] font-black text-white/75">{displayNameForUserId(comment.userId, mentionUsers, currentUser)}</span>
+                          <span className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</span>
+                        </div>
+                        <div className="oa-clamp-2 mt-0.5 text-xs font-bold text-white/50">
+                          <MentionText text={comment.body} users={mentionUsers} />
+                        </div>
+                      </button>
+                    ))}
+                    {comments.length > latestComments.length ? (
+                      <button type="button" onClick={onOpenDetails} className="text-[10px] font-black text-cyan-100/70 hover:text-cyan-100">
+                        View full thread
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button type="button" onClick={onOpenDetails} className="mt-2 text-xs font-bold text-white/35 hover:text-cyan-100">
+                    No comments yet. Open details to start a thread.
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
@@ -5044,9 +5086,12 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                       timeFormat={timeFormat}
                       canEdit={canEdit}
                       mentionUsers={mentionUsers}
+                      comments={commentsByEventId.get(event.id) ?? []}
+                      currentUser={currentUser}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
                       onConfirm={() => updateEventStatus(event, "Confirmed")}
+                      onOpenDetails={() => setPreviewEvent(event)}
                     />
                   ))}
                 </section>
