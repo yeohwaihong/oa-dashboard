@@ -3001,7 +3001,11 @@ function LoginScreen({ activeSession, onEnterDashboard, onLogout }) {
         email: email.trim(),
         password,
       });
-      if (signInError) setError(signInError.message || "Could not log in");
+      if (signInError) {
+        setError(signInError.message || "Could not log in");
+      } else {
+        onEnterDashboard?.();
+      }
       setAuthBusy(false);
     })();
   };
@@ -5301,11 +5305,10 @@ export default function OABookingDashboard() {
       setAuthLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession ?? null);
       if (nextSession?.user) {
         loadUserRole(nextSession.user);
-        if (event === "SIGNED_IN") setDashboardOpen(true);
       } else {
         setUserRole(null);
         setRoleError("");
