@@ -27,6 +27,7 @@ import {
   EyeOff,
   Bell,
   LogOut,
+  AtSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -626,6 +627,40 @@ function setIcInNotes(notes, ic) {
   return [cleanNotes, cleanIc ? `[dashboard:ic=${cleanIc}]` : ""].filter(Boolean).join("\n");
 }
 
+function mentionSlug(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function displayNameForUser(user) {
+  return String(user?.displayName || user?.email || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function mentionHandleForUser(user) {
+  if (user?.mentionHandle) return String(user.mentionHandle);
+  const displayName = displayNameForUser(user);
+  const emailLocal = String(user?.email || "").split("@")[0] || "";
+  const handle = displayName || emailLocal || "user";
+  return handle.replace(/[^a-zA-Z0-9._-]+/g, "");
+}
+
+function mentionAliasesForUser(user) {
+  const displayName = displayNameForUser(user);
+  const email = String(user?.email || "");
+  const emailLocal = email.split("@")[0] || "";
+  return Array.from(new Set([displayName, displayName.replace(/\s+/g, ""), email, emailLocal, mentionHandleForUser(user)].map(mentionSlug).filter(Boolean)));
+}
+
+function textMentionsUser(text, user) {
+  const aliases = mentionAliasesForUser(user);
+  if (!aliases.length) return false;
+  const mentionTokens = String(text || "").match(/@[a-zA-Z0-9._-]+/g) || [];
+  return mentionTokens.some((token) => aliases.includes(mentionSlug(token.slice(1))));
+}
+
 function isSupabaseUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value));
 }
@@ -911,6 +946,7 @@ function AddEventDayModal({
   initialDays,
   dateMode = "week",
   lockDateSelection = false,
+  mentionUsers = [],
 }) {
   const [days, setDays] = useState(() => {
     return weekWedToSat(seedDateISO).map((d) => {
@@ -1015,6 +1051,19 @@ function AddEventDayModal({
 
   const setDayField = (isoDate, patch) => {
     setDays((prev) => prev.map((d) => (d.isoDate === isoDate ? { ...d, ...patch } : d)));
+  };
+
+  const insertMention = (isoDate, user) => {
+    const handle = mentionHandleForUser(user);
+    if (!handle) return;
+    setDays((prev) =>
+      prev.map((d) => {
+        if (d.isoDate !== isoDate) return d;
+        const current = String(d.remarks || "");
+        const spacer = current && !/\s$/.test(current) ? " " : "";
+        return { ...d, remarks: `${current}${spacer}@${handle} ` };
+      }),
+    );
   };
 
   const addGenreTag = (isoDate, rawTag) => {
@@ -1583,12 +1632,30 @@ function AddEventDayModal({
                   </div>
 
                   <div className="mt-3">
-                    <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Remarks</div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Remarks</div>
+                      {mentionUsers.length ? (
+                        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+                          {mentionUsers.slice(0, 8).map((user) => (
+                            <button
+                              key={user.id || user.email}
+                              type="button"
+                              onClick={() => insertMention(day.isoDate, user)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/20"
+                              title={`Mention ${displayNameForUser(user)}`}
+                            >
+                              <AtSign className="h-3 w-3" />
+                              {mentionHandleForUser(user)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <textarea
                       value={day.remarks || ""}
                       onChange={(e) => setDayField(day.isoDate, { remarks: e.target.value })}
                       className="mt-1 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-bold text-white/75 outline-none placeholder:text-white/25 focus:border-purple-300/60"
-                      placeholder="Add remarks for this night..."
+                      placeholder="Add remarks for this night... Use @name to mention someone."
                     />
                   </div>
                 </div>
@@ -3192,7 +3259,7 @@ function UserManagementPage({ onToast }) {
   );
 }
 
-function DashboardApp({ onLogout, userRole }) {
+function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
   const [dateSort, setDateSort] = useState("asc");
@@ -3203,7 +3270,9 @@ function DashboardApp({ onLogout, userRole }) {
   const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [activeNotificationsTab, setActiveNotificationsTab] = useState("mentions");
   const [notificationsPopoverStyle, setNotificationsPopoverStyle] = useState(null);
+  const [mentionUsers, setMentionUsers] = useState([]);
   const notificationsButtonRef = React.useRef(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
@@ -3234,6 +3303,16 @@ function DashboardApp({ onLogout, userRole }) {
   const canEdit = userRole === "admin";
   const canAccessFinance = userRole === "admin";
   const canManageUsers = userRole === "admin";
+  const currentMentionUser = useMemo(() => {
+    const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
+    return (
+      matched ?? {
+        id: currentUser?.id,
+        email: currentUser?.email,
+        displayName: currentUser?.user_metadata?.display_name || currentUser?.user_metadata?.full_name || currentUser?.email,
+      }
+    );
+  }, [currentUser, mentionUsers]);
   const weekSectionRefs = React.useRef({});
   const [activeWeekKey, setActiveWeekKey] = useState(null);
   const activeWeekKeyRef = React.useRef(null);
@@ -3272,6 +3351,30 @@ function DashboardApp({ onLogout, userRole }) {
     const timer = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentUser?.id) return undefined;
+    let cancelled = false;
+
+    async function loadMentionUsers() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const response = await fetch("/api/users", { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!cancelled) setMentionUsers(Array.isArray(payload?.users) ? payload.users : []);
+      } catch {
+        if (!cancelled) setMentionUsers([]);
+      }
+    }
+
+    loadMentionUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
 
   const loadEvents = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -3506,6 +3609,17 @@ function DashboardApp({ onLogout, userRole }) {
   }, [events, todayISO]);
 
   const pendingUpcomingCount = pendingUpcomingEvents.length;
+  const mentionedEvents = useMemo(() => {
+    return events
+      .filter((event) => event.date >= todayISO && textMentionsUser(event.notes, currentMentionUser))
+      .sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+  }, [currentMentionUser, events, todayISO]);
+  const mentionCount = mentionedEvents.length;
+  const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
 
   const updateNotificationsPopoverPosition = useCallback(() => {
     const node = notificationsButtonRef.current;
@@ -3519,7 +3633,7 @@ function DashboardApp({ onLogout, userRole }) {
   }, []);
 
   useEffect(() => {
-    if (!canEdit || !notificationsOpen) return undefined;
+    if (!notificationsOpen) return undefined;
     updateNotificationsPopoverPosition();
     let raf = 0;
     const handle = () => {
@@ -3533,7 +3647,7 @@ function DashboardApp({ onLogout, userRole }) {
       window.removeEventListener("scroll", handle);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [canEdit, notificationsOpen, updateNotificationsPopoverPosition]);
+  }, [notificationsOpen, updateNotificationsPopoverPosition]);
 
   const upcomingMalaysiaHolidays = useMemo(() => {
     return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
@@ -4149,26 +4263,25 @@ function DashboardApp({ onLogout, userRole }) {
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
             </Button>
-            {canEdit ? (
-              <div className="relative">
-                <Button
-                  ref={notificationsButtonRef}
-                  onClick={() => {
-                    updateNotificationsPopoverPosition();
-                    setNotificationsOpen(true);
-                  }}
-                  className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
-                >
-                  <Bell className="h-4 w-4 shrink-0" />
-                  <span>Alerts</span>
-                </Button>
-                {pendingUpcomingCount ? (
-                  <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
-                    {pendingUpcomingCount}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
+            <div className="relative">
+              <Button
+                ref={notificationsButtonRef}
+                onClick={() => {
+                  updateNotificationsPopoverPosition();
+                  setActiveNotificationsTab(mentionCount || !canEdit ? "mentions" : "pending");
+                  setNotificationsOpen(true);
+                }}
+                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+              >
+                <Bell className="h-4 w-4 shrink-0" />
+                <span>Alerts</span>
+              </Button>
+              {notificationBadgeCount ? (
+                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
+                  {notificationBadgeCount}
+                </span>
+              ) : null}
+            </div>
             {canEdit ? (
               <Button
                 onClick={() => openAddDayModal()}
@@ -4214,7 +4327,7 @@ function DashboardApp({ onLogout, userRole }) {
           </div>
         </header>
 
-        {canEdit && notificationsOpen ? (
+        {notificationsOpen ? (
           <div
             className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm"
             onMouseDown={(e) => {
@@ -4226,7 +4339,7 @@ function DashboardApp({ onLogout, userRole }) {
                 <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notification Center</div>
                   <div className="mt-0.5 truncate text-sm font-black text-white/85">
-                    Upcoming · {pendingUpcomingCount} pending
+                    Mentions · {mentionCount} for you{canEdit ? ` · ${pendingUpcomingCount} pending` : ""}
                   </div>
                 </div>
                 <button
@@ -4238,7 +4351,54 @@ function DashboardApp({ onLogout, userRole }) {
                 </button>
               </div>
 
-              {pendingUpcomingCount ? (
+              <div className={`grid gap-1 border-b border-white/10 bg-white/[0.02] p-2 ${canEdit ? "grid-cols-2" : "grid-cols-1"}`}>
+                <button
+                  onClick={() => setActiveNotificationsTab("mentions")}
+                  className={`rounded-xl px-3 py-2 text-xs font-black ${activeNotificationsTab === "mentions" ? "bg-cyan-400 text-black" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
+                >
+                  Mentions {mentionCount ? <span className={activeNotificationsTab === "mentions" ? "text-black/50" : "text-white/25"}>{mentionCount}</span> : null}
+                </button>
+                {canEdit ? (
+                  <button
+                    onClick={() => setActiveNotificationsTab("pending")}
+                    className={`rounded-xl px-3 py-2 text-xs font-black ${activeNotificationsTab === "pending" ? "bg-yellow-300 text-black" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
+                  >
+                    Pending {pendingUpcomingCount ? <span className={activeNotificationsTab === "pending" ? "text-black/50" : "text-white/25"}>{pendingUpcomingCount}</span> : null}
+                  </button>
+                ) : null}
+              </div>
+
+              {activeNotificationsTab === "mentions" ? (
+                mentionCount ? (
+                  <div className="max-h-[60svh] overflow-auto p-2">
+                    {mentionedEvents.map((event) => (
+                      <button
+                        key={`mention-${event.id}-${event.date}`}
+                        onClick={() => {
+                          const weekKey = weekKeyFromISO(event.date);
+                          setNotificationsOpen(false);
+                          setView("List");
+                          setActiveWeekKey(weekKey);
+                          window.setTimeout(() => scrollToWeekKey(weekKey), 0);
+                          window.setTimeout(() => scrollToWeekKey(weekKey), 140);
+                        }}
+                        className="w-full rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-left hover:bg-cyan-400/15"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-black text-cyan-100">{dayLabelFromISO(event.date)}</div>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
+                            {statusLabel(event.status)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm font-black text-white">{event.name}</div>
+                        <div className="oa-clamp-2 mt-1 text-xs font-bold text-white/55">{event.notes}</div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm font-bold text-white/45">No mentions for you yet.</div>
+                )
+              ) : pendingUpcomingCount ? (
                 <div className="max-h-[60svh] overflow-auto p-2">
                   {pendingUpcomingEvents.map((event) => {
                     const holidayList = holidaysByDate.get(event.date) ?? [];
@@ -4538,6 +4698,7 @@ function DashboardApp({ onLogout, userRole }) {
         initialDays={modalInitialDays}
         dateMode={modalDateMode}
         lockDateSelection={modalLockDateSelection}
+        mentionUsers={mentionUsers}
       />
 
       <EventDetailsModal
@@ -4671,7 +4832,7 @@ export default function OABookingDashboard() {
     );
   }
 
-  return <DashboardApp onLogout={logout} userRole={userRole} />;
+  return <DashboardApp onLogout={logout} userRole={userRole} currentUser={session.user} />;
 }
 
 function Stat({ number, label, tone = "text-white" }) {
