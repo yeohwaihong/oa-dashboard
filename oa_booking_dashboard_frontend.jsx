@@ -2672,7 +2672,7 @@ function LoginScreen() {
       setRegisterEmail("");
       setRegisterPassword("");
       setRegisterConfirmPassword("");
-      setAuthMessage(data?.session ? "Account created. Ask an admin to assign your dashboard role." : "Account created. Check your email to confirm, then ask an admin to assign your dashboard role.");
+      setAuthMessage(data?.session ? "Account created. Please contact the admin to approve your email." : "Account created. Check your email to confirm, then please contact the admin to approve your email.");
       setAuthMode("login");
       setAuthBusy(false);
     })();
