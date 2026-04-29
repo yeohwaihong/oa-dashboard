@@ -27,7 +27,7 @@ function parseQuery(req) {
   return url.searchParams;
 }
 
-async function requireAdmin(req) {
+async function requireDashboardUser(req) {
   const supabaseUrl = getEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
   const anonKey = getEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
   const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -70,8 +70,8 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "admin") {
-    const error = new Error("Admin role required.");
+  if (roleResult.data?.role !== "superadmin" && roleResult.data?.role !== "admin" && roleResult.data?.role !== "staff") {
+    const error = new Error("Dashboard role required.");
     error.statusCode = 403;
     throw error;
   }
@@ -86,35 +86,23 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { error: "Method not allowed." });
     }
 
-    const { serviceClient } = await requireAdmin(req);
+    const { serviceClient } = await requireDashboardUser(req);
     const query = parseQuery(req);
-    const page = Math.max(1, Number.parseInt(query.get("page") || "1", 10) || 1);
-    const perPage = Math.max(1, Math.min(200, Number.parseInt(query.get("perPage") || "200", 10) || 200));
+    const eventId = String(query.get("event_id") || "").trim();
 
-    const usersResult = await serviceClient.auth.admin.listUsers({ page, perPage });
-    if (usersResult.error) {
-      return sendJson(res, 500, { error: usersResult.error.message || "Failed to list users." });
+    let request = serviceClient
+      .from("event_comments")
+      .select("id, event_id, user_id, body, mention_user_ids, created_at")
+      .order("created_at", { ascending: true });
+
+    if (eventId) request = request.eq("event_id", eventId);
+
+    const result = await request;
+    if (result.error) {
+      return sendJson(res, 500, { error: result.error.message || "Could not load comments." });
     }
 
-    const roleRowsResult = await serviceClient.from("user_roles").select("user_id, role");
-    if (roleRowsResult.error) {
-      return sendJson(res, 500, { error: roleRowsResult.error.message || "Failed to load roles." });
-    }
-
-    const roleByUserId = new Map();
-    for (const row of roleRowsResult.data || []) {
-      if (row?.user_id) roleByUserId.set(row.user_id, row.role || null);
-    }
-
-    const users = (usersResult.data?.users || []).map((u) => ({
-      id: u.id,
-      email: u.email,
-      created_at: u.created_at,
-      last_sign_in_at: u.last_sign_in_at,
-      role: roleByUserId.get(u.id) || null,
-    }));
-
-    return sendJson(res, 200, { users });
+    return sendJson(res, 200, { comments: result.data || [] });
   } catch (e) {
     return sendJson(res, e?.statusCode || 500, { error: e?.message || "Server error." });
   }

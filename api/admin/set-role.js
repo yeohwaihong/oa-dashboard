@@ -75,8 +75,8 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "superadmin") {
-    const error = new Error("Superadmin role required.");
+  if (roleResult.data?.role !== "admin") {
+    const error = new Error("Admin role required.");
     error.statusCode = 403;
     throw error;
   }
@@ -97,8 +97,8 @@ export default async function handler(req, res) {
     const roleRaw = body.role === null || body.role === undefined ? null : String(body.role || "").trim();
 
     if (!userId) return sendJson(res, 400, { error: "userId is required." });
-    if (roleRaw !== null && roleRaw !== "admin" && roleRaw !== "staff" && roleRaw !== "superadmin") {
-      return sendJson(res, 400, { error: "role must be superadmin, admin, staff, or null." });
+    if (roleRaw !== null && roleRaw !== "admin" && roleRaw !== "staff") {
+      return sendJson(res, 400, { error: "role must be admin, staff, or null." });
     }
 
     if (roleRaw === null || roleRaw === "") {

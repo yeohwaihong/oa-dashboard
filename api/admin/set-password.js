@@ -75,8 +75,8 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "superadmin") {
-    const error = new Error("Superadmin role required.");
+  if (roleResult.data?.role !== "admin") {
+    const error = new Error("Admin role required.");
     error.statusCode = 403;
     throw error;
   }
