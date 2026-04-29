@@ -692,6 +692,29 @@ function mentionedUserIdsFromText(text, users) {
   );
 }
 
+function mapSupabaseComment(row) {
+  return {
+    id: String(row.id),
+    eventId: String(row.event_id),
+    userId: String(row.user_id),
+    body: String(row.body || ""),
+    mentionUserIds: Array.isArray(row.mention_user_ids) ? row.mention_user_ids.map(String) : [],
+    createdAt: row.created_at,
+  };
+}
+
+function displayNameForUserId(userId, users, currentUser) {
+  const matched = (users || []).find((user) => user.id === userId);
+  if (matched) return displayNameForUser(matched) || matched.email || "User";
+  if (currentUser?.id === userId) return currentUser.user_metadata?.display_name || currentUser.user_metadata?.full_name || currentUser.email || "You";
+  return "Dashboard user";
+}
+
+function formatCommentTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 function activeMentionToken(text, caretIndex) {
   const beforeCaret = String(text || "").slice(0, caretIndex);
   const match = beforeCaret.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
@@ -708,6 +731,117 @@ function userMatchesMentionQuery(user, query) {
   const q = mentionSlug(query);
   if (!q) return true;
   return [displayNameForUser(user), user?.email, mentionHandleForUser(user)].some((value) => mentionSlug(value).includes(q));
+}
+
+function userForMentionToken(token, users) {
+  const slug = mentionSlug(String(token || "").replace(/^@/, ""));
+  if (!slug) return null;
+  return (users || []).find((user) => mentionAliasesForUser(user).includes(slug)) || null;
+}
+
+function MentionText({ text, users, className = "" }) {
+  const parts = String(text || "").split(/(@[a-zA-Z0-9._-]+)/g);
+  return (
+    <span className={className}>
+      {parts.map((part, index) => {
+        if (!part.startsWith("@")) return <React.Fragment key={`${index}-${part}`}>{part}</React.Fragment>;
+        const user = userForMentionToken(part, users);
+        if (!user) return <React.Fragment key={`${index}-${part}`}>{part}</React.Fragment>;
+        return (
+          <span
+            key={`${index}-${part}`}
+            className="font-black text-cyan-100 underline decoration-cyan-300/70 decoration-2 underline-offset-2"
+            title={`${displayNameForUser(user)} · ${user.email || user.id}`}
+          >
+            {part}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function CommentComposer({ mentionUsers, disabled, onSubmit }) {
+  const [body, setBody] = useState("");
+  const [activeMention, setActiveMention] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const mentionSuggestions = activeMention ? mentionUsers.filter((user) => userMatchesMentionQuery(user, activeMention.query)).slice(0, 6) : [];
+
+  const updateActiveMention = (text, caretIndex) => {
+    setActiveMention(activeMentionToken(text, caretIndex));
+  };
+
+  const insertMention = (user) => {
+    if (!activeMention) return;
+    const handle = mentionHandleForUser(user);
+    setBody((current) => `${current.slice(0, activeMention.start)}@${handle} ${current.slice(activeMention.end)}`);
+    setActiveMention(null);
+  };
+
+  const submit = async () => {
+    const cleanBody = body.trim();
+    if (!cleanBody || busy || disabled) return;
+    setBusy(true);
+    try {
+      await onSubmit(cleanBody);
+      setBody("");
+      setActiveMention(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
+      <div className="relative">
+        <textarea
+          value={body}
+          disabled={disabled || busy}
+          onChange={(e) => {
+            setBody(e.target.value);
+            updateActiveMention(e.target.value, e.target.selectionStart);
+          }}
+          onClick={(e) => updateActiveMention(e.currentTarget.value, e.currentTarget.selectionStart)}
+          onKeyUp={(e) => updateActiveMention(e.currentTarget.value, e.currentTarget.selectionStart)}
+          onBlur={() => window.setTimeout(() => setActiveMention(null), 120)}
+          className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold text-white/75 outline-none placeholder:text-white/25 focus:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder="Write a comment... Type @ to mention someone."
+        />
+        {activeMention ? (
+          <div className="absolute left-2 right-2 top-full z-20 mt-1 overflow-hidden rounded-xl border border-cyan-300/20 bg-[#12111f] shadow-2xl shadow-black/50">
+            {mentionSuggestions.length ? (
+              mentionSuggestions.map((user) => (
+                <button
+                  key={user.id || user.email}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => insertMention(user)}
+                  className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 border-b border-white/10 px-3 py-2 text-left last:border-b-0 hover:bg-cyan-400/10"
+                >
+                  <AtSign className="h-4 w-4 text-cyan-100/70" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-black text-white/85">{displayNameForUser(user) || mentionHandleForUser(user)}</span>
+                    <span className="block truncate text-[10px] font-bold text-white/35">{user.email || user.id}</span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs font-bold text-white/35">No users match @{activeMention.query}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-2 flex justify-end">
+        <Button
+          onClick={submit}
+          disabled={disabled || busy || !body.trim()}
+          className="h-9 rounded-xl bg-cyan-300 px-4 text-xs font-black text-black hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
+        >
+          {busy ? "Posting..." : "Post Comment"}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function isSupabaseUuid(value) {
@@ -1789,7 +1923,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, onEdit, onAssignIC, onConfirm }) {
+function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, onEdit, onAssignIC, onConfirm }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -1884,7 +2018,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, onEdit, onAssignIC, o
               <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30 md:text-xs">{event.stage}</div>
               {event.notes ? (
                 <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold text-white/55">
-                  {event.notes}
+                  <MentionText text={event.notes} users={mentionUsers} />
                 </div>
               ) : null}
             </div>
@@ -1932,7 +2066,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, onEdit, onAssignIC, o
   );
 }
 
-function EventDetailsModal({ event, timeFormat, onClose, onEdit, onDelete, onConfirm, canEdit }) {
+function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, onAddComment, onClose, onEdit, onDelete, onConfirm, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
 
@@ -1981,7 +2115,9 @@ function EventDetailsModal({ event, timeFormat, onClose, onEdit, onDelete, onCon
           {event.notes ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Remarks</div>
-              <div className="mt-2 whitespace-pre-wrap text-sm font-bold text-white/70">{event.notes}</div>
+              <div className="mt-2 whitespace-pre-wrap text-sm font-bold text-white/70">
+                <MentionText text={event.notes} users={mentionUsers} />
+              </div>
             </div>
           ) : null}
 
@@ -2015,6 +2151,42 @@ function EventDetailsModal({ event, timeFormat, onClose, onEdit, onDelete, onCon
                 No lineup added yet.
               </div>
             )}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Comments</div>
+              <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/35">
+                {comments.length}
+              </div>
+            </div>
+            {commentsError ? (
+              <div className="mt-3 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-3 py-2 text-xs font-bold text-yellow-100">
+                {commentsError}
+              </div>
+            ) : null}
+            <div className="mt-3 space-y-2">
+              {comments.length ? (
+                comments.map((comment) => (
+                  <div key={comment.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-black text-white/85">{displayNameForUserId(comment.userId, mentionUsers, currentUser)}</div>
+                      <div className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</div>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm font-bold text-white/65">
+                      <MentionText text={comment.body} users={mentionUsers} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-center text-xs font-bold text-white/35">
+                  No comments yet.
+                </div>
+              )}
+            </div>
+            <div className="mt-3">
+              <CommentComposer mentionUsers={mentionUsers} disabled={Boolean(commentsError)} onSubmit={(body) => onAddComment(event, body)} />
+            </div>
           </div>
         </div>
 
@@ -3366,6 +3538,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeNotificationsTab, setActiveNotificationsTab] = useState("mentions");
   const [notificationsPopoverStyle, setNotificationsPopoverStyle] = useState(null);
   const [mentionUsers, setMentionUsers] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [commentsError, setCommentsError] = useState("");
+  const [pendingNotificationWeekKey, setPendingNotificationWeekKey] = useState(null);
   const notificationsButtonRef = React.useRef(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
@@ -3396,6 +3571,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const canEdit = userRole === "admin";
   const canAccessFinance = userRole === "admin";
   const canManageUsers = userRole === "admin";
+  const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
     const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
     return (
@@ -3468,6 +3644,20 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       cancelled = true;
     };
   }, [currentUser?.id]);
+
+  const loadComments = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+
+    const { data, error } = await supabase.from("event_comments").select("id, event_id, user_id, body, mention_user_ids, created_at").order("created_at", { ascending: true });
+    if (error) {
+      const message = error.message || "Could not load comments.";
+      setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+      return;
+    }
+
+    setCommentsError("");
+    setComments(Array.isArray(data) ? data.map(mapSupabaseComment) : []);
+  }, []);
 
   const loadEvents = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -3572,19 +3762,26 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     let refreshTimer = null;
+    let commentsRefreshTimer = null;
 
     const scheduleRefresh = () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(loadEvents, 250);
     };
+    const scheduleCommentsRefresh = () => {
+      if (commentsRefreshTimer) window.clearTimeout(commentsRefreshTimer);
+      commentsRefreshTimer = window.setTimeout(loadComments, 250);
+    };
 
     loadEvents();
+    loadComments();
     const channel = supabase
       .channel("oa-dashboard-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_slots" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_assignments" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_comments" }, scheduleCommentsRefresh)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           setSyncError("");
@@ -3594,9 +3791,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
+      if (commentsRefreshTimer) window.clearTimeout(commentsRefreshTimer);
       supabase.removeChannel(channel);
     };
-  }, [loadEvents]);
+  }, [loadComments, loadEvents]);
 
   const djOptions = useMemo(() => {
     const set = new Set(["(OPENING TBD)"]);
@@ -3638,6 +3836,18 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     }
     return map;
   }, [events]);
+
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+
+  const commentsByEventId = useMemo(() => {
+    const map = new Map();
+    for (const comment of comments) {
+      const list = map.get(comment.eventId) ?? [];
+      list.push(comment);
+      map.set(comment.eventId, list);
+    }
+    return map;
+  }, [comments]);
 
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
 
@@ -3716,7 +3926,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         return (a.name || "").localeCompare(b.name || "");
       });
   }, [currentMentionUser, currentUser?.id, events, todayISO]);
-  const mentionCount = mentionedEvents.length;
+  const mentionedComments = useMemo(() => {
+    const currentUserId = currentUser?.id;
+    if (!currentUserId) return [];
+    return comments
+      .filter((comment) => {
+        const event = eventsById.get(comment.eventId);
+        if (!event || event.date < todayISO) return false;
+        if ((comment.mentionUserIds || []).includes(currentUserId)) return true;
+        return textMentionsUser(comment.body, currentMentionUser);
+      })
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
+  const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
 
   const updateNotificationsPopoverPosition = useCallback(() => {
@@ -3844,8 +4066,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
   const scrollToWeekKey = useCallback((key) => {
     const node = weekSectionRefs.current?.[key];
-    if (!node) return;
+    if (!node) return false;
     node.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
   }, []);
 
   const weekKeys = useMemo(() => groupedEvents.map((g) => g.key), [groupedEvents]);
@@ -3867,6 +4090,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       return;
     }
 
+    if (pendingNotificationWeekKey) return;
+
     const nextMonthKey = `${listMonthCursor.getFullYear()}-${listMonthCursor.getMonth()}`;
     const prev = listWeekNavInitRef.current;
     const shouldAutoJump = prev.view !== "List" || prev.grouping !== listGrouping || prev.monthKey !== nextMonthKey;
@@ -3876,7 +4101,42 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setActiveWeekKey(weekKeys[0]);
     window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 0);
     window.setTimeout(() => scrollToWeekKey(weekKeys[0]), 160);
-  }, [listGrouping, listMonthCursor, scrollToWeekKey, view, weekKeys]);
+  }, [listGrouping, listMonthCursor, pendingNotificationWeekKey, scrollToWeekKey, view, weekKeys]);
+
+  useEffect(() => {
+    if (view !== "List" || !pendingNotificationWeekKey) return undefined;
+    if (!weekKeys.includes(pendingNotificationWeekKey)) return undefined;
+
+    setActiveWeekKey(pendingNotificationWeekKey);
+    let attempts = 0;
+    let timer = 0;
+
+    const tryScroll = () => {
+      attempts += 1;
+      if (scrollToWeekKey(pendingNotificationWeekKey) || attempts >= 8) {
+        setPendingNotificationWeekKey(null);
+        return;
+      }
+      timer = window.setTimeout(tryScroll, 80);
+    };
+
+    timer = window.setTimeout(tryScroll, 0);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [pendingNotificationWeekKey, scrollToWeekKey, view, weekKeys]);
+
+  const openNotificationEvent = useCallback((event) => {
+    const weekKey = weekKeyFromISO(event.date);
+    setNotificationsOpen(false);
+    setSearch("");
+    setActiveFilter("All");
+    setDateScope(event.date < todayISO ? "Past" : "Upcoming");
+    setListGrouping("all");
+    setView("List");
+    setActiveWeekKey(weekKey);
+    setPendingNotificationWeekKey(weekKey);
+  }, [todayISO]);
 
   const jumpWeek = (direction) => {
     if (view !== "List") return;
@@ -4102,6 +4362,50 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     showToast(status === "Confirmed" ? "Night confirmed locally" : "Status saved locally");
   };
+
+  const addEventComment = useCallback(
+    async (event, body) => {
+      const cleanBody = String(body || "").trim();
+      if (!cleanBody) return;
+      const mentionUserIds = mentionedUserIdsFromText(cleanBody, mentionUsers);
+
+      if (!isSupabaseConfigured || !isSupabaseUuid(event.id)) {
+        const localComment = {
+          id: `local-${Date.now()}`,
+          eventId: event.id,
+          userId: currentUser?.id || "local",
+          body: cleanBody,
+          mentionUserIds,
+          createdAt: new Date().toISOString(),
+        };
+        setComments((prev) => [...prev, localComment]);
+        showToast("Comment added locally");
+        return;
+      }
+
+      if (!currentUser?.id) {
+        showToast("Login required to comment", "error");
+        return;
+      }
+
+      const { error } = await supabase.from("event_comments").insert({
+        event_id: event.id,
+        user_id: currentUser.id,
+        body: cleanBody,
+        mention_user_ids: mentionUserIds,
+      });
+      if (error) {
+        const message = error.message || "Could not post comment.";
+        setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+        showToast("Comment failed", "error");
+        throw error;
+      }
+      setCommentsError("");
+      await loadComments();
+      showToast("Comment posted");
+    },
+    [currentUser, loadComments, mentionUsers, showToast],
+  );
 
   const deleteEventDay = async (event) => {
     if (!canEdit) {
@@ -4371,9 +4675,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   setNotificationsOpen(true);
                 }}
                 className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                title={canEdit ? "Notification center" : "Mentions notification center"}
               >
                 <Bell className="h-4 w-4 shrink-0" />
-                <span>Alerts</span>
+                <span>{notificationButtonLabel}</span>
               </Button>
               {notificationBadgeCount ? (
                 <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
@@ -4438,7 +4743,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notification Center</div>
                   <div className="mt-0.5 truncate text-sm font-black text-white/85">
-                    Mentions · {mentionCount} for you{canEdit ? ` · ${pendingUpcomingCount} pending` : ""}
+                    {canEdit ? `Mentions · ${mentionCount} for you · ${pendingUpcomingCount} pending` : `Staff Mentions · ${mentionCount} for you`}
                   </div>
                 </div>
                 <button
@@ -4473,14 +4778,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                     {mentionedEvents.map((event) => (
                       <button
                         key={`mention-${event.id}-${event.date}`}
-                        onClick={() => {
-                          const weekKey = weekKeyFromISO(event.date);
-                          setNotificationsOpen(false);
-                          setView("List");
-                          setActiveWeekKey(weekKey);
-                          window.setTimeout(() => scrollToWeekKey(weekKey), 0);
-                          window.setTimeout(() => scrollToWeekKey(weekKey), 140);
-                        }}
+                        onClick={() => openNotificationEvent(event)}
                         className="w-full rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-left hover:bg-cyan-400/15"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4490,9 +4788,36 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                           </span>
                         </div>
                         <div className="mt-1 text-sm font-black text-white">{event.name}</div>
-                        <div className="oa-clamp-2 mt-1 text-xs font-bold text-white/55">{event.notes}</div>
+                        <div className="oa-clamp-2 mt-1 text-xs font-bold text-white/55">
+                          <MentionText text={event.notes} users={mentionUsers} />
+                        </div>
                       </button>
                     ))}
+                    {mentionedComments.map((comment) => {
+                      const event = eventsById.get(comment.eventId);
+                      if (!event) return null;
+                      return (
+                        <button
+                          key={`comment-mention-${comment.id}`}
+                          onClick={() => openNotificationEvent(event)}
+                          className="mt-2 w-full rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-left hover:bg-cyan-400/15"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-xs font-black text-cyan-100">{dayLabelFromISO(event.date)}</div>
+                            <span className="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-100">
+                              Comment
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm font-black text-white">{event.name}</div>
+                          <div className="mt-0.5 text-[10px] font-bold text-white/35">
+                            {displayNameForUserId(comment.userId, mentionUsers, currentUser)} · {formatCommentTime(comment.createdAt)}
+                          </div>
+                          <div className="oa-clamp-2 mt-1 text-xs font-bold text-white/55">
+                            <MentionText text={comment.body} users={mentionUsers} />
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="px-4 py-8 text-center text-sm font-bold text-white/45">No mentions for you yet.</div>
@@ -4505,14 +4830,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                     return (
                       <button
                         key={`${event.id}-${event.date}`}
-                        onClick={() => {
-                          const weekKey = weekKeyFromISO(event.date);
-                          setNotificationsOpen(false);
-                          setView("List");
-                          setActiveWeekKey(weekKey);
-                          window.setTimeout(() => scrollToWeekKey(weekKey), 0);
-                          window.setTimeout(() => scrollToWeekKey(weekKey), 140);
-                        }}
+                        onClick={() => openNotificationEvent(event)}
                         className="w-full rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left hover:bg-white/[0.06]"
                         title={holidayList.length ? holidayList.map(holidayLabel).join(", ") : undefined}
                       >
@@ -4725,6 +5043,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                       holidays={holidaysByDate.get(event.date) ?? []}
                       timeFormat={timeFormat}
                       canEdit={canEdit}
+                      mentionUsers={mentionUsers}
                       onEdit={() => openEditModal(event)}
                       onAssignIC={(ic) => assignIC(event.id, ic)}
                       onConfirm={() => updateEventStatus(event, "Confirmed")}
@@ -4803,6 +5122,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       <EventDetailsModal
         event={previewEvent}
         timeFormat={timeFormat}
+        mentionUsers={mentionUsers}
+        comments={previewEvent ? commentsByEventId.get(previewEvent.id) ?? [] : []}
+        commentsError={commentsError}
+        currentUser={currentUser}
+        onAddComment={addEventComment}
         onClose={() => setPreviewEvent(null)}
         onEdit={openEditFromPreview}
         onDelete={deleteEventDay}
