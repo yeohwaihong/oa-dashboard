@@ -2940,7 +2940,7 @@ function PublicEventCard({ event }) {
   );
 }
 
-function LoginScreen() {
+function LoginScreen({ activeSession, onEnterDashboard, onLogout }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -3095,6 +3095,10 @@ function LoginScreen() {
           </div>
           <Button
             onClick={() => {
+              if (activeSession) {
+                onEnterDashboard?.();
+                return;
+              }
               setAuthMode("login");
               setError("");
               setAuthMessage("");
@@ -3102,7 +3106,7 @@ function LoginScreen() {
             }}
             className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/70 hover:bg-purple-400 hover:text-black"
           >
-            Login
+            {activeSession ? "Dashboard" : "Login"}
           </Button>
         </header>
 
@@ -3196,8 +3200,30 @@ function LoginScreen() {
                 </button>
               ))}
             </div>
+            {activeSession ? (
+              <div className="mt-5 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100">
+                You are already logged in. Open the dashboard when you are ready.
+              </div>
+            ) : null}
 
-            {authMode === "login" ? (
+            {activeSession ? (
+              <div className="mt-5 grid gap-2">
+                <Button
+                  type="button"
+                  onClick={onEnterDashboard}
+                  className="h-11 w-full rounded-xl bg-purple-400 text-sm font-black text-black hover:bg-purple-300"
+                >
+                  Open Dashboard
+                </Button>
+                <Button
+                  type="button"
+                  onClick={onLogout}
+                  className="h-11 w-full rounded-xl bg-white/5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  Logout
+                </Button>
+              </div>
+            ) : authMode === "login" ? (
               <div className="mt-5 space-y-3">
                 <label className="block">
                   <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Email</span>
@@ -5234,6 +5260,7 @@ export default function OABookingDashboard() {
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [roleError, setRoleError] = useState("");
+  const [dashboardOpen, setDashboardOpen] = useState(false);
 
   const loadUserRole = useCallback(async (user) => {
     if (!isSupabaseConfigured || !user?.id) {
@@ -5274,13 +5301,15 @@ export default function OABookingDashboard() {
       setAuthLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession ?? null);
       if (nextSession?.user) {
         loadUserRole(nextSession.user);
+        if (event === "SIGNED_IN") setDashboardOpen(true);
       } else {
         setUserRole(null);
         setRoleError("");
+        setDashboardOpen(false);
       }
     });
 
@@ -5295,6 +5324,7 @@ export default function OABookingDashboard() {
     setSession(null);
     setUserRole(null);
     setRoleError("");
+    setDashboardOpen(false);
   };
 
   if (authLoading) {
@@ -5305,7 +5335,9 @@ export default function OABookingDashboard() {
     );
   }
 
-  if (!session) return <LoginScreen />;
+  if (!session || !dashboardOpen) {
+    return <LoginScreen activeSession={session} onEnterDashboard={() => setDashboardOpen(true)} onLogout={logout} />;
+  }
 
   if (!userRole) {
     return (
