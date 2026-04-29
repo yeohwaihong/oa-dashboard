@@ -3869,10 +3869,15 @@ function DjPaymentsPage({ events, djProfiles }) {
   // Toast-style feedback
   const [saveMsg, setSaveMsg] = useState({});
 
+  // Month cursor — default to current month
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
   // Filters
   const [filterPayStatus, setFilterPayStatus] = useState("ALL");
   const [filterEventStatus, setFilterEventStatus] = useState("ALL");
-  const [dateScope, setDateScope] = useState("all");
   const [search, setSearch] = useState("");
 
   // Build DJ profile lookup: name (uppercase) → { defaultFee, djId }
@@ -3890,16 +3895,28 @@ function DjPaymentsPage({ events, djProfiles }) {
   const fmtRM = (n) =>
     n == null ? "—" : `RM ${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Month navigation helpers
+  const monthLabel = (d) =>
+    d.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
+  const prevMonth = () =>
+    setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
+  const nextMonth = () =>
+    setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
 
-  // Filter events → dates with real slots only
+  // Active month boundaries (YYYY-MM-DD strings for fast comparison)
+  const monthStart = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, "0")}-01`;
+  const monthEnd = (() => {
+    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+  })();
+
+  // Filter events → dates with real slots only, within selected month
   const filteredEvents = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events
       .filter((e) => {
+        if (e.date < monthStart || e.date > monthEnd) return false;
         if (filterEventStatus !== "ALL" && e.status !== filterEventStatus) return false;
-        if (dateScope === "past" && e.date >= today) return false;
-        if (dateScope === "upcoming" && e.date < today) return false;
         if (q && !e.name.toLowerCase().includes(q) && !e.slots.some((s) => s.dj.toLowerCase().includes(q))) return false;
         return true;
       })
@@ -3908,8 +3925,8 @@ function DjPaymentsPage({ events, djProfiles }) {
         slots: e.slots.filter((s) => s.dj && !s.dj.toUpperCase().includes("TBD") && s.assignmentId),
       }))
       .filter((e) => e.slots.length > 0)
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [events, filterEventStatus, dateScope, search, today]);
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [events, filterEventStatus, search, monthStart, monthEnd]);
 
   // Resolve the effective fee for a slot
   const getEffectiveFee = useCallback(
@@ -4027,8 +4044,8 @@ function DjPaymentsPage({ events, djProfiles }) {
 
   return (
     <section className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Header row: title + month nav + search */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Admin Only</div>
           <h2 className="mt-0.5 text-xl font-black text-white">DJ Payments</h2>
@@ -4039,23 +4056,44 @@ function DjPaymentsPage({ events, djProfiles }) {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white/40">
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search event or DJ…"
-            className="w-36 bg-transparent text-xs font-black text-white outline-none placeholder:text-white/25 sm:w-44"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="text-white/30 hover:text-white">
-              <X className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Month navigator */}
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/20 px-1 py-1">
+            <button
+              onClick={prevMonth}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
             </button>
-          )}
+            <span className="min-w-[130px] text-center text-xs font-black text-white">
+              {monthLabel(monthCursor)}
+            </span>
+            <button
+              onClick={nextMonth}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          {/* Search */}
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white/40">
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search DJ…"
+              className="w-28 bg-transparent text-xs font-black text-white outline-none placeholder:text-white/25 sm:w-36"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="text-white/30 hover:text-white">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats for selected month */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           { label: "Total Fees", val: totalFee, color: "text-white" },
@@ -4072,22 +4110,6 @@ function DjPaymentsPage({ events, djProfiles }) {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        {/* Date scope */}
-        <div className="flex gap-1">
-          {[["all", "All Dates"], ["upcoming", "Upcoming"], ["past", "Past"]].map(([val, label]) => (
-            <button
-              key={val}
-              onClick={() => setDateScope(val)}
-              className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
-                dateScope === val
-                  ? "border-purple-300/50 bg-purple-400/20 text-purple-100"
-                  : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         {/* Event status */}
         <div className="flex gap-1">
           {[["ALL", "All Events"], ["Confirmed", "Confirmed"], ["Unconfirmed", "Unconfirmed"]].map(([val, label]) => (
