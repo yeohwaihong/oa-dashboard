@@ -64,7 +64,7 @@ async function requireDashboardUser(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "admin" && roleResult.data?.role !== "staff") {
+  if (roleResult.data?.role !== "superadmin" && roleResult.data?.role !== "admin" && roleResult.data?.role !== "staff") {
     const error = new Error("Dashboard role required.");
     error.statusCode = 403;
     throw error;

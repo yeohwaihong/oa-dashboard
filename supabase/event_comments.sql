@@ -23,7 +23,7 @@ drop policy if exists "dashboard users read comments" on public.event_comments;
 create policy "dashboard users read comments"
 on public.event_comments for select
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff')));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin', 'staff')));
 
 drop policy if exists "dashboard users create comments" on public.event_comments;
 create policy "dashboard users create comments"
@@ -31,7 +31,7 @@ on public.event_comments for insert
 to authenticated
 with check (
   user_id = auth.uid()
-  and exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin', 'staff'))
+  and exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin', 'staff'))
 );
 
 drop policy if exists "dashboard users update own comments" on public.event_comments;
@@ -40,11 +40,11 @@ on public.event_comments for update
 to authenticated
 using (
   user_id = auth.uid()
-  or exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+  or exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin'))
 )
 with check (
   user_id = auth.uid()
-  or exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+  or exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin'))
 );
 
 drop policy if exists "dashboard users delete own comments" on public.event_comments;
@@ -53,5 +53,5 @@ on public.event_comments for delete
 to authenticated
 using (
   user_id = auth.uid()
-  or exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+  or exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin'))
 );

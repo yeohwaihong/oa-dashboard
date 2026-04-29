@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "promote:superadmin": "node scripts/promote_superadmin.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

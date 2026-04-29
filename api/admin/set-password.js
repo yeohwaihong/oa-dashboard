@@ -32,8 +32,6 @@ function parseJsonBody(req) {
   }
 }
 
-const superAdminEmail = "waihong@overabove.com.my";
-
 async function requireAdmin(req) {
   const supabaseUrl = getEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
   const anonKey = getEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
@@ -77,8 +75,8 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "admin" || String(userResult.data.user.email || "").toLowerCase() !== superAdminEmail) {
-    const error = new Error("Superadmin access required.");
+  if (roleResult.data?.role !== "superadmin") {
+    const error = new Error("Superadmin role required.");
     error.statusCode = 403;
     throw error;
   }

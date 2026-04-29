@@ -5,7 +5,7 @@
 
 create table if not exists public.user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('admin', 'staff')),
+  role text not null check (role in ('superadmin', 'admin', 'staff')),
   created_at timestamptz not null default now()
 );
 
@@ -20,8 +20,9 @@ using (user_id = auth.uid());
 -- Replace these UUIDs after creating real Supabase Auth users.
 -- insert into public.user_roles (user_id, role)
 -- values
---   ('00000000-0000-0000-0000-000000000000', 'admin'),
---   ('11111111-1111-1111-1111-111111111111', 'staff')
+--   ('00000000-0000-0000-0000-000000000000', 'superadmin'),
+--   ('11111111-1111-1111-1111-111111111111', 'admin'),
+--   ('22222222-2222-2222-2222-222222222222', 'staff')
 -- on conflict (user_id) do update set role = excluded.role;
 
 -- Keep public read access for the launch schedule.
@@ -84,37 +85,37 @@ drop policy if exists "dashboard admin write events" on public.events;
 create policy "dashboard admin write events"
 on public.events for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
 
 drop policy if exists "dashboard staff write slots" on public.event_slots;
 drop policy if exists "dashboard admin write slots" on public.event_slots;
 create policy "dashboard admin write slots"
 on public.event_slots for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
 
 drop policy if exists "dashboard staff write assignments" on public.event_assignments;
 drop policy if exists "dashboard admin write assignments" on public.event_assignments;
 create policy "dashboard admin write assignments"
 on public.event_assignments for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
 
 drop policy if exists "dashboard staff write djs" on public.djs;
 drop policy if exists "dashboard admin write djs" on public.djs;
 create policy "dashboard admin write djs"
 on public.djs for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
 
 drop policy if exists "dashboard staff write templates" on public.event_templates;
 drop policy if exists "dashboard admin write templates" on public.event_templates;
 create policy "dashboard admin write templates"
 on public.event_templates for all
 to authenticated
-using (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
-with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'));
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
