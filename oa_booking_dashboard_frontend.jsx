@@ -3880,6 +3880,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const isLightTheme = theme === "light";
   const canEdit = userRole === "admin" || userRole === "superadmin";
   const canAccessFinance = userRole === "admin" || userRole === "superadmin";
+  const canAccessDjs = userRole === "admin" || userRole === "superadmin";
   const canManageUsers = userRole === "superadmin";
   const canUseNotificationCenter = userRole === "staff" || canEdit;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
@@ -3920,6 +3921,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (!canAccessFinance && view === "Finance") setView("List");
   }, [canAccessFinance, view]);
+
+  useEffect(() => {
+    if (!canAccessDjs && view === "DJs") setView("List");
+  }, [canAccessDjs, view]);
 
   useEffect(() => {
     if (!canManageUsers && view === "Users") setView("List");
@@ -4335,6 +4340,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
   const headerActionGridClass = canEdit ? "grid-cols-4 sm:grid-cols-6" : canUseNotificationCenter ? "grid-cols-5 sm:grid-cols-5" : "grid-cols-4";
+  const primaryNavGridClass = canAccessDjs && canAccessFinance && canManageUsers ? "grid-cols-5" : canAccessDjs && canAccessFinance ? "grid-cols-4" : "grid-cols-2";
 
   const updateNotificationsPopoverPosition = useCallback(() => {
     const node = notificationsButtonRef.current;
@@ -5006,9 +5012,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           <div className="flex items-center gap-2">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
-              className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${
-                canAccessFinance && canManageUsers ? "grid-cols-5" : canAccessFinance ? "grid-cols-4" : "grid-cols-3"
-              }`}
+              className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${primaryNavGridClass}`}
             >
             <Button
               onClick={() => setView("List")}
@@ -5030,17 +5034,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Calendar</span>
             </Button>
-            <Button
-              onClick={() => setView("DJs")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
-                view === "DJs"
-                  ? "bg-purple-400 text-black hover:bg-purple-300"
-                  : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <Music className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>DJs</span>
-            </Button>
+            {canAccessDjs ? (
+              <Button
+                onClick={() => setView("DJs")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                  view === "DJs"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Music className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>DJs</span>
+              </Button>
+            ) : null}
             {canManageUsers ? (
               <Button
                 onClick={() => setView("Users")}
@@ -5408,7 +5414,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <UserManagementPage onToast={showToast} />
           ) : view === "Finance" ? (
             <FinanceMathPage />
-          ) : view === "DJs" ? (
+          ) : view === "DJs" && canAccessDjs ? (
             <DjProfilesPage
               profiles={djProfiles}
               events={events}
