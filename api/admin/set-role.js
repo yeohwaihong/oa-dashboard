@@ -32,7 +32,13 @@ function parseJsonBody(req) {
   }
 }
 
-async function requireAdmin(req) {
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+async function requireSuperadmin(req) {
   const supabaseUrl = getEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
   const anonKey = getEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
   const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -75,8 +81,9 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "admin") {
-    const error = new Error("Admin role required.");
+  const role = normalizeRole(roleResult.data?.role);
+  if (role !== "superadmin") {
+    const error = new Error("Superadmin role required.");
     error.statusCode = 403;
     throw error;
   }
@@ -91,14 +98,14 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { error: "Method not allowed." });
     }
 
-    const { serviceClient } = await requireAdmin(req);
+    const { serviceClient } = await requireSuperadmin(req);
     const body = parseJsonBody(req);
     const userId = String(body.userId || "").trim();
     const roleRaw = body.role === null || body.role === undefined ? null : String(body.role || "").trim();
 
     if (!userId) return sendJson(res, 400, { error: "userId is required." });
-    if (roleRaw !== null && roleRaw !== "admin" && roleRaw !== "staff") {
-      return sendJson(res, 400, { error: "role must be admin, staff, or null." });
+    if (roleRaw !== null && roleRaw !== "admin" && roleRaw !== "staff" && roleRaw !== "superadmin") {
+      return sendJson(res, 400, { error: "role must be superadmin, admin, staff, or null." });
     }
 
     if (roleRaw === null || roleRaw === "") {

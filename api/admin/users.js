@@ -21,13 +21,19 @@ function getBearerToken(req) {
   return header.slice(7).trim();
 }
 
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
 function parseQuery(req) {
   const base = `http://${req.headers?.host || "localhost"}`;
   const url = new URL(req.url || "/", base);
   return url.searchParams;
 }
 
-async function requireAdmin(req) {
+async function requireSuperadmin(req) {
   const supabaseUrl = getEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
   const anonKey = getEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
   const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -70,8 +76,9 @@ async function requireAdmin(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "admin") {
-    const error = new Error("Admin role required.");
+  const role = normalizeRole(roleResult.data?.role);
+  if (role !== "superadmin") {
+    const error = new Error("Superadmin role required.");
     error.statusCode = 403;
     throw error;
   }
@@ -86,7 +93,7 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { error: "Method not allowed." });
     }
 
-    const { serviceClient } = await requireAdmin(req);
+    const { serviceClient } = await requireSuperadmin(req);
     const query = parseQuery(req);
     const page = Math.max(1, Number.parseInt(query.get("page") || "1", 10) || 1);
     const perPage = Math.max(1, Math.min(200, Number.parseInt(query.get("perPage") || "200", 10) || 200));

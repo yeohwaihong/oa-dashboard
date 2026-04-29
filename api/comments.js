@@ -21,6 +21,12 @@ function getBearerToken(req) {
   return header.slice(7).trim();
 }
 
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
 function parseQuery(req) {
   const base = `http://${req.headers?.host || "localhost"}`;
   const url = new URL(req.url || "/", base);
@@ -70,7 +76,8 @@ async function requireDashboardUser(req) {
     throw error;
   }
 
-  if (roleResult.data?.role !== "superadmin" && roleResult.data?.role !== "admin" && roleResult.data?.role !== "staff") {
+  const role = normalizeRole(roleResult.data?.role);
+  if (role !== "superadmin" && role !== "admin" && role !== "staff") {
     const error = new Error("Dashboard role required.");
     error.statusCode = 403;
     throw error;

@@ -3691,29 +3691,33 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const loadComments = useCallback(async () => {
     if (!isSupabaseConfigured) return;
 
-    const { data, error } = await supabase.from("event_comments").select("id, event_id, user_id, body, mention_user_ids, created_at").order("created_at", { ascending: true });
-    if (error) {
-      try {
-        const sessionResult = await supabase.auth.getSession();
-        const token = sessionResult.data?.session?.access_token;
-        if (!token) throw new Error("Missing session.");
-
+    try {
+      const sessionResult = await supabase.auth.getSession();
+      const token = sessionResult.data?.session?.access_token;
+      if (token) {
         const response = await fetch("/api/comments", { headers: { Authorization: `Bearer ${token}` } });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const message = payload?.error || error.message || "Could not load comments.";
-          setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+        if (response.ok) {
+          setCommentsError("");
+          setComments(Array.isArray(payload?.comments) ? payload.comments.map(mapSupabaseComment) : []);
           return;
         }
 
-        setCommentsError("");
-        setComments(Array.isArray(payload?.comments) ? payload.comments.map(mapSupabaseComment) : []);
-        return;
-      } catch (fallbackError) {
-        const message = fallbackError?.message || error.message || "Could not load comments.";
+        const message = payload?.error || "Could not load comments.";
         setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+        setComments([]);
         return;
       }
+    } catch {
+      // ignore and fallback to direct select
+    }
+
+    const { data, error } = await supabase.from("event_comments").select("id, event_id, user_id, body, mention_user_ids, created_at").order("created_at", { ascending: true });
+    if (error) {
+      const message = error.message || "Could not load comments.";
+      setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+      setComments([]);
+      return;
     }
 
     setCommentsError("");
