@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Calculator,
   List,
+  Music,
   Users,
   Plus,
   RefreshCcw,
@@ -851,6 +852,112 @@ function isSupabaseUuid(value) {
 function firstRelated(value) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function normalizeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapDjProfile(row) {
+  return {
+    id: String(row.id || row.name || ""),
+    name: row.name || row.stage_name || "Untitled DJ",
+    stageName: row.stage_name || "",
+    realName: row.real_name || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    instagramHandle: row.instagram_handle || "",
+    soundcloudUrl: row.soundcloud_url || "",
+    pressKitUrl: row.press_kit_url || "",
+    bio: row.bio || "",
+    homeCity: row.home_city || "",
+    country: row.country || "",
+    status: row.status || "Active",
+    notes: row.notes || "",
+    genres: normalizeJsonArray(row.genres)
+      .map((genre) => ({
+        id: String(genre.id || genre.name || ""),
+        name: genre.name || "",
+        isPrimary: Boolean(genre.is_primary),
+      }))
+      .filter((genre) => genre.name),
+    fees: normalizeJsonArray(row.active_fees)
+      .map((fee) => ({
+        id: String(fee.id || `${fee.fee_name}-${fee.amount}`),
+        name: fee.fee_name || "Standard",
+        currencyCode: fee.currency_code || "MYR",
+        amount: Number(fee.amount) || 0,
+        feeType: fee.fee_type || "per_set",
+        setLengthMinutes: fee.set_length_minutes,
+        minBookingHours: fee.min_booking_hours,
+        validFrom: fee.valid_from || "",
+        validUntil: fee.valid_until || "",
+        notes: fee.notes || "",
+      }))
+      .filter((fee) => fee.id),
+  };
+}
+
+function deriveDjProfilesFromEvents(events) {
+  const byName = new Map();
+  for (const event of events) {
+    for (const slot of event.slots || []) {
+      const name = String(slot.dj || "").trim();
+      if (!name || name.toUpperCase().includes("TBD") || slot.role === "MC") continue;
+      const profile = byName.get(name) ?? {
+        id: name,
+        name,
+        stageName: "",
+        realName: "",
+        email: "",
+        phone: "",
+        instagramHandle: "",
+        soundcloudUrl: "",
+        pressKitUrl: "",
+        bio: "",
+        homeCity: "",
+        country: "",
+        status: "Active",
+        notes: "",
+        genres: [],
+        fees: [],
+      };
+      const genreNames = new Set(profile.genres.map((genre) => genre.name.toLowerCase()));
+      for (const genreName of splitGenreTags(event.genre)) {
+        if (genreNames.has(genreName.toLowerCase())) continue;
+        profile.genres.push({ id: `${name}-${genreName}`, name: genreName, isPrimary: !profile.genres.length });
+        genreNames.add(genreName.toLowerCase());
+      }
+      byName.set(name, profile);
+    }
+  }
+  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function formatFeeType(value) {
+  return String(value || "per_set")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDjFee(fee) {
+  const amount = new Intl.NumberFormat("en-MY", {
+    style: "currency",
+    currency: fee.currencyCode || "MYR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(fee.amount) ? fee.amount : 0);
+  return `${amount} · ${formatFeeType(fee.feeType)}`;
 }
 
 function mapSupabaseEvent(row) {
@@ -2884,6 +2991,185 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
   );
 }
 
+function DjProfilesPage({ profiles, events, loading, error }) {
+  const [query, setQuery] = useState("");
+  const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
+  const availableProfiles = profiles.length ? profiles : derivedProfiles;
+  const filteredProfiles = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return availableProfiles;
+    return availableProfiles.filter((profile) => {
+      const genreText = profile.genres.map((genre) => genre.name).join(" ");
+      return `${profile.name} ${profile.stageName} ${profile.realName} ${profile.email} ${genreText}`.toLowerCase().includes(needle);
+    });
+  }, [availableProfiles, query]);
+  const [selectedId, setSelectedId] = useState("");
+
+  useEffect(() => {
+    if (!filteredProfiles.length) {
+      setSelectedId("");
+      return;
+    }
+    if (!filteredProfiles.some((profile) => profile.id === selectedId)) setSelectedId(filteredProfiles[0].id);
+  }, [filteredProfiles, selectedId]);
+
+  const selectedProfile = filteredProfiles.find((profile) => profile.id === selectedId) ?? filteredProfiles[0] ?? null;
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <aside className="rounded-2xl border border-white/10 bg-[#12111f] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">DJ Directory</div>
+            <div className="mt-1 text-lg font-black text-white">{availableProfiles.length} DJs</div>
+          </div>
+          {loading ? <RefreshCcw className="h-4 w-4 animate-spin text-purple-200" /> : null}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white/40">
+          <Search className="h-4 w-4 shrink-0" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search DJs..."
+            className="w-full bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/30"
+          />
+        </div>
+
+        <div className="mt-3 max-h-[62svh] space-y-2 overflow-auto pr-1">
+          {filteredProfiles.map((profile) => {
+            const active = selectedProfile?.id === profile.id;
+            const primaryGenre = profile.genres.find((genre) => genre.isPrimary)?.name || profile.genres[0]?.name || "No genre";
+            return (
+              <button
+                key={profile.id}
+                onClick={() => setSelectedId(profile.id)}
+                className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                  active ? "border-purple-300/60 bg-purple-400/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="truncate text-sm font-black text-white">{profile.stageName || profile.name}</div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="truncate text-[11px] font-bold text-white/40">{primaryGenre}</span>
+                  {profile.fees.length ? (
+                    <span className="shrink-0 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-100">
+                      {profile.fees.length} fee{profile.fees.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+
+          {!filteredProfiles.length ? (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35">
+              No DJs match that search.
+            </div>
+          ) : null}
+        </div>
+      </aside>
+
+      <div className="min-w-0 rounded-2xl border border-white/10 bg-[#12111f] p-4 sm:p-5">
+        {error ? (
+          <div className="mb-4 rounded-xl border border-yellow-300/20 bg-yellow-400/10 px-3 py-2 text-xs font-bold text-yellow-100">
+            {error}
+          </div>
+        ) : null}
+
+        {selectedProfile ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/70">{selectedProfile.status}</div>
+                <h2 className="mt-1 truncate text-3xl font-black tracking-tight text-white sm:text-4xl">
+                  {selectedProfile.stageName || selectedProfile.name}
+                </h2>
+                {selectedProfile.realName && selectedProfile.realName !== selectedProfile.name ? (
+                  <div className="mt-1 text-sm font-bold text-white/45">{selectedProfile.realName}</div>
+                ) : null}
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-right">
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Active Fees</div>
+                <div className="mt-1 text-xl font-black text-emerald-100">{selectedProfile.fees.length}</div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {selectedProfile.genres.length ? (
+                selectedProfile.genres.map((genre) => (
+                  <span key={genre.id} className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] ${genreTagClass(genre.name)}`}>
+                    {genre.name}
+                    {genre.isPrimary ? <span className="ml-1 text-white/45">Primary</span> : null}
+                  </span>
+                ))
+              ) : (
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/35">
+                  No genres saved
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Fees</div>
+                <div className="mt-3 grid gap-2">
+                  {selectedProfile.fees.length ? (
+                    selectedProfile.fees.map((fee) => (
+                      <div key={fee.id} className="rounded-xl border border-emerald-300/15 bg-emerald-400/10 px-3 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-black text-white">{fee.name}</div>
+                          <div className="text-sm font-black text-emerald-100">{formatDjFee(fee)}</div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-white/45">
+                          {fee.setLengthMinutes ? <span>{fee.setLengthMinutes} min set</span> : null}
+                          {fee.minBookingHours ? <span>{fee.minBookingHours} hr minimum</span> : null}
+                          {fee.validFrom || fee.validUntil ? <span>{fee.validFrom || "Any"} - {fee.validUntil || "Open"}</span> : null}
+                        </div>
+                        {fee.notes ? <div className="mt-2 text-xs font-bold text-white/50">{fee.notes}</div> : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35">
+                      No fees saved for this DJ.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Profile</div>
+                <div className="mt-3 space-y-3 text-sm">
+                  {[
+                    ["Email", selectedProfile.email],
+                    ["Phone", selectedProfile.phone],
+                    ["Instagram", selectedProfile.instagramHandle],
+                    ["City", [selectedProfile.homeCity, selectedProfile.country].filter(Boolean).join(", ")],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/25">{label}</div>
+                      <div className="mt-0.5 break-words font-bold text-white/70">{value || "-"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {selectedProfile.bio || selectedProfile.notes ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm font-bold leading-6 text-white/60">
+                {selectedProfile.bio || selectedProfile.notes}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-center text-sm font-bold text-white/35">
+            No DJ profiles yet.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PublicEventCard({ event }) {
   const slots = event.slots ?? [];
   const displaySlotName = (slot) => (slot.role === "MC" ? String(slot.dj || "").replace(/^MC\s+/i, "").trim() : slot.dj);
@@ -3575,6 +3861,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [holidayError, setHolidayError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
+  const [djProfiles, setDjProfiles] = useState([]);
+  const [djProfilesLoading, setDjProfilesLoading] = useState(isSupabaseConfigured);
+  const [djProfilesError, setDjProfilesError] = useState("");
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
@@ -3728,6 +4017,27 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
   }, []);
 
+  const loadDjProfiles = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setDjProfilesLoading(false);
+      return;
+    }
+
+    setDjProfilesLoading(true);
+    const { data, error } = await supabase.from("dj_profile_summary").select("*").order("name", { ascending: true });
+    setDjProfilesLoading(false);
+
+    if (error) {
+      const message = error.message || "";
+      setDjProfilesError(message.toLowerCase().includes("dj_profile_summary") ? "Run supabase/dj_profiles_genres_fees.sql in Supabase SQL Editor to enable DJ profiles, genres, and fees." : message);
+      setDjProfiles([]);
+      return;
+    }
+
+    setDjProfilesError("");
+    setDjProfiles(Array.isArray(data) ? data.map(mapDjProfile) : []);
+  }, []);
+
   const findOrCreateDj = useCallback(async (rawName) => {
     const name = String(rawName || "").trim();
     if (!name || name.toUpperCase().includes("TBD")) return null;
@@ -3810,6 +4120,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (!isSupabaseConfigured) return;
     let refreshTimer = null;
     let commentsRefreshTimer = null;
+    let djProfilesRefreshTimer = null;
 
     const scheduleRefresh = () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
@@ -3819,15 +4130,26 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       if (commentsRefreshTimer) window.clearTimeout(commentsRefreshTimer);
       commentsRefreshTimer = window.setTimeout(loadComments, 250);
     };
+    const scheduleDjProfilesRefresh = () => {
+      if (djProfilesRefreshTimer) window.clearTimeout(djProfilesRefreshTimer);
+      djProfilesRefreshTimer = window.setTimeout(loadDjProfiles, 250);
+    };
 
     loadEvents();
     loadComments();
+    loadDjProfiles();
     const channel = supabase
       .channel("oa-dashboard-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_slots" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_assignments" }, scheduleRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "djs" }, () => {
+        scheduleRefresh();
+        scheduleDjProfilesRefresh();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "genres" }, scheduleDjProfilesRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "dj_genres" }, scheduleDjProfilesRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "dj_fees" }, scheduleDjProfilesRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "event_comments" }, scheduleCommentsRefresh)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
@@ -3839,9 +4161,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       if (commentsRefreshTimer) window.clearTimeout(commentsRefreshTimer);
+      if (djProfilesRefreshTimer) window.clearTimeout(djProfilesRefreshTimer);
       supabase.removeChannel(channel);
     };
-  }, [loadComments, loadEvents]);
+  }, [loadComments, loadDjProfiles, loadEvents]);
 
   const djOptions = useMemo(() => {
     const set = new Set(["(OPENING TBD)"]);
@@ -4684,7 +5007,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
               className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${
-                canAccessFinance && canManageUsers ? "grid-cols-4" : canAccessFinance ? "grid-cols-3" : "grid-cols-2"
+                canAccessFinance && canManageUsers ? "grid-cols-5" : canAccessFinance ? "grid-cols-4" : "grid-cols-3"
               }`}
             >
             <Button
@@ -4706,6 +5029,17 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             >
               <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>Calendar</span>
+            </Button>
+            <Button
+              onClick={() => setView("DJs")}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                view === "DJs"
+                  ? "bg-purple-400 text-black hover:bg-purple-300"
+                  : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Music className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span>DJs</span>
             </Button>
             {canManageUsers ? (
               <Button
@@ -4946,7 +5280,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
         ) : null}
 
-        {view !== "Finance" ? (
+        {view !== "Finance" && view !== "DJs" ? (
         <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-4 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
@@ -4955,7 +5289,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         </section>
         ) : null}
 
-        {view !== "Finance" ? (
+        {view !== "Finance" && view !== "DJs" ? (
         <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           {view === "List" ? (
           <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
@@ -5074,6 +5408,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <UserManagementPage onToast={showToast} />
           ) : view === "Finance" ? (
             <FinanceMathPage />
+          ) : view === "DJs" ? (
+            <DjProfilesPage
+              profiles={djProfiles}
+              events={events}
+              loading={djProfilesLoading}
+              error={djProfilesError}
+            />
           ) : view === "List" ? (
             <>
               {groupedEvents.map((group) => (

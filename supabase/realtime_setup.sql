@@ -5,7 +5,7 @@ do $$
 declare
   table_name text;
 begin
-  foreach table_name in array array['events', 'event_slots', 'event_assignments', 'djs']
+  foreach table_name in array array['events', 'event_slots', 'event_assignments', 'djs', 'genres', 'dj_genres', 'dj_fees']
   loop
     if not exists (
       select 1

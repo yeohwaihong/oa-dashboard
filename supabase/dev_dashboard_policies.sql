@@ -8,6 +8,9 @@ alter table public.events enable row level security;
 alter table public.event_slots enable row level security;
 alter table public.event_assignments enable row level security;
 alter table public.djs enable row level security;
+alter table public.genres enable row level security;
+alter table public.dj_genres enable row level security;
+alter table public.dj_fees enable row level security;
 alter table public.event_templates enable row level security;
 
 drop policy if exists "dashboard anon read events" on public.events;
@@ -111,6 +114,84 @@ with check (true);
 
 create policy "dashboard anon delete djs"
 on public.djs for delete
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard anon read genres" on public.genres;
+drop policy if exists "dashboard anon insert genres" on public.genres;
+drop policy if exists "dashboard anon update genres" on public.genres;
+drop policy if exists "dashboard anon delete genres" on public.genres;
+
+create policy "dashboard anon read genres"
+on public.genres for select
+to anon, authenticated
+using (true);
+
+create policy "dashboard anon insert genres"
+on public.genres for insert
+to anon, authenticated
+with check (true);
+
+create policy "dashboard anon update genres"
+on public.genres for update
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "dashboard anon delete genres"
+on public.genres for delete
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard anon read dj genres" on public.dj_genres;
+drop policy if exists "dashboard anon insert dj genres" on public.dj_genres;
+drop policy if exists "dashboard anon update dj genres" on public.dj_genres;
+drop policy if exists "dashboard anon delete dj genres" on public.dj_genres;
+
+create policy "dashboard anon read dj genres"
+on public.dj_genres for select
+to anon, authenticated
+using (true);
+
+create policy "dashboard anon insert dj genres"
+on public.dj_genres for insert
+to anon, authenticated
+with check (true);
+
+create policy "dashboard anon update dj genres"
+on public.dj_genres for update
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "dashboard anon delete dj genres"
+on public.dj_genres for delete
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard anon read dj fees" on public.dj_fees;
+drop policy if exists "dashboard anon insert dj fees" on public.dj_fees;
+drop policy if exists "dashboard anon update dj fees" on public.dj_fees;
+drop policy if exists "dashboard anon delete dj fees" on public.dj_fees;
+
+create policy "dashboard anon read dj fees"
+on public.dj_fees for select
+to anon, authenticated
+using (true);
+
+create policy "dashboard anon insert dj fees"
+on public.dj_fees for insert
+to anon, authenticated
+with check (true);
+
+create policy "dashboard anon update dj fees"
+on public.dj_fees for update
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "dashboard anon delete dj fees"
+on public.dj_fees for delete
 to anon, authenticated
 using (true);
 
