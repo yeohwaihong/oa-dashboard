@@ -492,6 +492,7 @@ function buildTimeOptions() {
 const timeOptions = buildTimeOptions();
 const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
+const superAdminEmail = "waihong@overabove.com.my";
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
 const mentionsNotePattern = /\[dashboard:mentions=([^\]]*)\]/;
 const malaysiaHolidayFallback = [
@@ -713,6 +714,17 @@ function displayNameForUserId(userId, users, currentUser) {
 function formatCommentTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function BrandLogo({ className = "h-12 w-12", imageClassName = "" }) {
+  return (
+    <img
+      src="/oa-logo.png"
+      alt="O&A"
+      className={`${className} object-contain ${imageClassName}`}
+      draggable="false"
+    />
+  );
 }
 
 function activeMentionToken(text, caretIndex) {
@@ -3090,9 +3102,7 @@ function LoginScreen() {
     <div className="min-h-screen bg-[#080711] text-white">
       <div className="mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between gap-3">
-          <div className="text-3xl font-black tracking-tight">
-            O<span className="text-purple-300">&</span>A
-          </div>
+          <BrandLogo className="h-14 w-14" />
           <Button
             onClick={() => {
               setAuthMode("login");
@@ -3159,9 +3169,7 @@ function LoginScreen() {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-3xl font-black tracking-tight">
-                  O<span className="text-purple-300">&</span>A
-                </div>
+                <BrandLogo className="h-14 w-14" />
                 <div className="mt-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/35">
                   {authMode === "login" ? "Dashboard Login" : "Create Account"}
                 </div>
@@ -3612,8 +3620,14 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const isLightTheme = theme === "light";
   const canEdit = userRole === "admin";
   const canAccessFinance = userRole === "admin";
-  const canManageUsers = userRole === "admin";
+  const canManageUsers = userRole === "admin" && String(currentUser?.email || "").toLowerCase() === superAdminEmail;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
+  const greetingName =
+    displayNameForUser(mentionUsers.find((user) => user.id === currentUser?.id)) ||
+    currentUser?.user_metadata?.display_name ||
+    currentUser?.user_metadata?.full_name ||
+    currentUser?.email ||
+    "there";
   const currentMentionUser = useMemo(() => {
     const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
     return (
@@ -4646,7 +4660,12 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
           <div className="flex items-center gap-2">
-            <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
+            <div className="mr-1 shrink-0 md:mr-2">
+              <BrandLogo className="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14" />
+              <div className="mt-1 max-w-[140px] truncate text-[10px] font-black text-white/35 sm:max-w-[180px] sm:text-xs" title={`Hello ${greetingName}`}>
+                Hello {greetingName}
+              </div>
+            </div>
             <div
               className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${
                 canAccessFinance && canManageUsers ? "grid-cols-4" : canAccessFinance ? "grid-cols-3" : "grid-cols-2"
@@ -5283,9 +5302,7 @@ export default function OABookingDashboard() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
         <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50">
-          <div className="text-3xl font-black tracking-tight">
-            O<span className="text-purple-300">&</span>A
-          </div>
+          <BrandLogo className="h-16 w-16" />
           <div className="mt-4 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-100">
             {roleError || "Please contact the admin to approve your email."}
           </div>
