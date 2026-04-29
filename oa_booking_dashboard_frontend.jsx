@@ -977,12 +977,14 @@ function mapSupabaseEvent(row) {
           return {
             id: String(slot.id),
             assignmentId: assignment?.id ? String(assignment.id) : null,
+            djId: assignment?.djs?.id ? String(assignment.djs.id) : null,
             dj,
             role: normalizeSlotRole(slot.role),
             start: timeForInput(slot.start_time),
             end: timeForInput(slot.end_time),
             energy: slot.expected_energy ?? 3,
             warning: dj.toUpperCase().includes("TBD"),
+            fee: assignment?.fee != null ? Number(assignment.fee) : null,
           };
         })
     : [];
@@ -3836,11 +3838,7 @@ function UserManagementPage({ onToast }) {
 }
 
 // ─── DJ Payments ────────────────────────────────────────────────────────────
-const DJ_PAYMENT_DATA = [{"id":"pay_0000","month":"DECEMBER","date":"2024-12-04","day":"Wednesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0001","month":"DECEMBER","date":"2024-12-04","day":"Wednesday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0002","month":"DECEMBER","date":"2024-12-05","day":"Thursday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0003","month":"DECEMBER","date":"2024-12-05","day":"Thursday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0004","month":"DECEMBER","date":"2024-12-06","day":"Friday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0005","month":"DECEMBER","date":"2024-12-06","day":"Friday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0006","month":"DECEMBER","date":"2024-12-06","day":"Friday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0007","month":"DECEMBER","date":"2024-12-07","day":"Saturday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0008","month":"DECEMBER","date":"2024-12-07","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0009","month":"DECEMBER","date":"2024-12-07","day":"Saturday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0010","month":"DECEMBER","date":"2024-12-07","day":"Saturday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0011","month":"DECEMBER","date":"2024-12-11","day":"Wednesday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0012","month":"DECEMBER","date":"2024-12-11","day":"Wednesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0013","month":"DECEMBER","date":"2024-12-12","day":"Thursday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0014","month":"DECEMBER","date":"2024-12-12","day":"Thursday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0015","month":"DECEMBER","date":"2024-12-12","day":"Thursday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0016","month":"DECEMBER","date":"2024-12-13","day":"Friday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0017","month":"DECEMBER","date":"2024-12-13","day":"Friday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0018","month":"DECEMBER","date":"2024-12-13","day":"Friday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0019","month":"DECEMBER","date":"2024-12-14","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0020","month":"DECEMBER","date":"2024-12-14","day":"Saturday","dj":"CURZON","category":"DJ FEES","amount":1500,"invoice":"","status":"pending","section":"RESIDENT"},{"id":"pay_0021","month":"DECEMBER","date":"2024-12-14","day":"Saturday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0022","month":"DECEMBER","date":"2024-12-18","day":"Wednesday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0023","month":"DECEMBER","date":"2024-12-18","day":"Wednesday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0024","month":"DECEMBER","date":"2024-12-18","day":"Wednesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0025","month":"DECEMBER","date":"2024-12-19","day":"Thursday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0026","month":"DECEMBER","date":"2024-12-19","day":"Thursday","dj":"ROSHAN","category":"DJ FEES","amount":600,"invoice":"","status":"pending","section":"RESIDENT"},{"id":"pay_0027","month":"DECEMBER","date":"2024-12-20","day":"Friday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0028","month":"DECEMBER","date":"2024-12-20","day":"Friday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0029","month":"DECEMBER","date":"2024-12-20","day":"Friday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0030","month":"DECEMBER","date":"2024-12-21","day":"Saturday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0031","month":"DECEMBER","date":"2024-12-21","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0032","month":"DECEMBER","date":"2024-12-24","day":"Tuesday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0033","month":"DECEMBER","date":"2024-12-24","day":"Tuesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0034","month":"DECEMBER","date":"2024-12-26","day":"Friday","dj":"ROSHAN","category":"DJ FEES","amount":400,"invoice":"70125_O&A_CARISTA","status":"paid","section":"RESIDENT"},{"id":"pay_0035","month":"DECEMBER","date":"2024-12-27","day":"Saturday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0036","month":"DECEMBER","date":"2024-12-27","day":"Saturday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0037","month":"DECEMBER","date":"2024-12-27","day":"Saturday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0038","month":"DECEMBER","date":"2024-12-28","day":"Tuesday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0039","month":"DECEMBER","date":"2024-12-28","day":"Tuesday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice #9","status":"paid","section":"RESIDENT"},{"id":"pay_0040","month":"DECEMBER","date":"2024-12-28","day":"Tuesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0041","month":"DECEMBER","date":"2024-12-28","day":"Tuesday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00058","status":"paid","section":"RESIDENT"},{"id":"pay_0042","month":"DECEMBER","date":"2024-12-31","day":"Tuesday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"V035","status":"paid","section":"RESIDENT"},{"id":"pay_0043","month":"DECEMBER","date":"2024-12-31","day":"Tuesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#December31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0044","month":"DECEMBER","date":"2024-12-31","day":"Tuesday","dj":"CURZON","category":"DJ FEES","amount":2000,"invoice":"INV 341","status":"paid","section":"RESIDENT"},{"id":"pay_0045","month":"DECEMBER","date":"2024-12-31","day":"Tuesday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"311224002","status":"paid","section":"RESIDENT"},{"id":"pay_0046","month":"DECEMBER","date":"2024-12-04","day":"Wednesday","dj":"SHANNY","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0047","month":"DECEMBER","date":"2024-12-05","day":"Thursday","dj":"AQUA SCUM","category":"DJ FEES","amount":800,"invoice":"F-006","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0048","month":"DECEMBER","date":"2024-12-05","day":"Thursday","dj":"NAUFAL","category":"DJ FEES","amount":500,"invoice":"#NOPAL 175","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0049","month":"DECEMBER","date":"2024-12-11","day":"Wednesday","dj":"SHERINE","category":"DJ FEES","amount":1100,"invoice":"FC/24 0077","status":"pending","section":"GUEST (LOCAL)"},{"id":"pay_0050","month":"DECEMBER","date":"2024-12-11","day":"Wednesday","dj":"DJ FAYE","category":"DJ FEES","amount":1100,"invoice":"FC/24 0077","status":"pending","section":"GUEST (LOCAL)"},{"id":"pay_0051","month":"DECEMBER","date":"2024-12-13","day":"Friday","dj":"NO ONE","category":"DJ FEES","amount":1000,"invoice":"E001-241216","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0052","month":"DECEMBER","date":"2024-12-20","day":"Friday","dj":"CXW","category":"DJ FEES","amount":1500,"invoice":"no inv num.","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0053","month":"DECEMBER","date":"2024-12-24","day":"Tuesday","dj":"MR YANG","category":"DJ FEES","amount":3000,"invoice":"INV 10288","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0054","month":"DECEMBER","date":"2024-12-24","day":"Tuesday","dj":"53 JUMP STREET (ROSHAN)","category":"DJ FEES","amount":600,"invoice":"70125_O&A_XMAS","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0055","month":"DECEMBER","date":"2024-12-25","day":"Wednesday","dj":"DJ VIN","category":"DJ FEES","amount":600,"invoice":"Invoice # 93","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0056","month":"DECEMBER","date":"2024-12-25","day":"Wednesday","dj":"ANUAR","category":"DJ FEES","amount":750,"invoice":"hp-0094","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0057","month":"DECEMBER","date":"2024-12-25","day":"Wednesday","dj":"DJ ZIQQ","category":"DJ FEES","amount":800,"invoice":"1 2 2 4 / 0 2","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0058","month":"DECEMBER","date":"2024-12-12","day":"Thursday","dj":"REBEKAH","category":"ARTIST FEES","amount":8456.46,"invoice":"INVOICE No. 005OAKL","status":"pending","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0059","month":"DECEMBER","date":"2024-12-27","day":"Saturday","dj":"TIGER","category":"ARTIST FEES","amount":6894,"invoice":"","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0060","month":"JANUARY","date":"2025-01-11","day":"Saturday","dj":"TCHUNO","category":"DJ FEES","amount":2800,"invoice":"_050225001","status":"paid","section":"RESIDENT"},{"id":"pay_0061","month":"JANUARY","date":"2025-01-01","day":"Wednesday","dj":"ANNJO","category":"DJ FEES","amount":4200,"invoice":"#Jan 31-01","status":"paid","section":"RESIDENT"},{"id":"pay_0062","month":"JANUARY","date":"2025-01-01","day":"Wednesday","dj":"TEERA","category":"DJ FEES","amount":5400,"invoice":"Invoice # 10","status":"paid","section":"RESIDENT"},{"id":"pay_0063","month":"JANUARY","date":"2025-01-03","day":"Friday","dj":"SEP","category":"DJ FEES","amount":3200,"invoice":"Invoice No. 00059","status":"paid","section":"RESIDENT"},{"id":"pay_0064","month":"JANUARY","date":"2025-01-01","day":"Wednesday","dj":"VIENE","category":"DJ FEES","amount":3200,"invoice":"Invoice # V038","status":"paid","section":"RESIDENT"},{"id":"pay_0065","month":"JANUARY","date":"2025-01-03","day":"Friday","dj":"CURZON","category":"DJ FEES","amount":4000,"invoice":"Invoice # 344","status":"paid","section":"RESIDENT"},{"id":"pay_0066","month":"JANUARY","date":"2025-01-17","day":"Friday","dj":"TERENCE C","category":"DJ FEES","amount":1000,"invoice":"Invoice : 20091031905","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0067","month":"JANUARY","date":"2025-01-09","day":"Thursday","dj":"RATGIRL","category":"DJ FEES","amount":500,"invoice":"INVOICE # 92","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0068","month":"JANUARY","date":"2025-01-09","day":"Thursday","dj":"AXEL GROOVE","category":"DJ FEES","amount":600,"invoice":"INVOICE #1","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0069","month":"JANUARY","date":"2025-01-09","day":"Thursday","dj":"ZIG ZAG","category":"DJ FEES","amount":600,"invoice":"INV-130125","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0070","month":"JANUARY","date":"2025-01-31","day":"Friday","dj":"ASHLEY LAU","category":"DJ FEES","amount":5000,"invoice":"Invoice Num 6","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0071","month":"JANUARY","date":"2025-01-23","day":"Wednesday","dj":"ANUAR","category":"DJ FEES","amount":750,"invoice":"Invoice No. AR25-002","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0072","month":"JANUARY","date":"2025-01-23","day":"Wednesday","dj":"ZIQQ","category":"DJ FEES","amount":800,"invoice":"0 2 2 5 / 0 2","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0073","month":"JANUARY","date":"2025-01-22","day":"Wednesday","dj":"PEOT","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0074","month":"JANUARY","date":"2025-01-23","day":"Thursday","dj":"WCKD","category":"DJ FEES","amount":500,"invoice":"INVOICE #2","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0075","month":"JANUARY","date":"2025-01-23","day":"Thursday","dj":"SMOOTHBRAINYGIRL","category":"DJ FEES","amount":500,"invoice":"INV#1700","status":"pending","section":"GUEST (LOCAL)"},{"id":"pay_0076","month":"JANUARY","date":"2025-01-23","day":"Thursday","dj":"RAVEN","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0077","month":"JANUARY","date":"2025-01-31","day":"Friday","dj":"RAVEN","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0078","month":"JANUARY","date":"2025-01-09","day":"Thursday","dj":"MEDIA TEAM","category":"PHOTO","amount":770,"invoice":"INV0043","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0079","month":"FEBRUARY","date":"2025-02-01","day":"Saturday","dj":"TCHUNO","category":"DJ FEES","amount":700,"invoice":"60325001","status":"paid","section":"RESIDENT"},{"id":"pay_0080","month":"FEBRUARY","date":"2025-02-05","day":"Wednesday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"#Feb 28-01","status":"paid","section":"RESIDENT"},{"id":"pay_0081","month":"FEBRUARY","date":"2025-02-01","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"Invoice # 11","status":"paid","section":"RESIDENT"},{"id":"pay_0082","month":"FEBRUARY","date":"2025-02-01","day":"Saturday","dj":"SEP","category":"DJ FEES","amount":400,"invoice":"Invoice No. 00062","status":"paid","section":"RESIDENT"},{"id":"pay_0083","month":"FEBRUARY","date":"2025-02-05","day":"Wednesday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"Invoice # V040","status":"paid","section":"RESIDENT"},{"id":"pay_0084","month":"FEBRUARY","date":"2025-02-07","day":"Friday","dj":"CURZON","category":"DJ FEES","amount":1500,"invoice":"Invoice # 346","status":"paid","section":"RESIDENT"},{"id":"pay_0085","month":"FEBRUARY","date":"2025-02-06","day":"Thursday","dj":"RAVEWORKS TAKEOVER","category":"DJ FEES","amount":2000,"invoice":"#202502","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0086","month":"FEBRUARY","date":"2025-02-07","day":"Friday","dj":"PRIVATE LAUNCH MR. YANG","category":"DJ FEES","amount":2500,"invoice":"#10289","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0087","month":"FEBRUARY","date":"2025-02-07","day":"Friday","dj":"PRIVATE LAUNCH ROSHAN","category":"DJ FEES","amount":500,"invoice":"INVOICE_270225","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0088","month":"FEBRUARY","date":"2025-02-09","day":"Sunday","dj":"DAMIEN","category":"DJ FEES","amount":500,"invoice":"#111","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0089","month":"FEBRUARY","date":"2025-02-09","day":"Sunday","dj":"ANUAR","category":"DJ FEES","amount":750,"invoice":"#AR25-005","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0090","month":"FEBRUARY","date":"2025-02-09","day":"Sunday","dj":"ZIQQ","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0091","month":"FEBRUARY","date":"2025-02-10","day":"Monday","dj":"BAXX XTRA HARD","category":"DJ FEES","amount":7000,"invoice":"#151","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0092","month":"FEBRUARY","date":"2025-02-10","day":"Monday","dj":"BAXX XTRA HARD MR. YANG","category":"DJ FEES","amount":2000,"invoice":"#10289","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0093","month":"FEBRUARY","date":"2025-01-17","day":"Friday","dj":"XU","category":"DJ FEES","amount":1800,"invoice":"#250220","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0094","month":"FEBRUARY","date":"2025-02-20","day":"Thursday","dj":"NADIA","category":"DJ FEES","amount":500,"invoice":"#104","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0095","month":"FEBRUARY","date":"2025-02-20","day":"Thursday","dj":"SHAZAN","category":"DJ FEES","amount":500,"invoice":"#250226","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0096","month":"FEBRUARY","date":"2025-02-21","day":"Friday","dj":"MR. YANG ALL NIGHT LONG","category":"DJ FEES","amount":4716,"invoice":"#10289","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0097","month":"FEBRUARY","date":"2025-02-26","day":"Wednesday","dj":"PEOT","category":"DJ FEES","amount":500,"invoice":"#263","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0098","month":"FEBRUARY","date":"2025-02-26","day":"Wednesday","dj":"ZIQQ","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0099","month":"FEBRUARY","date":"2025-02-27","day":"Thursday","dj":"EREL","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0100","month":"FEBRUARY","date":"2025-02-26","day":"Wednesday","dj":"VIN","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0101","month":"FEBRUARY","date":"2025-02-20","day":"Thursday","dj":"RATGIRL","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0102","month":"FEBRUARY","date":"2025-02-27","day":"Thursday","dj":"SUHSI","category":"DJ FEES","amount":1200,"invoice":"INV#1701","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0103","month":"FEBRUARY","date":"2025-02-08","day":"Friday","dj":"BYORN","category":"ARTIST FEES","amount":13920,"invoice":"MXE","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0104","month":"FEBRUARY","date":"2025-02-20","day":"Thursday","dj":"RETROMIGRATION","category":"ARTIST FEES","amount":4214.13,"invoice":"850 Euro","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0105","month":"FEBRUARY","date":"2025-02-28","day":"Friday","dj":"KAKU","category":"ARTIST FEES","amount":15002.65,"invoice":"3330 USD","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0106","month":"FEBRUARY","date":"2025-02-09","day":"Sunday","dj":"MEDIA TEAM","category":"PHOTO","amount":770,"invoice":"","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0107","month":"MARCH","date":"2025-03-08","day":"Saturday","dj":"TCHUNO","category":"DJ FEES","amount":1000,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0108","month":"MARCH","date":"2025-03-07","day":"Friday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0109","month":"MARCH","date":"2025-03-01","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0110","month":"MARCH","date":"2025-03-01","day":"Saturday","dj":"SEP","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0111","month":"MARCH","date":"2025-03-01","day":"Saturday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0112","month":"MARCH","date":"2025-03-14","day":"Friday","dj":"CURZON","category":"DJ FEES","amount":1500,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0113","month":"MARCH","date":"2025-03-06","day":"Thursday","dj":"DJ PLAYGROUND TAKEOVER (SEAN/CHANG/GRAYSON/ALWIN/NEXTO/WASABI/NEO/CJ NICK)","category":"DJ FEES","amount":2500,"invoice":"FC25/0104","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0114","month":"MARCH","date":"2025-03-13","day":"Thursday","dj":"DJ PLAYGROUND TAKEOVER (MERRY MACK/TZ/YEWIN/KELVIN/DATO OYAMA/IVY/JOAN/MS SHERINE/SLUSHY)","category":"DJ FEES","amount":2500,"invoice":"FC25/0103","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0115","month":"MARCH","date":"2025-03-19","day":"Wednesday","dj":"DJ VIN (CITY FLOW)","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0116","month":"MARCH","date":"2025-03-19","day":"Wednesday","dj":"PEOT (CITY FLOW)","category":"DJ FEES","amount":375,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0117","month":"MARCH","date":"2025-03-19","day":"Wednesday","dj":"DJ ZIQQ (CITY FLOW)","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0118","month":"MARCH","date":"2025-03-20","day":"Thursday","dj":"AXEL GROOVE (GLOBAL GROOVES)","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0119","month":"MARCH","date":"2025-03-20","day":"Thursday","dj":"JULIA DEYCHUCK (GLOBAL GROOVES)","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0120","month":"MARCH","date":"2025-03-21","day":"Friday","dj":"VICTOR G","category":"DJ FEES","amount":1500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0121","month":"MARCH","date":"2025-03-26","day":"Wednesday","dj":"DAMIEN (CITY FLOW)","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0122","month":"MARCH","date":"2025-03-26","day":"Wednesday","dj":"ANUAR (CITY FLOW)","category":"DJ FEES","amount":750,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0123","month":"MARCH","date":"2025-03-26","day":"Wednesday","dj":"DJ ZIQQ (CITY FLOW)","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0124","month":"MARCH","date":"2025-03-27","day":"Thursday","dj":"RATGIRL (OVERDRIVE)","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0125","month":"MARCH","date":"2025-03-27","day":"Thursday","dj":"RAVEN (OVERDRIVE)","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0126","month":"MARCH","date":"2025-03-27","day":"Thursday","dj":"WCKD (OVERDRIVE)","category":"DJ FEES","amount":500,"invoice":"april","status":"pending","section":"GUEST (LOCAL)"},{"id":"pay_0127","month":"MARCH","date":"2025-03-27","day":"Thursday","dj":"MR YANG (OVERDRIVE)","category":"DJ FEES","amount":1500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0128","month":"MARCH","date":"2025-03-30","day":"Sunday","dj":"YUNG KAI","category":"DJ FEES","amount":2000,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0129","month":"MARCH","date":"2025-03-30","day":"Sunday","dj":"NARO","category":"DJ FEES","amount":500,"invoice":"Motion","status":"pending","section":"GUEST (LOCAL)"},{"id":"pay_0130","month":"MARCH","date":"2025-03-07","day":"Friday","dj":"OZAN","category":"ARTIST FEES","amount":620,"invoice":"USD","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0131","month":"APRIL","date":"2025-04-04","day":"Friday","dj":"TCHUNO","category":"DJ FEES","amount":1000,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0132","month":"APRIL","date":"2025-04-11","day":"Friday","dj":"ANNJO","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0133","month":"APRIL","date":"2025-04-05","day":"Saturday","dj":"TEERA","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0134","month":"APRIL","date":"2025-04-04","day":"Friday","dj":"SEP","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0135","month":"APRIL","date":"2025-04-05","day":"Saturday","dj":"VIENE","category":"DJ FEES","amount":400,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0136","month":"APRIL","date":"2025-04-05","day":"Saturday","dj":"CURZON","category":"DJ FEES","amount":1500,"invoice":"","status":"paid","section":"RESIDENT"},{"id":"pay_0137","month":"APRIL","date":"2025-04-02","day":"Wednesday","dj":"RADZ","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0138","month":"APRIL","date":"2025-04-02","day":"Wednesday","dj":"NARO","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0139","month":"APRIL","date":"2025-04-02","day":"Wednesday","dj":"SVGGY","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0140","month":"APRIL","date":"2025-04-05","day":"Friday","dj":"CXW","category":"DJ FEES","amount":1500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0141","month":"APRIL","date":"2025-04-09","day":"Wednesday","dj":"ANUAR","category":"DJ FEES","amount":750,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0142","month":"APRIL","date":"2025-04-09","day":"Wednesday","dj":"DAMIEN","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0143","month":"APRIL","date":"2025-04-09","day":"Wednesday","dj":"ZIQQ","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0144","month":"APRIL","date":"2025-04-10","day":"Thursday","dj":"BENDER","category":"DJ FEES","amount":2000,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0145","month":"APRIL","date":"2025-04-12","day":"Saturday","dj":"MR. YANG (RESTRICTED)","category":"DJ FEES","amount":3000,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0146","month":"APRIL","date":"2025-04-16","day":"Wednesday","dj":"PEOT","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0147","month":"APRIL","date":"2025-04-16","day":"Wednesday","dj":"RADZ","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0148","month":"APRIL","date":"2025-04-16","day":"Wednesday","dj":"LUQE","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0149","month":"APRIL","date":"2025-04-17","day":"Thursday","dj":"MR. YANG (ARMANI)","category":"DJ FEES","amount":3000,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0150","month":"APRIL","date":"2025-04-17","day":"Thursday","dj":"PSYAASON","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0151","month":"APRIL","date":"2025-04-17","day":"Thursday","dj":"NO ONE","category":"DJ FEES","amount":500,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0152","month":"APRIL","date":"2025-04-23","day":"Wednesday","dj":"DJ VIN","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0153","month":"APRIL","date":"2025-04-23","day":"Wednesday","dj":"RADZ","category":"DJ FEES","amount":600,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0154","month":"APRIL","date":"2025-04-23","day":"Wednesday","dj":"ZIQQ","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0155","month":"APRIL","date":"2025-04-25","day":"Friday","dj":"XU","category":"DJ FEES","amount":2000,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0156","month":"APRIL","date":"2025-04-26","day":"Saturday","dj":"JOEY G","category":"DJ FEES","amount":800,"invoice":"","status":"paid","section":"GUEST (LOCAL)"},{"id":"pay_0157","month":"APRIL","date":"2025-04-12","day":"Saturday","dj":"RESTRICTED","category":"ARTIST FEES","amount":26934.05,"invoice":"","status":"paid","section":"GUEST (INTERNATIONAL)"},{"id":"pay_0158","month":"APRIL","date":"2025-03-30","day":"Sunday","dj":"MEDIA TEAM","category":"PHOTO","amount":770,"invoice":"","status":"paid","section":"GUEST (INTERNATIONAL)"}];
-
-const DJ_PAYMENT_MONTHS = ["DECEMBER","JANUARY","FEBRUARY","MARCH","APRIL"];
-
-const STATUS_CYCLE = ["pending","invoice_uploaded","paid"];
+const PAY_STATUS_CYCLE = ["pending", "invoice_uploaded", "paid"];
 
 function djPayStatusLabel(s) {
   if (s === "paid") return "Paid";
@@ -3857,78 +3855,174 @@ function djPayStatusIcon(s) {
   if (s === "invoice_uploaded") return <FileCheck className="h-3 w-3" />;
   return <CircleDot className="h-3 w-3" />;
 }
-function sectionBadgeClass(s) {
-  if (s === "RESIDENT") return "border-purple-300/30 bg-purple-400/10 text-purple-200";
-  if (s === "GUEST (LOCAL)") return "border-cyan-300/30 bg-cyan-400/10 text-cyan-200";
-  return "border-orange-300/30 bg-orange-400/10 text-orange-200";
-}
-function sectionBadgeLabel(s) {
-  if (s === "RESIDENT") return "Resident";
-  if (s === "GUEST (LOCAL)") return "Local";
-  return "Intl";
-}
-function categoryBadgeClass(c) {
-  if (c === "ARTIST FEES") return "border-orange-300/30 bg-orange-400/10 text-orange-200";
-  if (c === "PHOTO") return "border-blue-300/30 bg-blue-400/10 text-blue-200";
-  return "border-white/10 bg-white/5 text-white/40";
-}
 
-function DjPaymentsPage() {
-  const [statusOverrides, setStatusOverrides] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("oa_djpay_overrides_v1") || "{}"); }
+function DjPaymentsPage({ events, djProfiles }) {
+  // Payment status: keyed by assignmentId, stored in localStorage
+  const [statusMap, setStatusMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("oa_djpay_status_v2") || "{}"); }
     catch { return {}; }
   });
-  const [filterMonth, setFilterMonth] = useState("ALL");
-  const [filterSection, setFilterSection] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState("ALL");
+  // Fee edits pending save: { assignmentId: string }
+  const [feeEdits, setFeeEdits] = useState({});
+  // Which assignments are currently saving
+  const [saving, setSaving] = useState({});
+  // Toast-style feedback
+  const [saveMsg, setSaveMsg] = useState({});
+
+  // Filters
+  const [filterPayStatus, setFilterPayStatus] = useState("ALL");
+  const [filterEventStatus, setFilterEventStatus] = useState("ALL");
+  const [dateScope, setDateScope] = useState("all");
   const [search, setSearch] = useState("");
 
-  const records = useMemo(() =>
-    DJ_PAYMENT_DATA.map(r => ({ ...r, status: statusOverrides[r.id] ?? r.status })),
-    [statusOverrides]
+  // Build DJ profile lookup: name (uppercase) → { defaultFee, djId }
+  const djProfileMap = useMemo(() => {
+    const map = new Map();
+    for (const p of (djProfiles || [])) {
+      const key = (p.name || "").toUpperCase().trim();
+      if (!key) continue;
+      const defaultFee = p.fees && p.fees.length ? p.fees[0].amount : null;
+      map.set(key, { defaultFee, djId: p.id, hasProfileFee: !!(p.fees && p.fees.length) });
+    }
+    return map;
+  }, [djProfiles]);
+
+  const fmtRM = (n) =>
+    n == null ? "—" : `RM ${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Filter events → dates with real slots only
+  const filteredEvents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return events
+      .filter((e) => {
+        if (filterEventStatus !== "ALL" && e.status !== filterEventStatus) return false;
+        if (dateScope === "past" && e.date >= today) return false;
+        if (dateScope === "upcoming" && e.date < today) return false;
+        if (q && !e.name.toLowerCase().includes(q) && !e.slots.some((s) => s.dj.toLowerCase().includes(q))) return false;
+        return true;
+      })
+      .map((e) => ({
+        ...e,
+        slots: e.slots.filter((s) => s.dj && !s.dj.toUpperCase().includes("TBD") && s.assignmentId),
+      }))
+      .filter((e) => e.slots.length > 0)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [events, filterEventStatus, dateScope, search, today]);
+
+  // Resolve the effective fee for a slot
+  const getEffectiveFee = useCallback(
+    (slot) => {
+      if (feeEdits[slot.assignmentId] !== undefined) return feeEdits[slot.assignmentId];
+      if (slot.fee != null) return slot.fee;
+      const prof = djProfileMap.get((slot.dj || "").toUpperCase().trim());
+      return prof?.defaultFee ?? "";
+    },
+    [feeEdits, djProfileMap]
   );
 
-  const cycleStatus = useCallback((id, current) => {
-    const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(current) + 1) % STATUS_CYCLE.length];
-    setStatusOverrides(prev => {
-      const updated = { ...prev, [id]: next };
-      localStorage.setItem("oa_djpay_overrides_v1", JSON.stringify(updated));
+  // Resolve payment status for a slot
+  const getPayStatus = useCallback(
+    (slot) => statusMap[slot.assignmentId] ?? "pending",
+    [statusMap]
+  );
+
+  const cycleStatus = useCallback((assignmentId, current) => {
+    const next = PAY_STATUS_CYCLE[(PAY_STATUS_CYCLE.indexOf(current) + 1) % PAY_STATUS_CYCLE.length];
+    setStatusMap((prev) => {
+      const updated = { ...prev, [assignmentId]: next };
+      localStorage.setItem("oa_djpay_status_v2", JSON.stringify(updated));
       return updated;
     });
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return records.filter(r => {
-      if (filterMonth !== "ALL" && r.month !== filterMonth) return false;
-      if (filterSection !== "ALL" && r.section !== filterSection) return false;
-      if (filterStatus !== "ALL" && r.status !== filterStatus) return false;
-      if (q && !r.dj.toLowerCase().includes(q) && !r.invoice.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [records, filterMonth, filterSection, filterStatus, search]);
+  const saveFee = useCallback(
+    async (slot) => {
+      const raw = feeEdits[slot.assignmentId];
+      if (raw === undefined || String(raw).trim() === "") return;
+      const amount = parseFloat(String(raw).replace(/[^0-9.]/g, ""));
+      if (isNaN(amount) || amount < 0) return;
 
-  // Group by date
-  const grouped = useMemo(() => {
-    const map = new Map();
-    for (const r of filtered) {
-      const key = r.date || "unknown";
-      if (!map.has(key)) map.set(key, { date: r.date, day: r.day, month: r.month, items: [] });
-      map.get(key).items.push(r);
+      setSaving((p) => ({ ...p, [slot.assignmentId]: true }));
+      try {
+        // 1. Update event_assignments.fee
+        if (slot.assignmentId) {
+          const { error } = await supabase
+            .from("event_assignments")
+            .update({ fee: amount })
+            .eq("id", slot.assignmentId);
+          if (error) throw error;
+        }
+        // 2. If DJ has no profile fee yet, seed dj_fees as their standard rate
+        const prof = djProfileMap.get((slot.dj || "").toUpperCase().trim());
+        if (slot.djId && prof && !prof.hasProfileFee) {
+          await supabase.from("dj_fees").insert({
+            dj_id: slot.djId,
+            fee_name: "Standard",
+            currency_code: "MYR",
+            amount,
+            fee_type: "per_set",
+          });
+        }
+        // Clear edit state
+        setFeeEdits((p) => {
+          const next = { ...p };
+          delete next[slot.assignmentId];
+          return next;
+        });
+        setSaveMsg((p) => ({ ...p, [slot.assignmentId]: "saved" }));
+        setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[slot.assignmentId]; return n; }), 2000);
+      } catch (err) {
+        setSaveMsg((p) => ({ ...p, [slot.assignmentId]: "error" }));
+        setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[slot.assignmentId]; return n; }), 3000);
+      } finally {
+        setSaving((p) => ({ ...p, [slot.assignmentId]: false }));
+      }
+    },
+    [feeEdits, djProfileMap]
+  );
+
+  // Filter slots by payment status
+  const displayEvents = useMemo(() => {
+    if (filterPayStatus === "ALL") return filteredEvents;
+    return filteredEvents
+      .map((e) => ({
+        ...e,
+        slots: e.slots.filter((s) => getPayStatus(s) === filterPayStatus),
+      }))
+      .filter((e) => e.slots.length > 0);
+  }, [filteredEvents, filterPayStatus, getPayStatus]);
+
+  // Grand totals across displayed events
+  const { totalFee, totalPaid, totalPending, totalInvoiced, missingFeeCount } = useMemo(() => {
+    let totalFee = 0, totalPaid = 0, totalPending = 0, totalInvoiced = 0, missingFeeCount = 0;
+    for (const ev of displayEvents) {
+      for (const slot of ev.slots) {
+        const fee = getEffectiveFee(slot);
+        const feeNum = fee !== "" && fee != null ? Number(fee) : 0;
+        const st = getPayStatus(slot);
+        totalFee += feeNum;
+        if (st === "paid") totalPaid += feeNum;
+        else if (st === "invoice_uploaded") totalInvoiced += feeNum;
+        else totalPending += feeNum;
+        if (fee === "" || fee == null) missingFeeCount++;
+      }
     }
-    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filtered]);
-
-  const totalAll = filtered.reduce((s, r) => s + r.amount, 0);
-  const totalPaid = filtered.filter(r => r.status === "paid").reduce((s, r) => s + r.amount, 0);
-  const totalPending = filtered.filter(r => r.status === "pending").reduce((s, r) => s + r.amount, 0);
-  const totalInvoiced = filtered.filter(r => r.status === "invoice_uploaded").reduce((s, r) => s + r.amount, 0);
-  const fmtRM = (n) => `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    return { totalFee, totalPaid, totalPending, totalInvoiced, missingFeeCount };
+  }, [displayEvents, getEffectiveFee, getPayStatus]);
 
   const dateLabel = (d) => {
     if (!d) return "Unknown";
     const dt = new Date(d + "T00:00:00");
     return dt.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const roleBadgeClass = (role) => {
+    if (role === "Warm-up") return "border-blue-300/30 bg-blue-400/10 text-blue-200";
+    if (role === "Closer") return "border-orange-300/30 bg-orange-400/10 text-orange-200";
+    if (role === "MC") return "border-purple-300/30 bg-purple-400/10 text-purple-200";
+    return "border-white/10 bg-white/5 text-white/50";
   };
 
   return (
@@ -3938,23 +4032,33 @@ function DjPaymentsPage() {
         <div>
           <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Admin Only</div>
           <h2 className="mt-0.5 text-xl font-black text-white">DJ Payments</h2>
+          {missingFeeCount > 0 && (
+            <div className="mt-1 flex items-center gap-1.5 text-[10px] font-black text-yellow-300">
+              <AlertTriangle className="h-3 w-3" />
+              {missingFeeCount} slot{missingFeeCount !== 1 ? "s" : ""} missing fee
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white/40">
           <Search className="h-3.5 w-3.5 shrink-0" />
           <input
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search DJ or invoice…"
-            className="w-40 bg-transparent text-xs font-black text-white outline-none placeholder:text-white/25 sm:w-52"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search event or DJ…"
+            className="w-36 bg-transparent text-xs font-black text-white outline-none placeholder:text-white/25 sm:w-44"
           />
-          {search && <button onClick={() => setSearch("")} className="text-white/30 hover:text-white"><X className="h-3.5 w-3.5" /></button>}
+          {search && (
+            <button onClick={() => setSearch("")} className="text-white/30 hover:text-white">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          { label: "Total Cost", val: totalAll, color: "text-white" },
+          { label: "Total Fees", val: totalFee, color: "text-white" },
           { label: "Paid", val: totalPaid, color: "text-emerald-300" },
           { label: "Pending", val: totalPending, color: "text-rose-300" },
           { label: "Invoice Up", val: totalInvoiced, color: "text-yellow-300" },
@@ -3968,42 +4072,48 @@ function DjPaymentsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        {/* Month */}
-        <div className="flex flex-wrap gap-1">
-          {["ALL", ...DJ_PAYMENT_MONTHS].map(m => (
-            <button
-              key={m}
-              onClick={() => setFilterMonth(m)}
-              className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] transition ${
-                filterMonth === m ? "border-purple-300/50 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              {m === "ALL" ? "All Months" : m.charAt(0) + m.slice(1).toLowerCase()}
-            </button>
-          ))}
-        </div>
-        {/* Section */}
-        <div className="flex flex-wrap gap-1">
-          {[["ALL","All"], ["RESIDENT","Resident"], ["GUEST (LOCAL)","Local"], ["GUEST (INTERNATIONAL)","Intl"]].map(([val, label]) => (
+        {/* Date scope */}
+        <div className="flex gap-1">
+          {[["all", "All Dates"], ["upcoming", "Upcoming"], ["past", "Past"]].map(([val, label]) => (
             <button
               key={val}
-              onClick={() => setFilterSection(val)}
+              onClick={() => setDateScope(val)}
               className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
-                filterSection === val ? "border-cyan-300/50 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                dateScope === val
+                  ? "border-purple-300/50 bg-purple-400/20 text-purple-100"
+                  : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
               }`}
             >
               {label}
             </button>
           ))}
         </div>
-        {/* Status */}
-        <div className="flex flex-wrap gap-1">
-          {[["ALL","All Status"], ["pending","Pending"], ["invoice_uploaded","Invoice Up"], ["paid","Paid"]].map(([val, label]) => (
+        {/* Event status */}
+        <div className="flex gap-1">
+          {[["ALL", "All Events"], ["Confirmed", "Confirmed"], ["Unconfirmed", "Unconfirmed"]].map(([val, label]) => (
             <button
               key={val}
-              onClick={() => setFilterStatus(val)}
+              onClick={() => setFilterEventStatus(val)}
               className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
-                filterStatus === val ? "border-yellow-300/50 bg-yellow-400/20 text-yellow-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                filterEventStatus === val
+                  ? "border-cyan-300/50 bg-cyan-400/20 text-cyan-100"
+                  : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Payment status */}
+        <div className="flex gap-1">
+          {[["ALL", "All Status"], ["pending", "Pending"], ["invoice_uploaded", "Invoice Up"], ["paid", "Paid"]].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setFilterPayStatus(val)}
+              className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
+                filterPayStatus === val
+                  ? "border-yellow-300/50 bg-yellow-400/20 text-yellow-100"
+                  : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
               }`}
             >
               {label}
@@ -4012,109 +4122,149 @@ function DjPaymentsPage() {
         </div>
       </div>
 
-      {/* Records count */}
       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">
-        {filtered.length} records · {grouped.length} dates
+        {displayEvents.length} night{displayEvents.length !== 1 ? "s" : ""} ·{" "}
+        {displayEvents.reduce((s, e) => s + e.slots.length, 0)} DJ slots
       </div>
 
-      {/* Date groups */}
-      {grouped.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm font-black text-white/30">
-          No records match your filters
+      {/* Night cards */}
+      {displayEvents.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-10 text-center text-sm font-black text-white/30">
+          No nights match your filters
         </div>
       ) : (
         <div className="space-y-3">
-          {grouped.map(({ date, day, month, items }) => {
-            const groupTotal = items.reduce((s, r) => s + r.amount, 0);
-            const allPaid = items.every(r => r.status === "paid");
-            const hasPending = items.some(r => r.status === "pending");
+          {displayEvents.map((ev) => {
+            const nightTotal = ev.slots.reduce((s, slot) => {
+              const f = getEffectiveFee(slot);
+              return s + (f !== "" && f != null ? Number(f) : 0);
+            }, 0);
+            const allPaid = ev.slots.every((s) => getPayStatus(s) === "paid");
+            const hasPending = ev.slots.some((s) => getPayStatus(s) === "pending");
+            const nightMissingFee = ev.slots.some((s) => getEffectiveFee(s) === "" || getEffectiveFee(s) == null);
+
             return (
-              <div key={date} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
-                {/* Date header */}
-                <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.02] px-4 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-black text-white">{dateLabel(date)}</div>
-                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${hasPending ? "border-rose-300/30 bg-rose-400/10 text-rose-300" : allPaid ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300" : "border-yellow-300/30 bg-yellow-400/10 text-yellow-300"}`}>
+              <div key={ev.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+                {/* Night header */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-white/[0.02] px-4 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-black text-white">{dateLabel(ev.date)}</div>
+                    <div className="text-sm font-black text-white/50">{ev.name}</div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                        hasPending
+                          ? "border-rose-300/30 bg-rose-400/10 text-rose-300"
+                          : allPaid
+                          ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300"
+                          : "border-yellow-300/30 bg-yellow-400/10 text-yellow-300"
+                      }`}
+                    >
                       {hasPending ? "Has Pending" : allPaid ? "All Paid" : "Partial"}
                     </span>
+                    {nightMissingFee && (
+                      <span className="flex items-center gap-1 text-[9px] font-black text-yellow-400">
+                        <AlertTriangle className="h-3 w-3" /> Missing fee
+                      </span>
+                    )}
                   </div>
-                  <div className="text-sm font-black text-white/60">{fmtRM(groupTotal)}</div>
+                  <div className="text-sm font-black text-white/60">{fmtRM(nightTotal)}</div>
                 </div>
 
                 {/* DJ rows */}
                 <div className="divide-y divide-white/5">
-                  {items.map(r => (
-                    <div key={r.id} className="grid grid-cols-[1fr_auto] items-center gap-2 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_120px_80px_auto]">
-                      {/* DJ info */}
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-xs font-black text-white/90">{r.dj}</span>
-                          <span className={`rounded border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${sectionBadgeClass(r.section)}`}>
-                            {sectionBadgeLabel(r.section)}
-                          </span>
-                          {r.category !== "DJ FEES" && (
-                            <span className={`rounded border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${categoryBadgeClass(r.category)}`}>
-                              {r.category}
+                  {ev.slots.map((slot) => {
+                    const payStatus = getPayStatus(slot);
+                    const effectiveFee = getEffectiveFee(slot);
+                    const hasSavedFee = slot.fee != null;
+                    const hasProfileFee = djProfileMap.get((slot.dj || "").toUpperCase().trim())?.defaultFee != null;
+                    const feeIsEdited = feeEdits[slot.assignmentId] !== undefined;
+                    const isSaving = saving[slot.assignmentId];
+                    const msg = saveMsg[slot.assignmentId];
+
+                    return (
+                      <div
+                        key={slot.id}
+                        className="grid grid-cols-[1fr_auto] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]"
+                      >
+                        {/* DJ info */}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-black text-white/90">{slot.dj}</span>
+                            <span className={`rounded border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${roleBadgeClass(slot.role)}`}>
+                              {slot.role}
                             </span>
+                          </div>
+                          <div className="mt-0.5 text-[10px] font-bold text-white/30">
+                            {slot.start}–{slot.end}
+                          </div>
+                        </div>
+
+                        {/* Fee input */}
+                        <div className="hidden sm:flex items-center gap-1.5">
+                          <div className="relative flex items-center">
+                            <span className="absolute left-2 text-[10px] font-black text-white/30">RM</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="50"
+                              value={effectiveFee === "" || effectiveFee == null ? "" : effectiveFee}
+                              onChange={(e) =>
+                                setFeeEdits((p) => ({ ...p, [slot.assignmentId]: e.target.value }))
+                              }
+                              placeholder={hasProfileFee ? "from profile" : "enter fee"}
+                              className={`h-8 w-28 rounded-lg border bg-black/20 pl-8 pr-2 text-xs font-black outline-none transition ${
+                                feeIsEdited
+                                  ? "border-purple-300/50 text-white"
+                                  : hasSavedFee
+                                  ? "border-emerald-300/20 text-emerald-100"
+                                  : hasProfileFee
+                                  ? "border-white/10 text-white/50"
+                                  : "border-yellow-300/30 text-yellow-200"
+                              } focus:border-purple-300/60`}
+                            />
+                          </div>
+                          {feeIsEdited && (
+                            <button
+                              onClick={() => saveFee(slot)}
+                              disabled={isSaving}
+                              className="flex h-8 items-center gap-1 rounded-lg border border-purple-300/40 bg-purple-400/20 px-2 text-[10px] font-black text-purple-100 hover:bg-purple-400/30 disabled:opacity-50"
+                            >
+                              {isSaving ? <RefreshCcw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                              {!isSaving && "Save"}
+                            </button>
+                          )}
+                          {msg === "saved" && (
+                            <span className="text-[10px] font-black text-emerald-400">✓ Saved</span>
+                          )}
+                          {msg === "error" && (
+                            <span className="text-[10px] font-black text-rose-400">Error</span>
+                          )}
+                          {!hasProfileFee && !hasSavedFee && !feeIsEdited && (
+                            <span className="text-[9px] font-black text-yellow-400/70">No profile fee</span>
                           )}
                         </div>
-                        {r.invoice && (
-                          <div className="mt-0.5 truncate text-[10px] font-bold text-white/30">
-                            INV: {r.invoice}
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Amount - hidden on mobile, shown on sm */}
-                      <div className="hidden text-right text-sm font-black text-white/70 sm:block">
-                        {fmtRM(r.amount)}
+                        {/* Status cycle button */}
+                        <button
+                          onClick={() => cycleStatus(slot.assignmentId, payStatus)}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 sm:h-7 sm:w-7 ${djPayStatusClass(payStatus)}`}
+                          title={`${djPayStatusLabel(payStatus)} — click to cycle`}
+                        >
+                          {djPayStatusIcon(payStatus)}
+                        </button>
                       </div>
-
-                      {/* Mobile amount */}
-                      <div className="text-right text-sm font-black text-white/70 sm:hidden">
-                        {fmtRM(r.amount)}
-                      </div>
-
-                      {/* Status badge - hidden on mobile */}
-                      <div className="hidden items-center justify-end sm:flex">
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${djPayStatusClass(r.status)}`}>
-                          {djPayStatusIcon(r.status)}
-                          {djPayStatusLabel(r.status)}
-                        </span>
-                      </div>
-
-                      {/* Cycle button */}
-                      <button
-                        onClick={() => cycleStatus(r.id, r.status)}
-                        className={`flex h-8 w-8 items-center justify-center rounded-lg border transition hover:scale-105 sm:h-7 sm:w-7 ${djPayStatusClass(r.status)}`}
-                        title={`Status: ${djPayStatusLabel(r.status)} — click to cycle`}
-                      >
-                        {djPayStatusIcon(r.status)}
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
         </div>
       )}
-
-      {/* Footer totals */}
-      {filtered.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Filtered Total</div>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div><div className="text-[9px] font-black uppercase text-white/25">Total</div><div className="mt-0.5 text-base font-black text-white">{fmtRM(totalAll)}</div></div>
-            <div><div className="text-[9px] font-black uppercase text-emerald-300/50">Paid</div><div className="mt-0.5 text-base font-black text-emerald-300">{fmtRM(totalPaid)}</div></div>
-            <div><div className="text-[9px] font-black uppercase text-rose-300/50">Pending</div><div className="mt-0.5 text-base font-black text-rose-300">{fmtRM(totalPending)}</div></div>
-            <div><div className="text-[9px] font-black uppercase text-yellow-300/50">Invoice Up</div><div className="mt-0.5 text-base font-black text-yellow-300">{fmtRM(totalInvoiced)}</div></div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
+
 
 function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeFilter, setActiveFilter] = useState("All");
@@ -5718,7 +5868,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Finance" ? (
             <FinanceMathPage />
           ) : view === "DJPayments" && canAccessDjPayments ? (
-            <DjPaymentsPage />
+            <DjPaymentsPage events={events} djProfiles={djProfiles} />
           ) : view === "DJs" && canAccessDjs ? (
             <DjProfilesPage
               profiles={djProfiles}
