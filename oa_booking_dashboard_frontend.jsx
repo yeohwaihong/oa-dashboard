@@ -3561,7 +3561,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [mentionUsers, setMentionUsers] = useState([]);
   const [comments, setComments] = useState([]);
   const [commentsError, setCommentsError] = useState("");
-  const [pendingNotificationWeekKey, setPendingNotificationWeekKey] = useState(null);
+  const [pendingNotificationTarget, setPendingNotificationTarget] = useState(null);
   const notificationsButtonRef = React.useRef(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
@@ -3604,6 +3604,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     );
   }, [currentUser, mentionUsers]);
   const weekSectionRefs = React.useRef({});
+  const eventCardRefs = React.useRef({});
   const [activeWeekKey, setActiveWeekKey] = useState(null);
   const activeWeekKeyRef = React.useRef(null);
   const listWeekNavInitRef = React.useRef({ view: null, grouping: null, monthKey: null });
@@ -4140,6 +4141,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     return true;
   }, []);
 
+  const scrollToEventCard = useCallback((eventId) => {
+    const node = eventCardRefs.current?.[String(eventId)];
+    if (!node) return false;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
+  }, []);
+
   const weekKeys = useMemo(() => groupedEvents.map((g) => g.key), [groupedEvents]);
   const weekIndex = useMemo(() => {
     if (!effectiveWeekKey) return -1;
@@ -4159,7 +4167,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       return;
     }
 
-    if (pendingNotificationWeekKey) return;
+    if (pendingNotificationTarget) return;
 
     const nextMonthKey = `${listMonthCursor.getFullYear()}-${listMonthCursor.getMonth()}`;
     const prev = listWeekNavInitRef.current;
@@ -4168,20 +4176,20 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (!shouldResetActiveWeek) return;
 
     setActiveWeekKey(weekKeys[0]);
-  }, [listGrouping, listMonthCursor, pendingNotificationWeekKey, view, weekKeys]);
+  }, [listGrouping, listMonthCursor, pendingNotificationTarget, view, weekKeys]);
 
   useEffect(() => {
-    if (view !== "List" || !pendingNotificationWeekKey) return undefined;
-    if (!weekKeys.includes(pendingNotificationWeekKey)) return undefined;
+    if (view !== "List" || !pendingNotificationTarget) return undefined;
+    if (!weekKeys.includes(pendingNotificationTarget.weekKey)) return undefined;
 
-    setActiveWeekKey(pendingNotificationWeekKey);
+    setActiveWeekKey(pendingNotificationTarget.weekKey);
     let attempts = 0;
     let timer = 0;
 
     const tryScroll = () => {
       attempts += 1;
-      if (scrollToWeekKey(pendingNotificationWeekKey) || attempts >= 8) {
-        setPendingNotificationWeekKey(null);
+      if (scrollToEventCard(pendingNotificationTarget.eventId) || attempts >= 10) {
+        setPendingNotificationTarget(null);
         return;
       }
       timer = window.setTimeout(tryScroll, 80);
@@ -4191,7 +4199,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [pendingNotificationWeekKey, scrollToWeekKey, view, weekKeys]);
+  }, [pendingNotificationTarget, scrollToEventCard, view, weekKeys]);
 
   const openNotificationEvent = useCallback((event) => {
     const weekKey = weekKeyFromISO(event.date);
@@ -4202,7 +4210,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setListGrouping("all");
     setView("List");
     setActiveWeekKey(weekKey);
-    setPendingNotificationWeekKey(weekKey);
+    setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [todayISO]);
 
   const jumpWeek = (direction) => {
@@ -5104,20 +5112,31 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   </div>
 
                   {group.items.map((event) => (
-                    <EventCard
+                    <div
                       key={event.id}
-                      event={event}
-                      holidays={holidaysByDate.get(event.date) ?? []}
-                      timeFormat={timeFormat}
-                      canEdit={canEdit}
-                      mentionUsers={mentionUsers}
-                      comments={commentsByEventId.get(event.id) ?? []}
-                      currentUser={currentUser}
-                      onEdit={() => openEditModal(event)}
-                      onAssignIC={(ic) => assignIC(event.id, ic)}
-                      onConfirm={() => updateEventStatus(event, "Confirmed")}
-                      onOpenDetails={() => setPreviewEvent(event)}
-                    />
+                      ref={(node) => {
+                        if (node) {
+                          eventCardRefs.current[String(event.id)] = node;
+                        } else {
+                          delete eventCardRefs.current[String(event.id)];
+                        }
+                      }}
+                      className="scroll-mt-44"
+                    >
+                      <EventCard
+                        event={event}
+                        holidays={holidaysByDate.get(event.date) ?? []}
+                        timeFormat={timeFormat}
+                        canEdit={canEdit}
+                        mentionUsers={mentionUsers}
+                        comments={commentsByEventId.get(event.id) ?? []}
+                        currentUser={currentUser}
+                        onEdit={() => openEditModal(event)}
+                        onAssignIC={(ic) => assignIC(event.id, ic)}
+                        onConfirm={() => updateEventStatus(event, "Confirmed")}
+                        onOpenDetails={() => setPreviewEvent(event)}
+                      />
+                    </div>
                   ))}
                 </section>
               ))}
