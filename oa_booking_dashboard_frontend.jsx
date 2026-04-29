@@ -3330,7 +3330,6 @@ function UserManagementPage({ onToast }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
-  const [search, setSearch] = useState("");
   const [savingUserId, setSavingUserId] = useState(null);
   const [passwordByUserId, setPasswordByUserId] = useState({});
   const [showPasswordByUserId, setShowPasswordByUserId] = useState({});
@@ -3392,17 +3391,9 @@ function UserManagementPage({ onToast }) {
     loadUsers();
   }, [loadUsers]);
 
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return users
-      .filter((u) => {
-        if (!q) return true;
-        return String(u.email || "")
-          .toLowerCase()
-          .includes(q) || String(u.id || "").toLowerCase().includes(q);
-      })
-      .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
-  }, [search, users]);
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
+  }, [users]);
 
   const updateUserRole = async (userId) => {
     const nextRole = String(roleByUserId[userId] || "").trim();
@@ -3467,18 +3458,6 @@ function UserManagementPage({ onToast }) {
 
       <Card className="rounded-3xl border border-white/10 bg-white/[0.02]">
         <CardContent className="p-4 sm:p-5">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40">
-              <Search className="h-4 w-4 shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search email or user id..."
-                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-              />
-            </div>
-          </div>
-
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
             <div className="grid grid-cols-[minmax(0,1fr)_148px] gap-0 border-b border-white/10 bg-white/[0.03] px-4 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30 md:grid-cols-[minmax(0,1fr)_170px_1fr]">
               <div>User</div>
@@ -3488,10 +3467,10 @@ function UserManagementPage({ onToast }) {
 
             {loading ? (
               <div className="px-4 py-6 text-center text-sm font-bold text-white/35">Loading users...</div>
-            ) : !filteredUsers.length ? (
-              <div className="px-4 py-8 text-center text-sm font-bold text-white/35">No users match this filter.</div>
+            ) : !sortedUsers.length ? (
+              <div className="px-4 py-8 text-center text-sm font-bold text-white/35">No users found.</div>
             ) : (
-              filteredUsers.map((u) => {
+              sortedUsers.map((u) => {
                 const currentRole = roleByUserId[u.id] ?? u.role ?? "";
                 const busy = savingUserId === u.id;
                 return (
@@ -3629,6 +3608,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeWeekKey, setActiveWeekKey] = useState(null);
   const activeWeekKeyRef = React.useRef(null);
   const listWeekNavInitRef = React.useRef({ view: null, grouping: null, monthKey: null });
+  const didInitCommentsToastRef = React.useRef(false);
+  const knownCommentIdsRef = React.useRef(new Set());
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -3913,6 +3894,30 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     }
     return map;
   }, [comments]);
+
+  useEffect(() => {
+    const knownIds = knownCommentIdsRef.current;
+    if (!didInitCommentsToastRef.current) {
+      knownCommentIdsRef.current = new Set(comments.map((comment) => comment.id));
+      didInitCommentsToastRef.current = true;
+      return;
+    }
+
+    const newComments = comments.filter((comment) => comment?.id && !knownIds.has(comment.id));
+    if (!newComments.length) return;
+
+    for (const comment of newComments) knownIds.add(comment.id);
+
+    const others = newComments.filter((comment) => String(comment.userId || "") !== String(currentUser?.id || ""));
+    if (!others.length) return;
+
+    const latest = [...others].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (!latest) return;
+
+    const eventName = eventsById.get(latest.eventId)?.name || "Event";
+    const author = displayNameForUserId(latest.userId, mentionUsers, currentUser);
+    showToast(`New comment · ${eventName} · ${author}`);
+  }, [comments, currentUser?.id, eventsById, mentionUsers, showToast]);
 
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
 
