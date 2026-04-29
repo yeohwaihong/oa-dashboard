@@ -3592,6 +3592,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const canEdit = userRole === "admin" || userRole === "superadmin";
   const canAccessFinance = userRole === "admin" || userRole === "superadmin";
   const canManageUsers = userRole === "superadmin";
+  const canUseNotificationCenter = userRole === "staff" || canEdit;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
     const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
@@ -4010,6 +4011,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
   const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
+  const headerActionGridClass = canEdit ? "grid-cols-4 sm:grid-cols-6" : canUseNotificationCenter ? "grid-cols-5 sm:grid-cols-5" : "grid-cols-4";
 
   const updateNotificationsPopoverPosition = useCallback(() => {
     const node = notificationsButtonRef.current;
@@ -4733,7 +4735,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 sm:grid-cols-6 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className={`grid w-full ${headerActionGridClass} items-stretch gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2`}>
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
@@ -4741,6 +4743,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
             </Button>
+            {canUseNotificationCenter ? (
             <div className="relative">
               <Button
                 ref={notificationsButtonRef}
@@ -4761,6 +4764,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 </span>
               ) : null}
             </div>
+            ) : null}
             {canEdit ? (
               <Button
                 onClick={() => openAddDayModal()}
@@ -4806,7 +4810,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
         </header>
 
-        {notificationsOpen ? (
+        {notificationsOpen && canUseNotificationCenter ? (
           <div
             className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm"
             onMouseDown={(e) => {
