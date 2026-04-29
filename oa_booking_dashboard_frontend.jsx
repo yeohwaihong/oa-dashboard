@@ -4801,7 +4801,6 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
   const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
-  const headerActionGridClass = canEdit ? "grid-cols-4 sm:grid-cols-6" : canUseNotificationCenter ? "grid-cols-5 sm:grid-cols-5" : "grid-cols-4";
   const primaryNavGridClass = canAccessDjs && canAccessFinance && canManageUsers ? "grid-cols-6" : canAccessDjs && canAccessFinance ? "grid-cols-5" : "grid-cols-2";
 
   const updateNotificationsPopoverPosition = useCallback(() => {
@@ -5550,10 +5549,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             </div>
           </div>
-          <div className={`grid w-full ${headerActionGridClass} items-stretch gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2`}>
+          <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1 md:w-auto md:flex-wrap md:items-center md:gap-2 md:overflow-visible md:pb-0">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-1 text-[9px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 md:px-5"
             >
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>Holidays</span>
@@ -5567,7 +5566,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   setActiveNotificationsTab(mentionCount || !canEdit ? "mentions" : "pending");
                   setNotificationsOpen(true);
                 }}
-                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-1 text-[9px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-3 text-xs font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 md:px-5"
                 title={canEdit ? "Notification center" : "Mentions notification center"}
               >
                 <Bell className="h-4 w-4 shrink-0" />
@@ -5583,7 +5582,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             {canEdit ? (
               <Button
                 onClick={() => openAddDayModal()}
-                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-1 text-[9px] font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-5"
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-purple-300/30 bg-purple-400/10 px-3 text-xs font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 md:px-5"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Add Day</span>
@@ -5592,7 +5591,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             {canEdit ? (
               <Button
                 onClick={() => openAddModal()}
-                className="inline-flex h-11 w-full flex-col items-center justify-center gap-0.5 rounded-xl bg-purple-400 px-1 text-[9px] font-black text-black hover:bg-purple-300 sm:h-10 sm:w-auto sm:flex-row sm:gap-2 sm:px-3 sm:text-xs md:px-6"
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-10 md:px-6"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span>Add Week</span>
@@ -5601,7 +5600,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <Button
               onClick={() => setTimeFormat(timeFormat === "24" ? "12" : "24")}
               title={timeFormat === "24" ? "24-hour time" : "AM/PM time"}
-              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
               <Clock className="h-4 w-4 shrink-0" />
               <span className="sr-only">{timeFormat === "24" ? "24-hour time" : "AM/PM time"}</span>
@@ -5609,7 +5608,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <Button
               onClick={() => setTheme(isLightTheme ? "dark" : "light")}
               title={isLightTheme ? "Switch to dark mode" : "Switch to light mode"}
-              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
               {isLightTheme ? <Moon className="h-4 w-4 shrink-0" /> : <Sun className="h-4 w-4 shrink-0" />}
               <span className="sr-only">{isLightTheme ? "Dark mode" : "Light mode"}</span>
@@ -5617,7 +5616,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <Button
               onClick={onLogout}
               title={userRole ? `${userRole.toUpperCase()} Logout` : "Logout"}
-              className="inline-flex h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
             >
               <LogOut className="h-4 w-4 shrink-0" />
               <span className="sr-only">Logout</span>
