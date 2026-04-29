@@ -493,6 +493,7 @@ const timeOptions = buildTimeOptions();
 const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
+const mentionsNotePattern = /\[dashboard:mentions=([^\]]*)\]/;
 const malaysiaHolidayFallback = [
   { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day", countryCode: "MY", global: true, types: ["National"] },
   { date: "2026-02-01", localName: "Federal Territory Day", name: "Federal Territory Day", countryCode: "MY", global: true, types: ["National"] },
@@ -617,14 +618,32 @@ function parseIc(notes) {
   return String(notes || "").match(icNotePattern)?.[1] || "";
 }
 
-function stripIcNote(notes) {
-  return String(notes || "").replace(icNotePattern, "").trim();
+function parseMentionUserIds(notes) {
+  const raw = String(notes || "").match(mentionsNotePattern)?.[1] || "";
+  return raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
 }
 
-function setIcInNotes(notes, ic) {
-  const cleanNotes = stripIcNote(notes);
+function stripDashboardNotes(notes) {
+  return String(notes || "")
+    .replace(icNotePattern, "")
+    .replace(mentionsNotePattern, "")
+    .trim();
+}
+
+function setDashboardNotes(notes, ic, mentionUserIds = []) {
+  const cleanNotes = stripDashboardNotes(notes);
   const cleanIc = String(ic || "").trim();
-  return [cleanNotes, cleanIc ? `[dashboard:ic=${cleanIc}]` : ""].filter(Boolean).join("\n");
+  const cleanMentionUserIds = Array.from(new Set((mentionUserIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  return [
+    cleanNotes,
+    cleanIc ? `[dashboard:ic=${cleanIc}]` : "",
+    cleanMentionUserIds.length ? `[dashboard:mentions=${cleanMentionUserIds.join(",")}]` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function mentionSlug(value) {
@@ -659,6 +678,36 @@ function textMentionsUser(text, user) {
   if (!aliases.length) return false;
   const mentionTokens = String(text || "").match(/@[a-zA-Z0-9._-]+/g) || [];
   return mentionTokens.some((token) => aliases.includes(mentionSlug(token.slice(1))));
+}
+
+function mentionedUserIdsFromText(text, users) {
+  const mentionTokens = String(text || "").match(/@[a-zA-Z0-9._-]+/g) || [];
+  const tokenSlugs = new Set(mentionTokens.map((token) => mentionSlug(token.slice(1))).filter(Boolean));
+  return Array.from(
+    new Set(
+      (users || [])
+        .filter((user) => user?.id && mentionAliasesForUser(user).some((alias) => tokenSlugs.has(alias)))
+        .map((user) => user.id),
+    ),
+  );
+}
+
+function activeMentionToken(text, caretIndex) {
+  const beforeCaret = String(text || "").slice(0, caretIndex);
+  const match = beforeCaret.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
+  if (!match) return null;
+  const query = match[2] || "";
+  return {
+    query,
+    start: caretIndex - query.length - 1,
+    end: caretIndex,
+  };
+}
+
+function userMatchesMentionQuery(user, query) {
+  const q = mentionSlug(query);
+  if (!q) return true;
+  return [displayNameForUser(user), user?.email, mentionHandleForUser(user)].some((value) => mentionSlug(value).includes(q));
 }
 
 function isSupabaseUuid(value) {
@@ -713,7 +762,8 @@ function mapSupabaseEvent(row) {
     stage: row.stage || stageOptions[0],
     slots,
     ic: parseIc(row.notes),
-    notes: stripIcNote(row.notes),
+    mentionedUserIds: parseMentionUserIds(row.notes),
+    notes: stripDashboardNotes(row.notes),
   };
 }
 
@@ -968,6 +1018,7 @@ function AddEventDayModal({
   const [genreDrafts, setGenreDrafts] = useState({});
   const [smartSchedules, setSmartSchedules] = useState({});
   const [pickerMonth, setPickerMonth] = useState(() => new Date(isoToDate(seedDateISO).getFullYear(), isoToDate(seedDateISO).getMonth(), 1));
+  const [activeMentionByDate, setActiveMentionByDate] = useState({});
 
   const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
   const selectedRangeLabel = useMemo(() => (dateMode === "day" ? dayLabelFromISO(seedDateISO) : weekRangeLabelFromDates(headerDates)), [dateMode, headerDates, seedDateISO]);
@@ -1053,17 +1104,26 @@ function AddEventDayModal({
     setDays((prev) => prev.map((d) => (d.isoDate === isoDate ? { ...d, ...patch } : d)));
   };
 
-  const insertMention = (isoDate, user) => {
+  const updateActiveMention = (isoDate, text, caretIndex) => {
+    const activeMention = activeMentionToken(text, caretIndex);
+    setActiveMentionByDate((prev) => ({ ...prev, [isoDate]: activeMention }));
+  };
+
+  const insertMention = (isoDate, user, activeMention = null) => {
     const handle = mentionHandleForUser(user);
     if (!handle) return;
     setDays((prev) =>
       prev.map((d) => {
         if (d.isoDate !== isoDate) return d;
         const current = String(d.remarks || "");
+        if (activeMention && Number.isInteger(activeMention.start) && Number.isInteger(activeMention.end)) {
+          return { ...d, remarks: `${current.slice(0, activeMention.start)}@${handle} ${current.slice(activeMention.end)}` };
+        }
         const spacer = current && !/\s$/.test(current) ? " " : "";
         return { ...d, remarks: `${current}${spacer}@${handle} ` };
       }),
     );
+    setActiveMentionByDate((prev) => ({ ...prev, [isoDate]: null }));
   };
 
   const addGenreTag = (isoDate, rawTag) => {
@@ -1372,6 +1432,8 @@ function AddEventDayModal({
               const genreListId = `genre-options-${day.isoDate}`;
               const genreTags = splitGenreTags(day.genre);
               const genreDraft = genreDrafts[day.isoDate] ?? "";
+              const activeMention = activeMentionByDate[day.isoDate];
+              const mentionSuggestions = activeMention ? mentionUsers.filter((user) => userMatchesMentionQuery(user, activeMention.query)).slice(0, 6) : [];
               const dayErrors = validation.errorsByDate[day.isoDate] ?? [];
               const dayConflictSlots = validation.conflictSlots[day.isoDate] ?? new Set();
               const smartSchedule = getSmartSchedule(day.isoDate);
@@ -1641,22 +1703,53 @@ function AddEventDayModal({
                               key={user.id || user.email}
                               type="button"
                               onClick={() => insertMention(day.isoDate, user)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/20"
-                              title={`Mention ${displayNameForUser(user)}`}
+                              className="inline-flex min-w-0 max-w-[160px] items-center gap-1 rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/20"
+                              title={`${displayNameForUser(user)} · ${user.email || user.id}`}
                             >
                               <AtSign className="h-3 w-3" />
-                              {mentionHandleForUser(user)}
+                              <span className="truncate">{displayNameForUser(user) || mentionHandleForUser(user)}</span>
                             </button>
                           ))}
                         </div>
                       ) : null}
                     </div>
-                    <textarea
-                      value={day.remarks || ""}
-                      onChange={(e) => setDayField(day.isoDate, { remarks: e.target.value })}
-                      className="mt-1 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-bold text-white/75 outline-none placeholder:text-white/25 focus:border-purple-300/60"
-                      placeholder="Add remarks for this night... Use @name to mention someone."
-                    />
+                    <div className="relative mt-1">
+                      <textarea
+                        value={day.remarks || ""}
+                        onChange={(e) => {
+                          setDayField(day.isoDate, { remarks: e.target.value });
+                          updateActiveMention(day.isoDate, e.target.value, e.target.selectionStart);
+                        }}
+                        onClick={(e) => updateActiveMention(day.isoDate, e.currentTarget.value, e.currentTarget.selectionStart)}
+                        onKeyUp={(e) => updateActiveMention(day.isoDate, e.currentTarget.value, e.currentTarget.selectionStart)}
+                        onBlur={() => window.setTimeout(() => setActiveMentionByDate((prev) => ({ ...prev, [day.isoDate]: null })), 120)}
+                        className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-bold text-white/75 outline-none placeholder:text-white/25 focus:border-purple-300/60"
+                        placeholder="Add remarks for this night... Type @ to mention someone."
+                      />
+                      {activeMention ? (
+                        <div className="absolute left-2 right-2 top-full z-20 mt-1 overflow-hidden rounded-xl border border-cyan-300/20 bg-[#12111f] shadow-2xl shadow-black/50">
+                          {mentionSuggestions.length ? (
+                            mentionSuggestions.map((user) => (
+                              <button
+                                key={user.id || user.email}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => insertMention(day.isoDate, user, activeMention)}
+                                className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 border-b border-white/10 px-3 py-2 text-left last:border-b-0 hover:bg-cyan-400/10"
+                              >
+                                <AtSign className="h-4 w-4 text-cyan-100/70" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-xs font-black text-white/85">{displayNameForUser(user) || mentionHandleForUser(user)}</span>
+                                  <span className="block truncate text-[10px] font-bold text-white/35">{user.email || user.id}</span>
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-xs font-bold text-white/35">No users match @{activeMention.query}</div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               );
@@ -3422,7 +3515,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         genre_profile: event.genre,
         stage: event.stage,
         status: event.status,
-        notes: setIcInNotes(event.notes, event.ic),
+        notes: setDashboardNotes(event.notes, event.ic, event.mentionedUserIds),
       };
 
       const savedEvent = isSupabaseUuid(event.id)
@@ -3610,14 +3703,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
   const pendingUpcomingCount = pendingUpcomingEvents.length;
   const mentionedEvents = useMemo(() => {
+    const currentUserId = currentUser?.id;
     return events
-      .filter((event) => event.date >= todayISO && textMentionsUser(event.notes, currentMentionUser))
+      .filter((event) => {
+        if (event.date < todayISO) return false;
+        if (currentUserId && (event.mentionedUserIds || []).includes(currentUserId)) return true;
+        return textMentionsUser(event.notes, currentMentionUser);
+      })
       .sort((a, b) => {
         const dateCompare = a.date.localeCompare(b.date);
         if (dateCompare !== 0) return dateCompare;
         return (a.name || "").localeCompare(b.name || "");
       });
-  }, [currentMentionUser, events, todayISO]);
+  }, [currentMentionUser, currentUser?.id, events, todayISO]);
   const mentionCount = mentionedEvents.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
 
@@ -3879,6 +3977,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         stage,
         slots,
         ic: existing?.ic || "",
+        mentionedUserIds: mentionedUserIdsFromText(remarks, mentionUsers),
         notes: remarks,
       };
 
@@ -3941,7 +4040,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           if (!existing || !isSupabaseUuid(eventId)) return;
           setSyncError("");
           setSyncStatus("Saving PIC...");
-          const { error } = await supabase.from("events").update({ notes: setIcInNotes(existing.notes, ic) }).eq("id", eventId);
+          const { error } = await supabase.from("events").update({ notes: setDashboardNotes(existing.notes, ic, existing.mentionedUserIds) }).eq("id", eventId);
           if (error) throw error;
           setSyncStatus("PIC saved to Supabase");
           showToast("PIC saved to database");
@@ -3979,7 +4078,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           setSyncStatus("Saving status...");
           const { error } = await supabase
             .from("events")
-            .update({ status, notes: setIcInNotes(updatedEvent.notes, updatedEvent.ic) })
+            .update({ status, notes: setDashboardNotes(updatedEvent.notes, updatedEvent.ic, updatedEvent.mentionedUserIds) })
             .eq("id", event.id);
           if (error) {
             const message = error.message || "";
@@ -4090,7 +4189,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           event.status === "No Lineup"
             ? (event.slots?.length ? "Unconfirmed" : "Need Attention")
             : event.status || (event.slots?.length ? "Unconfirmed" : "Need Attention"),
-        remarks: stripIcNote(event.notes),
+        remarks: stripDashboardNotes(event.notes),
         stage: event.stage,
         slots: (event.slots ?? []).map((s) => ({
           dj: s.dj ?? "",
@@ -4755,7 +4854,7 @@ export default function OABookingDashboard() {
 
     if (!data?.role) {
       setUserRole(null);
-      setRoleError("No admin/staff role assigned for this account.");
+      setRoleError("Please contact the admin to approve your email.");
       return;
     }
 
@@ -4819,10 +4918,10 @@ export default function OABookingDashboard() {
             O<span className="text-purple-300">&</span>A
           </div>
           <div className="mt-4 rounded-2xl border border-rose-300/25 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-100">
-            {roleError || "No role assigned for this account."}
+            {roleError || "Please contact the admin to approve your email."}
           </div>
           <div className="mt-3 text-xs font-bold leading-5 text-white/45">
-            Add this user to `public.user_roles` as `admin` or `staff`, then log in again.
+            Your account has been created, but an admin needs to approve your email before you can access the dashboard.
           </div>
           <Button onClick={logout} className="mt-5 h-11 w-full rounded-xl bg-white/5 text-sm font-black text-white/65 hover:bg-white/10 hover:text-white">
             Logout
