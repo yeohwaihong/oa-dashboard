@@ -201,6 +201,30 @@ const eventsSeed = [
   },
 ];
 
+const dashboardViewRoutes = {
+  List: "/list",
+  Calendar: "/calendar",
+  DJs: "/djs",
+  Users: "/users",
+  Finance: "/finance",
+  DJPayments: "/payments",
+};
+
+const routeDashboardViews = Object.fromEntries(Object.entries(dashboardViewRoutes).map(([view, path]) => [path, view]));
+
+function normalizeDashboardPath(pathname) {
+  const path = String(pathname || "/").replace(/\/+$/, "") || "/";
+  return path.toLowerCase();
+}
+
+function dashboardViewFromPath(pathname) {
+  return routeDashboardViews[normalizeDashboardPath(pathname)] || "List";
+}
+
+function dashboardPathForView(view) {
+  return dashboardViewRoutes[view] || dashboardViewRoutes.List;
+}
+
 const statusConfig = {
   Confirmed: "border-emerald-400/70 bg-emerald-400/10 text-emerald-300",
   Unconfirmed: "border-yellow-400/70 bg-yellow-400/10 text-yellow-300",
@@ -3727,8 +3751,9 @@ function UserManagementPage({ onToast }) {
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
   const [savingUserId, setSavingUserId] = useState(null);
-  const [passwordByUserId, setPasswordByUserId] = useState({});
-  const [showPasswordByUserId, setShowPasswordByUserId] = useState({});
+  const [passwordModalUser, setPasswordModalUser] = useState(null);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [showPasswordDraft, setShowPasswordDraft] = useState(false);
   const [roleByUserId, setRoleByUserId] = useState({});
 
   const adminApiRequest = useCallback(async (path, { method = "GET", body } = {}) => {
@@ -3758,8 +3783,19 @@ function UserManagementPage({ onToast }) {
     loadUsers();
   }, [loadUsers]);
 
-  const sortedUsers = useMemo(() => {
-    return [...users].sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
+  const { pendingUsers, approvedUsers } = useMemo(() => {
+    const sorted = [...users].sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return String(a.email || "").localeCompare(String(b.email || ""));
+    });
+    return {
+      pendingUsers: sorted.filter((user) => !String(user.role || "").trim()),
+      approvedUsers: sorted
+        .filter((user) => String(user.role || "").trim())
+        .sort((a, b) => String(a.email || "").localeCompare(String(b.email || ""))),
+    };
   }, [users]);
 
   const updateUserRole = async (userId) => {
@@ -3780,8 +3816,24 @@ function UserManagementPage({ onToast }) {
     }
   };
 
-  const setUserPassword = async (userId) => {
-    const password = String(passwordByUserId[userId] || "");
+  const openPasswordModal = (user) => {
+    setPasswordModalUser(user);
+    setPasswordDraft("");
+    setShowPasswordDraft(false);
+    setError("");
+  };
+
+  const closePasswordModal = () => {
+    if (savingUserId) return;
+    setPasswordModalUser(null);
+    setPasswordDraft("");
+    setShowPasswordDraft(false);
+  };
+
+  const setUserPassword = async () => {
+    const userId = passwordModalUser?.id;
+    const password = String(passwordDraft || "");
+    if (!userId) return;
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -3794,7 +3846,7 @@ function UserManagementPage({ onToast }) {
         method: "POST",
         body: { userId, password },
       });
-      setPasswordByUserId((prev) => ({ ...prev, [userId]: "" }));
+      closePasswordModal();
       onToast?.("Password updated");
     } catch (e) {
       setError(e?.message || "Failed to set password.");
@@ -3803,12 +3855,86 @@ function UserManagementPage({ onToast }) {
     }
   };
 
+  const renderUserGroup = (items, { emptyLabel, tone = "default" } = {}) => {
+    if (loading) {
+      return <div className="px-4 py-8 text-center text-sm font-bold text-white/35">Loading users...</div>;
+    }
+    if (!items.length) {
+      return <div className="px-4 py-8 text-center text-sm font-bold text-white/35">{emptyLabel}</div>;
+    }
+
+    return (
+      <div className="grid gap-3">
+        {items.map((u) => {
+          const currentRole = roleByUserId[u.id] ?? u.role ?? "";
+          const busy = savingUserId === u.id;
+          const isPending = !String(u.role || "").trim();
+          return (
+            <div
+              key={u.id}
+              className={`rounded-2xl border px-3 py-3 sm:px-4 ${
+                tone === "pending" ? "border-yellow-300/20 bg-yellow-400/10" : "border-white/10 bg-white/[0.03]"
+              }`}
+            >
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.75fr)] lg:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="min-w-0 truncate text-sm font-black text-white/85">{u.email || "(no email)"}</div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${
+                        isPending ? "border-yellow-300/30 bg-yellow-400/10 text-yellow-100" : "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+                      }`}
+                    >
+                      {isPending ? "Needs approval" : u.role}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-xs font-bold text-white/35">{u.id}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-white/30">
+                    <span>Created {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}</span>
+                    <span>{u.last_sign_in_at ? `Last sign-in ${new Date(u.last_sign_in_at).toLocaleDateString()}` : "Never signed in"}</span>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_88px_132px]">
+                  <select
+                    value={currentRole}
+                    onChange={(e) => setRoleByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                    className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+                  >
+                    <option value="">Unassigned</option>
+                    <option value="staff">staff</option>
+                    <option value="admin">admin</option>
+                    <option value="superadmin">superadmin</option>
+                  </select>
+                  <Button
+                    onClick={() => updateUserRole(u.id)}
+                    disabled={busy}
+                    className="h-10 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    onClick={() => openPasswordModal(u)}
+                    disabled={busy}
+                    className="h-10 rounded-xl border border-emerald-300/25 bg-emerald-400/10 text-xs font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Set Password
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-lg font-black tracking-tight text-white/90">User Management</div>
-          <div className="mt-1 text-xs font-bold text-white/35">Assign roles and reset passwords for Supabase Auth users.</div>
+          <div className="mt-1 text-xs font-bold text-white/35">Approve new accounts first, then manage active users.</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -3823,92 +3949,113 @@ function UserManagementPage({ onToast }) {
 
       {error ? <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-100">{error}</div> : null}
 
-      <Card className="rounded-3xl border border-white/10 bg-white/[0.02]">
-        <CardContent className="p-4 sm:p-5">
-          <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-            <div className="grid grid-cols-[minmax(0,1fr)_148px] gap-0 border-b border-white/10 bg-white/[0.03] px-4 py-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30 md:grid-cols-[minmax(0,1fr)_170px_1fr]">
-              <div>User</div>
-              <div className="hidden md:block">Created</div>
-              <div className="text-right">Actions</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-2xl border border-yellow-300/20 bg-yellow-400/10 p-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-100/70">Need Approval</div>
+          <div className="mt-1 text-xl font-black text-yellow-100">{pendingUsers.length}</div>
+        </div>
+        <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100/70">Active Users</div>
+          <div className="mt-1 text-xl font-black text-emerald-100">{approvedUsers.length}</div>
+        </div>
+      </div>
+
+      <Card className="rounded-3xl border border-yellow-300/20 bg-yellow-400/[0.04]">
+        <CardContent className="p-3 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-black text-yellow-100">New users needing approval</div>
+              <div className="mt-1 text-xs font-bold text-white/35">Unassigned accounts are sorted newest first.</div>
             </div>
-
-            {loading ? (
-              <div className="px-4 py-6 text-center text-sm font-bold text-white/35">Loading users...</div>
-            ) : !sortedUsers.length ? (
-              <div className="px-4 py-8 text-center text-sm font-bold text-white/35">No users found.</div>
-            ) : (
-              sortedUsers.map((u) => {
-                const currentRole = roleByUserId[u.id] ?? u.role ?? "";
-                const busy = savingUserId === u.id;
-                return (
-                  <div key={u.id} className="grid grid-cols-1 gap-3 border-b border-white/10 px-4 py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_170px_1fr] md:items-center">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-black text-white/85">{u.email || "(no email)"}</div>
-                      <div className="mt-1 truncate text-xs font-bold text-white/35">{u.id}</div>
-                      {u.last_sign_in_at ? (
-                        <div className="mt-1 text-[11px] font-bold text-white/30">Last sign-in: {new Date(u.last_sign_in_at).toLocaleString()}</div>
-                      ) : (
-                        <div className="mt-1 text-[11px] font-bold text-white/30">Never signed in</div>
-                      )}
-                    </div>
-
-                    <div className="hidden text-xs font-bold text-white/35 md:block">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}</div>
-
-                    <div className="grid gap-2">
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_104px]">
-                        <select
-                          value={currentRole}
-                          onChange={(e) => setRoleByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                          className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
-                        >
-                          <option value="">Unassigned</option>
-                          <option value="staff">staff</option>
-                          <option value="admin">admin</option>
-                          <option value="superadmin">superadmin</option>
-                        </select>
-                        <Button
-                          onClick={() => updateUserRole(u.id)}
-                          disabled={busy}
-                          className="h-10 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
-                        >
-                          Save
-                        </Button>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_132px]">
-                        <div className="relative">
-                          <input
-                            type={showPasswordByUserId[u.id] ? "text" : "password"}
-                            value={passwordByUserId[u.id] || ""}
-                            onChange={(e) => setPasswordByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                            placeholder="New password (min 8)"
-                            className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 pr-10 text-xs font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPasswordByUserId((prev) => ({ ...prev, [u.id]: !prev[u.id] }))}
-                            className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
-                            title={showPasswordByUserId[u.id] ? "Hide password" : "Show password"}
-                          >
-                            {showPasswordByUserId[u.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                          </button>
-                        </div>
-                        <Button
-                          onClick={() => setUserPassword(u.id)}
-                          disabled={busy}
-                          className="h-10 rounded-xl border border-emerald-300/25 bg-emerald-400/10 text-xs font-black text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Set Password
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            <span className="rounded-full border border-yellow-300/25 bg-yellow-400/10 px-2 py-1 text-[10px] font-black text-yellow-100">
+              {pendingUsers.length}
+            </span>
           </div>
+          {renderUserGroup(pendingUsers, { emptyLabel: "No accounts waiting for approval.", tone: "pending" })}
         </CardContent>
       </Card>
+
+      <Card className="rounded-3xl border border-white/10 bg-white/[0.02]">
+        <CardContent className="p-3 sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-black text-white/85">Active users</div>
+              <div className="mt-1 text-xs font-bold text-white/35">Approved staff, admins, and superadmins.</div>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/45">
+              {approvedUsers.length}
+            </span>
+          </div>
+          {renderUserGroup(approvedUsers, { emptyLabel: "No active users found." })}
+        </CardContent>
+      </Card>
+
+      {passwordModalUser ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closePasswordModal();
+          }}
+        >
+          <div className="oa-modal-panel flex max-h-[calc(100svh-0.75rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:rounded-3xl">
+            <div className="oa-modal-header flex items-start justify-between gap-3 border-b border-white/10 px-4 py-4">
+              <div className="min-w-0">
+                <div className="text-lg font-black tracking-tight text-white">Set Password</div>
+                <div className="mt-1 truncate text-xs font-bold text-white/35">{passwordModalUser.email || passwordModalUser.id}</div>
+              </div>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="oa-modal-body space-y-3 px-4 py-4">
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">New password</span>
+                <div className="relative mt-1">
+                  <input
+                    type={showPasswordDraft ? "text" : "password"}
+                    value={passwordDraft}
+                    onChange={(e) => setPasswordDraft(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 pr-11 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordDraft((prev) => !prev)}
+                    className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10 hover:text-white"
+                    title={showPasswordDraft ? "Hide password" : "Show password"}
+                  >
+                    {showPasswordDraft ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </label>
+              <div className="rounded-xl border border-yellow-300/20 bg-yellow-400/10 px-3 py-2 text-xs font-bold text-yellow-100">
+                This updates the user&apos;s login password immediately.
+              </div>
+            </div>
+            <div className="oa-modal-footer grid gap-2 border-t border-white/10 px-4 py-4 sm:grid-cols-2">
+              <Button
+                onClick={closePasswordModal}
+                disabled={Boolean(savingUserId)}
+                className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white disabled:opacity-60"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={setUserPassword}
+                disabled={Boolean(savingUserId)}
+                className="h-11 rounded-xl bg-emerald-400 px-5 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+              >
+                {savingUserId ? "Updating..." : "Update Password"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4483,7 +4630,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [dateSort, setDateSort] = useState("asc");
   const [search, setSearch] = useState("");
   const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
-  const [view, setView] = useState("List");
+  const [view, setView] = useState(() => (typeof window === "undefined" ? "List" : dashboardViewFromPath(window.location.pathname)));
   const [listGrouping, setListGrouping] = useState("all");
   const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -4566,21 +4713,42 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     showToast("Staff accounts are view-only", "error");
   }, [showToast]);
 
-  useEffect(() => {
-    if (!canAccessFinance && view === "Finance") setView("List");
-  }, [canAccessFinance, view]);
+  const navigateView = useCallback((nextView, { replace = false } = {}) => {
+    setView(nextView);
+    if (typeof window === "undefined") return;
+    const nextPath = dashboardPathForView(nextView);
+    if (window.location.pathname === nextPath) return;
+    const method = replace ? "replaceState" : "pushState";
+    window.history[method]({}, "", nextPath);
+  }, []);
 
   useEffect(() => {
-    if (!canAccessDjs && view === "DJs") setView("List");
-  }, [canAccessDjs, view]);
+    if (typeof window === "undefined") return undefined;
+    const handlePopState = () => {
+      setView(dashboardViewFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", handlePopState);
+    if (!routeDashboardViews[normalizeDashboardPath(window.location.pathname)]) {
+      navigateView(view, { replace: true });
+    }
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [navigateView, view]);
 
   useEffect(() => {
-    if (!canManageUsers && view === "Users") setView("List");
-  }, [canManageUsers, view]);
+    if (!canAccessFinance && view === "Finance") navigateView("List", { replace: true });
+  }, [canAccessFinance, navigateView, view]);
 
   useEffect(() => {
-    if (!canAccessDjPayments && view === "DJPayments") setView("List");
-  }, [canAccessDjPayments, view]);
+    if (!canAccessDjs && view === "DJs") navigateView("List", { replace: true });
+  }, [canAccessDjs, navigateView, view]);
+
+  useEffect(() => {
+    if (!canManageUsers && view === "Users") navigateView("List", { replace: true });
+  }, [canManageUsers, navigateView, view]);
+
+  useEffect(() => {
+    if (!canAccessDjPayments && view === "DJPayments") navigateView("List", { replace: true });
+  }, [canAccessDjPayments, navigateView, view]);
 
   useEffect(() => {
     activeWeekKeyRef.current = activeWeekKey;
@@ -5163,10 +5331,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setActiveFilter("All");
     setDateScope(event.date < todayISO ? "Past" : "Upcoming");
     setListGrouping("all");
-    setView("List");
+    navigateView("List");
     setActiveWeekKey(weekKey);
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
-  }, [todayISO]);
+  }, [navigateView, todayISO]);
 
   const jumpWeek = (direction) => {
     if (view !== "List") return;
@@ -5657,7 +5825,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               className={`grid w-full min-w-0 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 sm:flex-1 md:flex md:w-auto md:flex-none ${primaryNavGridClass}`}
             >
             <Button
-              onClick={() => setView("List")}
+              onClick={() => navigateView("List")}
               className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
@@ -5666,7 +5834,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               <span>List</span>
             </Button>
             <Button
-              onClick={() => setView("Calendar")}
+              onClick={() => navigateView("Calendar")}
               className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
@@ -5678,7 +5846,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             </Button>
             {canAccessDjs ? (
               <Button
-                onClick={() => setView("DJs")}
+                onClick={() => navigateView("DJs")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                   view === "DJs"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
@@ -5691,7 +5859,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             {canManageUsers ? (
               <Button
-                onClick={() => setView("Users")}
+                onClick={() => navigateView("Users")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                   view === "Users"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
@@ -5704,7 +5872,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             {canAccessFinance ? (
               <Button
-                onClick={() => setView("Finance")}
+                onClick={() => navigateView("Finance")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                   view === "Finance"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
@@ -5717,7 +5885,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             {canAccessDjPayments ? (
               <Button
-                onClick={() => setView("DJPayments")}
+                onClick={() => navigateView("DJPayments")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
                   view === "DJPayments"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
