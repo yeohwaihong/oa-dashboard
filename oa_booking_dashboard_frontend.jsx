@@ -1538,7 +1538,7 @@ function AddEventDayModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 backdrop-blur-sm sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -1547,9 +1547,9 @@ function AddEventDayModal({
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="flex h-[100svh] w-full max-w-4xl flex-col overflow-hidden border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:h-auto sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
+        className="oa-modal-panel flex max-h-[calc(100svh-0.75rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-6 sm:py-5">
+        <div className="oa-modal-header flex items-start justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-6 sm:py-5">
           <div>
             <div className="text-base font-black tracking-tight sm:text-xl">{title}</div>
             <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/35 sm:text-[11px] sm:tracking-[0.2em]">
@@ -1564,9 +1564,9 @@ function AddEventDayModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:space-y-4 sm:px-6 sm:py-5">
+        <div className="oa-modal-body min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:space-y-4 sm:px-6 sm:py-5">
           {!lockDateSelection ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
+          <div className="oa-modal-card rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">{dateMode === "day" ? "Pick available day" : "Pick available week"}</div>
@@ -1621,7 +1621,7 @@ function AddEventDayModal({
                       }
                       changeSelectedPeriod(iso);
                     }}
-                    className={`min-h-12 rounded-lg border px-1 py-1 text-left text-[11px] font-black transition sm:min-h-16 sm:rounded-xl sm:px-1.5 sm:text-xs ${
+                    className={`min-h-10 rounded-lg border px-1 py-1 text-left text-[11px] font-black transition sm:min-h-16 sm:rounded-xl sm:px-1.5 sm:text-xs ${
                       isFilled
                         ? getStatusCalendarClass(existingEvent.status)
                         : isSelected
@@ -1707,7 +1707,7 @@ function AddEventDayModal({
               return (
                 <div
                   key={day.isoDate}
-                  className={`rounded-2xl border bg-white/[0.03] p-3 sm:p-4 ${dayErrors.length ? "border-rose-300/40" : "border-white/10"}`}
+                  className={`oa-modal-card rounded-2xl border bg-white/[0.03] p-3 sm:p-4 ${dayErrors.length ? "border-rose-300/40" : "border-white/10"}`}
                 >
                   <div className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200/80">{header}</div>
 
@@ -2038,7 +2038,7 @@ function AddEventDayModal({
           </div>
         </div>
 
-        <div className="grid gap-2 border-t border-white/10 px-3 py-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4">
+        <div className="oa-modal-footer grid gap-2 border-t border-white/10 px-3 py-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/50 hover:bg-white/10 hover:text-white"
@@ -2263,7 +2263,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -2272,9 +2272,9 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="oa-modal-panel flex max-h-[calc(100svh-0.75rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="oa-modal-header flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div className="min-w-0">
             <div className="text-[11px] font-black uppercase tracking-[0.22em] text-purple-200/70">{dayLabelFromISO(event.date)}</div>
             <div className="mt-1 text-xl font-black tracking-tight text-white">{event.name}</div>
@@ -2288,7 +2288,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="oa-modal-body min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusClass(event.status)}`}>
               {statusLabel(event.status)}
@@ -2304,7 +2304,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
           </div>
 
           {event.notes ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="oa-modal-card rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Remarks</div>
               <div className="mt-2 whitespace-pre-wrap text-sm font-bold text-white/70">
                 <MentionText text={event.notes} users={mentionUsers} />
@@ -2312,7 +2312,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="oa-modal-card rounded-2xl border border-white/10 bg-white/[0.03] p-3">
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Set Times</div>
             {event.slots.length ? (
               <div className="mt-3 grid gap-2">
@@ -2346,7 +2346,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="oa-modal-card rounded-2xl border border-white/10 bg-white/[0.03] p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Comments</div>
               <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/35">
@@ -2383,7 +2383,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
           </div>
         </div>
 
-        <div className="grid gap-2 border-t border-white/10 px-4 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6">
+        <div className="oa-modal-footer grid gap-2 border-t border-white/10 px-4 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <Button
             onClick={onClose}
             className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
@@ -2429,7 +2429,7 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -2438,9 +2438,9 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.18 }}
-        className="flex max-h-[calc(100svh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60"
+        className="oa-modal-panel flex max-h-[calc(100svh-0.75rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="oa-modal-header flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
           <div>
             <div className="text-lg font-black tracking-tight sm:text-xl">🎉 Malaysia Holidays</div>
             <div className="mt-1 text-[11px] font-black uppercase tracking-[0.2em] text-white/35">Upcoming public holidays</div>
@@ -2453,7 +2453,7 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="oa-modal-body min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {error ? (
             <div className="rounded-2xl border border-rose-300/30 bg-rose-500/10 px-3 py-3 text-sm font-bold text-rose-100">{error}</div>
           ) : null}
@@ -3480,14 +3480,14 @@ function LoginScreen() {
 
       {loginOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setLoginOpen(false);
           }}
         >
           <form
             onSubmit={authMode === "login" ? submit : register}
-            className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50"
+            className="max-h-[calc(100svh-0.75rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0c17] p-4 shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl sm:p-6"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -4851,17 +4851,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (!newComments.length) return;
 
     for (const comment of newComments) knownIds.add(comment.id);
-
-    const others = newComments.filter((comment) => String(comment.userId || "") !== String(currentUser?.id || ""));
-    if (!others.length) return;
-
-    const latest = [...others].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
-    if (!latest) return;
-
-    const eventName = eventsById.get(latest.eventId)?.name || "Event";
-    const author = displayNameForUserId(latest.userId, mentionUsers, currentUser);
-    showToast(`New comment · ${eventName} · ${author}`);
-  }, [comments, currentUser?.id, eventsById, mentionUsers, showToast]);
+  }, [comments]);
 
   const todayISO = useMemo(() => isoFromDate(new Date()), []);
 
@@ -5620,6 +5610,24 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         .oa-theme-light textarea { color: #171321 !important; background-color: rgba(23, 19, 33, 0.045) !important; }
         .oa-clamp-1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .oa-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        @media (max-width: 640px) {
+          .oa-modal-panel { max-height: calc(100svh - 0.75rem); }
+          .oa-modal-header { padding: 0.6rem 0.75rem; }
+          .oa-modal-header h2,
+          .oa-modal-header [class*="text-xl"],
+          .oa-modal-header [class*="text-lg"] { font-size: 1rem !important; line-height: 1.25rem !important; }
+          .oa-modal-body { padding: 0.6rem; }
+          .oa-modal-body,
+          .oa-modal-body [class*="space-y-4"] { row-gap: 0.6rem; }
+          .oa-modal-card { border-radius: 0.875rem; padding: 0.6rem; }
+          .oa-modal-footer { padding: 0.6rem; }
+          .oa-modal-panel [class*="h-10"],
+          .oa-modal-panel [class*="h-11"] { height: 2.25rem !important; min-height: 2.25rem !important; }
+          .oa-modal-panel input,
+          .oa-modal-panel select,
+          .oa-modal-panel button { min-height: 2.25rem; }
+          .oa-modal-panel textarea { min-height: 4.5rem; }
+        }
       `}</style>
       <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
@@ -6219,7 +6227,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
       {toast ? (
         <div
-          className={`fixed bottom-5 right-5 z-[60] rounded-2xl border px-4 py-3 text-sm font-black shadow-2xl backdrop-blur ${
+          className={`fixed left-1/2 top-5 z-[60] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 rounded-2xl border px-4 py-3 text-center text-sm font-black shadow-2xl backdrop-blur ${
             toast.tone === "error"
               ? "border-rose-300/30 bg-rose-500/20 text-rose-50 shadow-rose-950/40"
               : "border-emerald-300/30 bg-emerald-500/20 text-emerald-50 shadow-emerald-950/40"
