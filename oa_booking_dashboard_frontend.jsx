@@ -347,7 +347,18 @@ function formatClockTime(time, mode = "24") {
 }
 
 function formatTimeRange(start, end, mode = "24") {
+  if (!start || !end) return "";
   return `${formatClockTime(start, mode)}-${formatClockTime(end, mode)}`;
+}
+
+function slotNeedsTime(slot) {
+  return normalizeSlotRole(slot?.role) !== "MC";
+}
+
+function slotHasValidTime(slot) {
+  if (!slotNeedsTime(slot)) return true;
+  if (!slot?.start || !slot?.end) return false;
+  return minutesFromTime(slot.end) > minutesFromTime(slot.start);
 }
 
 function timeFromMinutes(totalMinutes) {
@@ -406,15 +417,20 @@ function validateScheduleDays(days) {
         role: slot.role,
         start: slot.start,
         end: slot.end,
-        startM: minutesFromTime(slot.start),
-        endM: minutesFromTime(slot.end),
+        startM: slot.start ? minutesFromTime(slot.start) : null,
+        endM: slot.end ? minutesFromTime(slot.end) : null,
       }))
-      .filter((slot) => slot.start && slot.end);
+      .filter((slot) => slot.role !== "MC" || (slot.start && slot.end));
 
     const dayErrors = [];
     const dayConflicts = new Set();
 
     for (const slot of slots) {
+      if (slot.role !== "MC" && (!slot.start || !slot.end)) {
+        dayErrors.push(`${slot.dj} needs a start and end time.`);
+        dayConflicts.add(slot.index);
+        continue;
+      }
       if (slot.endM <= slot.startM) {
         dayErrors.push(`${slot.dj} must end after it starts.`);
         dayConflicts.add(slot.index);
@@ -974,14 +990,15 @@ function mapSupabaseEvent(row) {
         .map((slot) => {
           const assignment = firstRelated(slot.event_assignments);
           const dj = assignment?.djs?.name || assignment?.notes || "(OPENING TBD)";
+          const role = normalizeSlotRole(slot.role);
           return {
             id: String(slot.id),
             assignmentId: assignment?.id ? String(assignment.id) : null,
             djId: assignment?.djs?.id ? String(assignment.djs.id) : null,
             dj,
-            role: normalizeSlotRole(slot.role),
-            start: timeForInput(slot.start_time),
-            end: timeForInput(slot.end_time),
+            role,
+            start: slot.start_time ? timeForInput(slot.start_time) : "",
+            end: slot.end_time ? timeForInput(slot.end_time) : "",
             energy: slot.expected_energy ?? 3,
             warning: dj.toUpperCase().includes("TBD"),
             fee: assignment?.fee != null ? Number(assignment.fee) : null,
@@ -1842,41 +1859,58 @@ function AddEventDayModal({
                               </datalist>
                             </div>
 
-                            <select
-                              value={slot.start}
-                              onChange={(e) => {
-                                const nextStart = e.target.value;
-                                const nextEnd = normalizeSlotTimes(day.isoDate, idx, nextStart, slot.end);
-                                updateSlot(day.isoDate, idx, { start: nextStart, end: nextEnd });
-                              }}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
-                            >
-                              {timeOptions.map((t) => (
-                                <option key={t} value={t}>
-                                  {formatClockTime(t, timeFormat)}
-                                </option>
-                              ))}
-                            </select>
+                            {slot.role === "MC" ? (
+                              <div className="col-span-2 flex h-10 items-center rounded-lg border border-purple-300/20 bg-purple-400/10 px-3 text-xs font-black text-purple-100/70">
+                                No set time
+                              </div>
+                            ) : (
+                              <>
+                                <select
+                                  value={slot.start}
+                                  onChange={(e) => {
+                                    const nextStart = e.target.value;
+                                    const nextEnd = normalizeSlotTimes(day.isoDate, idx, nextStart, slot.end);
+                                    updateSlot(day.isoDate, idx, { start: nextStart, end: nextEnd });
+                                  }}
+                                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
+                                >
+                                  {timeOptions.map((t) => (
+                                    <option key={t} value={t}>
+                                      {formatClockTime(t, timeFormat)}
+                                    </option>
+                                  ))}
+                                </select>
 
-                            <select
-                              value={slot.end}
-                              onChange={(e) => {
-                                const nextEnd = e.target.value;
-                                const fixedEnd = normalizeSlotTimes(day.isoDate, idx, slot.start, nextEnd);
-                                updateSlot(day.isoDate, idx, { end: fixedEnd });
-                              }}
-                              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
-                            >
-                              {timeOptions.map((t) => (
-                                <option key={t} value={t}>
-                                  {formatClockTime(t, timeFormat)}
-                                </option>
-                              ))}
-                            </select>
+                                <select
+                                  value={slot.end}
+                                  onChange={(e) => {
+                                    const nextEnd = e.target.value;
+                                    const fixedEnd = normalizeSlotTimes(day.isoDate, idx, slot.start, nextEnd);
+                                    updateSlot(day.isoDate, idx, { end: fixedEnd });
+                                  }}
+                                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
+                                >
+                                  {timeOptions.map((t) => (
+                                    <option key={t} value={t}>
+                                      {formatClockTime(t, timeFormat)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </>
+                            )}
 
                             <select
                               value={slot.role}
-                              onChange={(e) => updateSlot(day.isoDate, idx, { role: e.target.value })}
+                              onChange={(e) => {
+                                const nextRole = e.target.value;
+                                updateSlot(
+                                  day.isoDate,
+                                  idx,
+                                  nextRole === "MC"
+                                    ? { role: nextRole, start: "", end: "" }
+                                    : { role: nextRole, start: slot.start || "22:30", end: slot.end || "00:00" },
+                                );
+                              }}
                               className="col-span-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/50 outline-none focus:border-purple-300/60 sm:col-span-1 sm:px-2 sm:py-2 sm:text-xs"
                             >
                               {roleOptions.map((r) => (
@@ -2113,16 +2147,18 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                       <span className="min-w-0 truncate text-sm leading-tight text-white sm:text-base">
                         {slot.dj}
                       </span>
-                      <span
-                        className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-black leading-none sm:text-xs ${
-                          conflictSlots.has(idx)
-                            ? "border-rose-200/50 bg-rose-400/15 text-rose-100"
-                            : "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
-                        }`}
-                      >
-                        <Clock className="h-3.5 w-3.5" />
-                        {formatTimeRange(slot.start, slot.end, timeFormat)}
-                      </span>
+                      {slotNeedsTime(slot) && slot.start && slot.end ? (
+                        <span
+                          className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-black leading-none sm:text-xs ${
+                            conflictSlots.has(idx)
+                              ? "border-rose-200/50 bg-rose-400/15 text-rose-100"
+                              : "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
+                          }`}
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                          {formatTimeRange(slot.start, slot.end, timeFormat)}
+                        </span>
+                      ) : null}
                     </span>
                   ))
                 ) : (
@@ -2294,10 +2330,12 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
                       </div>
                       <div className="text-sm font-black text-white">{slot.dj}</div>
                     </div>
-                    <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
-                      <Clock className="h-3.5 w-3.5" />
-                      {formatTimeRange(slot.start, slot.end, timeFormat)}
-                    </div>
+                    {slotNeedsTime(slot) && slot.start && slot.end ? (
+                      <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatTimeRange(slot.start, slot.end, timeFormat)}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -3213,10 +3251,12 @@ function PublicEventCard({ event }) {
                 {slot.role}
               </div>
               <div className="mt-1 text-sm font-black text-white">{displaySlotName(slot)}</div>
-              <div className="mt-1 inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-black/20 px-2 py-1 text-xs font-black text-cyan-100">
-                <Clock className="h-3.5 w-3.5" />
-                {slot.start}-{slot.end}
-              </div>
+              {slotNeedsTime(slot) && slot.start && slot.end ? (
+                <div className="mt-1 inline-flex items-center gap-1 rounded-lg border border-cyan-300/20 bg-black/20 px-2 py-1 text-xs font-black text-cyan-100">
+                  <Clock className="h-3.5 w-3.5" />
+                  {slot.start}-{slot.end}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -4034,7 +4074,6 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
         });
         setEditingFeeId(null);
         setSaveMsg((p) => ({ ...p, [slot.assignmentId]: "saved" }));
-        onToast?.(scope === "day" ? "Day fee uploaded" : "DJ fixed fee updated");
         setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[slot.assignmentId]; return n; }), 2000);
       } catch (err) {
         onToast?.(err?.message || "Fee save failed", "error");
@@ -4265,9 +4304,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
                               {slot.role}
                             </span>
                           </div>
-                          <div className="mt-0.5 text-[10px] font-bold text-white/30">
-                            {slot.start}–{slot.end}
-                          </div>
+                          {slotNeedsTime(slot) && slot.start && slot.end ? (
+                            <div className="mt-0.5 text-[10px] font-bold text-white/30">
+                              {slot.start}–{slot.end}
+                            </div>
+                          ) : null}
                         </div>
 
                         {/* Fee input */}
@@ -4665,8 +4706,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           .insert({
             event_id: savedEvent.data.id,
             slot_order: slotIndex + 1,
-            start_time: slot.start,
-            end_time: slot.end,
+            start_time: slotNeedsTime(slot) ? slot.start : null,
+            end_time: slotNeedsTime(slot) ? slot.end : null,
             role: normalizeSlotRole(slot.role),
             expected_energy: slot.energy ?? 3,
           })
@@ -5185,12 +5226,12 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       const { day, dayNo, month } = formatEventDatePieces(dateObj);
       const slots = d.slots
         .map((s) => ({ ...s, dj: String(s.dj || "").trim() }))
-        .filter((s) => s.dj.length && minutesFromTime(s.end) > minutesFromTime(s.start))
+        .filter((s) => s.dj.length && slotHasValidTime(s))
         .map((s) => ({
           dj: s.dj,
           role: s.role,
-          start: s.start,
-          end: s.end,
+          start: slotNeedsTime(s) ? s.start : "",
+          end: slotNeedsTime(s) ? s.end : "",
           energy: s.energy ?? 3,
           warning: s.dj.toUpperCase().includes("TBD"),
         }));
@@ -5477,8 +5518,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         slots: (event.slots ?? []).map((s) => ({
           dj: s.dj ?? "",
           role: normalizeSlotRole(s.role),
-          start: s.start ?? "22:30",
-          end: s.end ?? "00:00",
+          start: normalizeSlotRole(s.role) === "MC" ? "" : s.start ?? "22:30",
+          end: normalizeSlotRole(s.role) === "MC" ? "" : s.end ?? "00:00",
           energy: s.energy ?? 3,
         })),
       },
