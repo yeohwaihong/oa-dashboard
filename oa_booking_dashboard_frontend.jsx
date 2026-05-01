@@ -5645,8 +5645,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         }
       `}</style>
       <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
-        <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+        <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-6 xl:px-8">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:flex-1">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
               className={`grid w-full min-w-0 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 sm:flex-1 md:flex md:w-auto md:flex-none ${primaryNavGridClass}`}
@@ -5725,7 +5725,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
+          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 md:ml-auto md:w-auto md:flex md:flex-wrap md:items-center md:justify-end md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 md:px-5"
