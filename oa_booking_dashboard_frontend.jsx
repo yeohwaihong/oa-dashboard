@@ -1512,8 +1512,12 @@ function AddEventDayModal({
       const date = dayLabelFromISO(day.isoDate);
       const time =
         slotNeedsTime(slot) && slot?.start && slot?.end ? formatTimeRange(slot.start, slot.end, timeFormat) : "";
-      const detailsLine = `Date: ${date}  Stage: ${day.stage}  Set time: ${time || "TBC"}`;
-      return [`Hi ${djName},`, detailsLine, "Let me know if you are available! thank you!"].join("\n");
+      return [
+        `Hi ${djName},`,
+        `Date: ${date}`,
+        `Set time: ${time || "TBC"}`,
+        "Let me know if you are available! thank you!",
+      ].join("\n");
     },
     [timeFormat],
   );
@@ -2481,8 +2485,12 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
       const djName = formatDjDisplayName(slot?.dj);
       const date = dayLabelFromISO(event.date);
       const time = slotNeedsTime(slot) && slot?.start && slot?.end ? formatTimeRange(slot.start, slot.end, timeFormat) : "";
-      const detailsLine = `Date: ${date}  Stage: ${event.stage}  Set time: ${time || "TBC"}`;
-      return [`Hi ${djName},`, detailsLine, "Let me know if you are available! thank you!"].join("\n");
+      return [
+        `Hi ${djName},`,
+        `Date: ${date}`,
+        `Set time: ${time || "TBC"}`,
+        "Let me know if you are available! thank you!",
+      ].join("\n");
     },
     [event.date, event.stage, timeFormat]
   );
