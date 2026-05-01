@@ -4471,6 +4471,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [commentsError, setCommentsError] = useState("");
   const [pendingNotificationTarget, setPendingNotificationTarget] = useState(null);
   const notificationsButtonRef = React.useRef(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
@@ -5756,22 +5757,42 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             </div>
             ) : null}
             {canEdit ? (
-              <Button
-                onClick={() => openAddDayModal()}
-                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-purple-300/30 bg-purple-400/10 px-3 text-xs font-black text-purple-100 hover:bg-purple-400/20 sm:h-10 md:px-5"
-              >
-                <Plus className="h-4 w-4 shrink-0" />
-                <span>Add Day</span>
-              </Button>
-            ) : null}
-            {canEdit ? (
-              <Button
-                onClick={() => openAddModal()}
-                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-10 md:px-6"
-              >
-                <Plus className="h-4 w-4 shrink-0" />
-                <span>Add Week</span>
-              </Button>
+              <div className="relative">
+                <Button
+                  onClick={() => setAddMenuOpen((open) => !open)}
+                  className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-10 md:w-auto md:px-6"
+                >
+                  <Plus className="h-4 w-4 shrink-0" />
+                  <span>Add</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </Button>
+                {addMenuOpen ? (
+                  <div className="absolute right-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] p-1 shadow-2xl shadow-black/50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        openAddDayModal();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black text-white/75 hover:bg-purple-400 hover:text-black"
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      Add Day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        openAddModal();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black text-white/75 hover:bg-purple-400 hover:text-black"
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      Add Week
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             <Button
               onClick={() => setTimeFormat(timeFormat === "24" ? "12" : "24")}
