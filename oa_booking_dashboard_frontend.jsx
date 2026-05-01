@@ -3856,7 +3856,7 @@ function djPayStatusIcon(s) {
   return <CircleDot className="h-3 w-3" />;
 }
 
-function DjPaymentsPage({ events, djProfiles }) {
+function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
   // Payment status: keyed by assignmentId, stored in localStorage
   const [statusMap, setStatusMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem("oa_djpay_status_v2") || "{}"); }
@@ -3864,6 +3864,8 @@ function DjPaymentsPage({ events, djProfiles }) {
   });
   // Fee edits pending save: { assignmentId: string }
   const [feeEdits, setFeeEdits] = useState({});
+  const [editingFeeId, setEditingFeeId] = useState(null);
+  const [feeEditScopes, setFeeEditScopes] = useState({});
   // Which assignments are currently saving
   const [saving, setSaving] = useState({});
   // Toast-style feedback
@@ -3945,6 +3947,11 @@ function DjPaymentsPage({ events, djProfiles }) {
     [statusMap]
   );
 
+  const getFeeScope = useCallback(
+    (assignmentId) => feeEditScopes[assignmentId] || "day",
+    [feeEditScopes]
+  );
+
   const cycleStatus = useCallback((assignmentId, current) => {
     const next = PAY_STATUS_CYCLE[(PAY_STATUS_CYCLE.indexOf(current) + 1) % PAY_STATUS_CYCLE.length];
     setStatusMap((prev) => {
@@ -3960,44 +3967,84 @@ function DjPaymentsPage({ events, djProfiles }) {
       if (raw === undefined || String(raw).trim() === "") return;
       const amount = parseFloat(String(raw).replace(/[^0-9.]/g, ""));
       if (isNaN(amount) || amount < 0) return;
+      const scope = getFeeScope(slot.assignmentId);
 
       setSaving((p) => ({ ...p, [slot.assignmentId]: true }));
       try {
-        // 1. Update event_assignments.fee
-        if (slot.assignmentId) {
+        if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+
+        if (scope === "day") {
+          if (!slot.assignmentId) throw new Error("Missing assignment ID.");
           const { error } = await supabase
             .from("event_assignments")
             .update({ fee: amount })
             .eq("id", slot.assignmentId);
           if (error) throw error;
-        }
-        // 2. If DJ has no profile fee yet, seed dj_fees as their standard rate
-        const prof = djProfileMap.get((slot.dj || "").toUpperCase().trim());
-        if (slot.djId && prof && !prof.hasProfileFee) {
-          await supabase.from("dj_fees").insert({
+        } else {
+          if (!slot.djId) throw new Error("This DJ must be saved to the DJ database before setting a fixed fee.");
+          const currentFee = (djProfiles || [])
+            .find((profile) => String(profile.id) === String(slot.djId))
+            ?.fees?.[0];
+
+          const payload = {
             dj_id: slot.djId,
             fee_name: "Standard",
             currency_code: "MYR",
             amount,
             fee_type: "per_set",
-          });
+            is_active: true,
+          };
+
+          if (currentFee?.id) {
+            const { error } = await supabase
+              .from("dj_fees")
+              .update({
+                amount,
+                currency_code: currentFee.currencyCode || "MYR",
+                fee_type: currentFee.feeType || "per_set",
+                is_active: true,
+              })
+              .eq("id", currentFee.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from("dj_fees").insert(payload);
+            if (error) throw error;
+          }
+
+          if (slot.assignmentId) {
+            const { error } = await supabase
+              .from("event_assignments")
+              .update({ fee: null })
+              .eq("id", slot.assignmentId);
+            if (error) throw error;
+          }
         }
-        // Clear edit state
+
+        await onRefresh?.();
+
         setFeeEdits((p) => {
           const next = { ...p };
           delete next[slot.assignmentId];
           return next;
         });
+        setFeeEditScopes((p) => {
+          const next = { ...p };
+          delete next[slot.assignmentId];
+          return next;
+        });
+        setEditingFeeId(null);
         setSaveMsg((p) => ({ ...p, [slot.assignmentId]: "saved" }));
+        onToast?.(scope === "day" ? "Day fee uploaded" : "DJ fixed fee updated");
         setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[slot.assignmentId]; return n; }), 2000);
       } catch (err) {
+        onToast?.(err?.message || "Fee save failed", "error");
         setSaveMsg((p) => ({ ...p, [slot.assignmentId]: "error" }));
         setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[slot.assignmentId]; return n; }), 3000);
       } finally {
         setSaving((p) => ({ ...p, [slot.assignmentId]: false }));
       }
     },
-    [feeEdits, djProfileMap]
+    [feeEdits, getFeeScope, djProfiles, onRefresh, onToast]
   );
 
   // Filter slots by payment status
@@ -4202,11 +4249,13 @@ function DjPaymentsPage({ events, djProfiles }) {
                     const feeIsEdited = feeEdits[slot.assignmentId] !== undefined;
                     const isSaving = saving[slot.assignmentId];
                     const msg = saveMsg[slot.assignmentId];
+                    const isEditingFee = editingFeeId === slot.assignmentId;
+                    const feeScope = getFeeScope(slot.assignmentId);
 
                     return (
                       <div
                         key={slot.id}
-                        className="grid grid-cols-[1fr_auto] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]"
+                        className="grid grid-cols-[1fr_auto] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,auto)_auto]"
                       >
                         {/* DJ info */}
                         <div className="min-w-0">
@@ -4222,41 +4271,104 @@ function DjPaymentsPage({ events, djProfiles }) {
                         </div>
 
                         {/* Fee input */}
-                        <div className="hidden sm:flex items-center gap-1.5">
-                          <div className="relative flex items-center">
-                            <span className="absolute left-2 text-[10px] font-black text-white/30">RM</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="50"
-                              value={effectiveFee === "" || effectiveFee == null ? "" : effectiveFee}
-                              onChange={(e) =>
-                                setFeeEdits((p) => ({ ...p, [slot.assignmentId]: e.target.value }))
-                              }
-                              placeholder={hasProfileFee ? "from profile" : "enter fee"}
-                              className={`h-8 w-28 rounded-lg border bg-black/20 pl-8 pr-2 text-xs font-black outline-none transition ${
-                                feeIsEdited
-                                  ? "border-purple-300/50 text-white"
-                                  : hasSavedFee
-                                  ? "border-emerald-300/20 text-emerald-100"
+                        <div className="col-span-2 flex flex-wrap items-center gap-1.5 sm:col-span-1 sm:justify-end">
+                          {isEditingFee ? (
+                            <>
+                              <div className="relative flex items-center">
+                                <span className="absolute left-2 text-[10px] font-black text-white/30">RM</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="50"
+                                  value={effectiveFee === "" || effectiveFee == null ? "" : effectiveFee}
+                                  onChange={(e) =>
+                                    setFeeEdits((p) => ({ ...p, [slot.assignmentId]: e.target.value }))
+                                  }
+                                  placeholder={hasProfileFee ? "from profile" : "enter fee"}
+                                  className={`h-8 w-28 rounded-lg border bg-black/20 pl-8 pr-2 text-xs font-black outline-none transition ${
+                                    feeIsEdited
+                                      ? "border-purple-300/50 text-white"
+                                      : hasSavedFee
+                                      ? "border-emerald-300/20 text-emerald-100"
+                                      : hasProfileFee
+                                      ? "border-white/10 text-white/50"
+                                      : "border-yellow-300/30 text-yellow-200"
+                                  } focus:border-purple-300/60`}
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-black/20 p-0.5">
+                                {[
+                                  ["day", "This day"],
+                                  ["fixed", "DJ fixed"],
+                                ].map(([value, label]) => (
+                                  <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => setFeeEditScopes((p) => ({ ...p, [slot.assignmentId]: value }))}
+                                    className={`h-7 rounded-md px-2 text-[9px] font-black transition ${
+                                      feeScope === value ? "bg-purple-400 text-black" : "text-white/40 hover:bg-white/10 hover:text-white"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => saveFee(slot)}
+                                disabled={isSaving || !feeIsEdited}
+                                className="flex h-8 items-center gap-1 rounded-lg border border-purple-300/40 bg-purple-400/20 px-2 text-[10px] font-black text-purple-100 hover:bg-purple-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {isSaving ? <RefreshCcw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                {!isSaving && "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingFeeId(null);
+                                  setFeeEdits((p) => {
+                                    const next = { ...p };
+                                    delete next[slot.assignmentId];
+                                    return next;
+                                  });
+                                  setFeeEditScopes((p) => {
+                                    const next = { ...p };
+                                    delete next[slot.assignmentId];
+                                    return next;
+                                  });
+                                }}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                                title="Cancel fee edit"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className={`min-w-[92px] rounded-lg border px-2 py-1.5 text-right text-xs font-black ${
+                                hasSavedFee
+                                  ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
                                   : hasProfileFee
-                                  ? "border-white/10 text-white/50"
-                                  : "border-yellow-300/30 text-yellow-200"
-                              } focus:border-purple-300/60`}
-                            />
-                          </div>
-                          {feeIsEdited && (
-                            <button
-                              onClick={() => saveFee(slot)}
-                              disabled={isSaving}
-                              className="flex h-8 items-center gap-1 rounded-lg border border-purple-300/40 bg-purple-400/20 px-2 text-[10px] font-black text-purple-100 hover:bg-purple-400/30 disabled:opacity-50"
-                            >
-                              {isSaving ? <RefreshCcw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                              {!isSaving && "Save"}
-                            </button>
+                                  ? "border-white/10 bg-white/5 text-white/55"
+                                  : "border-yellow-300/30 bg-yellow-400/10 text-yellow-200"
+                              }`}>
+                                {fmtRM(effectiveFee === "" ? null : effectiveFee)}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingFeeId(slot.assignmentId);
+                                  setFeeEdits({ [slot.assignmentId]: effectiveFee === "" || effectiveFee == null ? "" : String(effectiveFee) });
+                                  setFeeEditScopes((p) => ({ ...p, [slot.assignmentId]: hasSavedFee ? "day" : "fixed" }));
+                                }}
+                                className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 text-[10px] font-black text-white/55 hover:bg-white/10 hover:text-white"
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Edit
+                              </button>
+                            </>
                           )}
                           {msg === "saved" && (
-                            <span className="text-[10px] font-black text-emerald-400">✓ Saved</span>
+                            <span className="text-[10px] font-black text-emerald-400">Saved</span>
                           )}
                           {msg === "error" && (
                             <span className="text-[10px] font-black text-rose-400">Error</span>
@@ -5889,7 +6001,14 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Finance" ? (
             <FinanceMathPage />
           ) : view === "DJPayments" && canAccessDjPayments ? (
-            <DjPaymentsPage events={events} djProfiles={djProfiles} />
+            <DjPaymentsPage
+              events={events}
+              djProfiles={djProfiles}
+              onRefresh={async () => {
+                await Promise.all([loadEvents(), loadDjProfiles()]);
+              }}
+              onToast={showToast}
+            />
           ) : view === "DJs" && canAccessDjs ? (
             <DjProfilesPage
               profiles={djProfiles}
