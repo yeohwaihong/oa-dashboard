@@ -4188,6 +4188,55 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
     [feeEditScopes]
   );
 
+  const ensureDjInDatabase = useCallback(
+    async (slot) => {
+      const existingDjId = slot?.djId ? String(slot.djId) : "";
+      if (existingDjId) return existingDjId;
+      if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+      const name = String(slot?.dj || "").trim();
+      if (!name || name.toUpperCase().includes("TBD")) throw new Error("Invalid DJ name.");
+
+      const existing = await supabase.from("djs").select("id").eq("name", name).limit(1).maybeSingle();
+      if (existing.error) throw existing.error;
+
+      let djId = existing.data?.id ? String(existing.data.id) : "";
+      let created = false;
+      if (!djId) {
+        const inserted = await supabase.from("djs").insert({ name }).select("id").single();
+        if (inserted.error) throw inserted.error;
+        djId = String(inserted.data.id);
+        created = true;
+      }
+
+      if (slot?.assignmentId) {
+        const { error } = await supabase
+          .from("event_assignments")
+          .update({ dj_id: djId, notes: null })
+          .eq("id", slot.assignmentId);
+        if (error) throw error;
+      }
+
+      if (created) {
+        onLogActivity?.({
+          action: "dj_created",
+          entityType: "dj",
+          entityId: djId,
+          message: `DJ created · ${name}`,
+          meta: { djId, name },
+        });
+      }
+      onLogActivity?.({
+        action: "dj_linked_to_assignment",
+        entityType: "event_assignment",
+        entityId: slot?.assignmentId ? String(slot.assignmentId) : "",
+        meta: { assignmentId: slot?.assignmentId ?? null, djId, name },
+      });
+
+      return djId;
+    },
+    [onLogActivity]
+  );
+
   const cycleStatus = useCallback((assignmentId, current) => {
     const next = PAY_STATUS_CYCLE[(PAY_STATUS_CYCLE.indexOf(current) + 1) % PAY_STATUS_CYCLE.length];
     setStatusMap((prev) => {
@@ -4214,6 +4263,7 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
       setSaving((p) => ({ ...p, [slot.assignmentId]: true }));
       try {
         if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+        let resolvedDjId = slot.djId ?? null;
 
         if (scope === "day") {
           if (!slot.assignmentId) throw new Error("Missing assignment ID.");
@@ -4223,13 +4273,14 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
             .eq("id", slot.assignmentId);
           if (error) throw error;
         } else {
-          if (!slot.djId) throw new Error("This DJ must be saved to the DJ database before setting a fixed fee.");
+          const ensuredDjId = await ensureDjInDatabase(slot);
+          resolvedDjId = ensuredDjId;
           const currentFee = (djProfiles || [])
-            .find((profile) => String(profile.id) === String(slot.djId))
+            .find((profile) => String(profile.id) === String(ensuredDjId))
             ?.fees?.[0];
 
           const payload = {
-            dj_id: slot.djId,
+            dj_id: ensuredDjId,
             fee_name: "Standard",
             currency_code: "MYR",
             amount,
@@ -4266,12 +4317,12 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
         onLogActivity?.({
           action: "dj_fee_updated",
           entityType: scope === "fixed" ? "dj" : "event_assignment",
-          entityId: scope === "fixed" ? String(slot.djId || "") : String(slot.assignmentId || ""),
+          entityId: scope === "fixed" ? String(resolvedDjId || "") : String(slot.assignmentId || ""),
           meta: {
             scope,
             amount,
             assignmentId: slot.assignmentId ?? null,
-            djId: slot.djId ?? null,
+            djId: resolvedDjId ?? null,
             djName: slot.dj ?? null,
           },
         });
@@ -4297,7 +4348,7 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
         setSaving((p) => ({ ...p, [slot.assignmentId]: false }));
       }
     },
-    [feeEdits, getFeeScope, djProfiles, onRefresh, onToast, onLogActivity]
+    [feeEdits, getFeeScope, djProfiles, onRefresh, onToast, onLogActivity, ensureDjInDatabase]
   );
 
   // Filter slots by payment status
@@ -4654,6 +4705,19 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
   );
 }
 
+function useDelayedBoolean(value, delayMs = 650) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!value) {
+      setReady(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setReady(true), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+  return ready;
+}
+
 function formatActivityTimestamp(value) {
   if (!value) return "—";
   const dt = new Date(value);
@@ -4904,6 +4968,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const canAccessDjPayments = userRole === "admin" || userRole === "superadmin";
   const canManageUsers = userRole === "superadmin";
   const canViewActivity = userRole === "superadmin";
+  const headerIconsOnly = userRole === "superadmin";
   const canUseNotificationCenter = userRole === "staff" || canEdit;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
@@ -4935,6 +5000,17 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
   }, []);
+
+  const [pendingCount, setPendingCount] = useState(0);
+  const withPending = useCallback(async (promiseFactory) => {
+    setPendingCount((c) => c + 1);
+    try {
+      return await promiseFactory();
+    } finally {
+      setPendingCount((c) => Math.max(0, c - 1));
+    }
+  }, []);
+  const showSlowLoading = useDelayedBoolean(pendingCount > 0, 700);
 
   const logActivity = useCallback(
     (entry) => {
@@ -5024,7 +5100,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     async function loadMentionUsers() {
       try {
-        const payload = await dashboardApiRequest("/api/users");
+        const payload = await withPending(() => dashboardApiRequest("/api/users"));
         if (!cancelled) setMentionUsers(Array.isArray(payload?.users) ? payload.users : []);
       } catch {
         if (!cancelled) setMentionUsers([]);
@@ -5035,13 +5111,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     return () => {
       cancelled = true;
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, withPending]);
 
   const loadComments = useCallback(async () => {
     if (!isSupabaseConfigured) return;
 
     try {
-      const payload = await dashboardApiRequest("/api/comments");
+      const payload = await withPending(() => dashboardApiRequest("/api/comments"));
       setCommentsError("");
       setComments(Array.isArray(payload?.comments) ? payload.comments.map(mapSupabaseComment) : []);
       return;
@@ -5049,7 +5125,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       // ignore and fallback to direct select
     }
 
-    const { data, error } = await supabase.from("event_comments").select("id, event_id, user_id, body, mention_user_ids, created_at").order("created_at", { ascending: true });
+    const { data, error } = await withPending(() =>
+      supabase.from("event_comments").select("id, event_id, user_id, body, mention_user_ids, created_at").order("created_at", { ascending: true })
+    );
     if (error) {
       const message = error.message || "Could not load comments.";
       setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
@@ -5059,16 +5137,18 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     setCommentsError("");
     setComments(Array.isArray(data) ? data.map(mapSupabaseComment) : []);
-  }, []);
+  }, [withPending]);
 
   const loadEvents = useCallback(async () => {
     if (!isSupabaseConfigured) return;
 
-    const { data, error } = await supabase
-      .from("events")
-      .select(supabaseEventSelect)
-      .order("event_date", { ascending: true })
-      .order("slot_order", { foreignTable: "event_slots", ascending: true });
+    const { data, error } = await withPending(() =>
+      supabase
+        .from("events")
+        .select(supabaseEventSelect)
+        .order("event_date", { ascending: true })
+        .order("slot_order", { foreignTable: "event_slots", ascending: true })
+    );
 
     if (error) {
       setSyncError(error.message);
@@ -5081,7 +5161,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setSyncError("");
     setSyncStatus("");
     setEvents(data.filter((row) => row?.event_date).map(mapSupabaseEvent));
-  }, []);
+  }, [withPending]);
 
   const loadDjProfiles = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -5090,7 +5170,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     }
 
     setDjProfilesLoading(true);
-    const { data, error } = await supabase.from("dj_profile_summary").select("*").order("name", { ascending: true });
+    const { data, error } = await withPending(() =>
+      supabase.from("dj_profile_summary").select("*").order("name", { ascending: true })
+    );
     setDjProfilesLoading(false);
 
     if (error) {
@@ -5102,7 +5184,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     setDjProfilesError("");
     setDjProfiles(Array.isArray(data) ? data.map(mapDjProfile) : []);
-  }, []);
+  }, [withPending]);
 
   const findOrCreateDj = useCallback(async (rawName) => {
     const name = String(rawName || "").trim();
@@ -6076,6 +6158,15 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
   return (
     <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-5 xl:p-6`}>
+      {showSlowLoading ? (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="fixed left-1/2 top-3 z-[90] -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-2 text-xs font-black text-white/80 backdrop-blur">
+            <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
+            <span>Loading…</span>
+            <span className="text-white/35">{pendingCount}</span>
+          </div>
+        </motion.div>
+      ) : null}
       <style>{`
         .oa-theme-light { color-scheme: light; }
         .oa-theme-light [class*="bg-[#0d0c17]"],
@@ -6142,87 +6233,87 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             >
             <Button
               onClick={() => navigateView("List")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
               <List className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>List</span>
+              <span className={headerIconsOnly ? "sr-only" : ""}>List</span>
             </Button>
             <Button
               onClick={() => navigateView("Calendar")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
               <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>Calendar</span>
+              <span className={headerIconsOnly ? "sr-only" : ""}>Calendar</span>
             </Button>
             {canAccessDjs ? (
               <Button
                 onClick={() => navigateView("DJs")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                   view === "DJs"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Music className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>DJs</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>DJs</span>
               </Button>
             ) : null}
             {canManageUsers ? (
               <Button
                 onClick={() => navigateView("Users")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                   view === "Users"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>Users</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>Users</span>
               </Button>
             ) : null}
             {canViewActivity ? (
               <Button
                 onClick={() => navigateView("Activity")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                   view === "Activity"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>Activity</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>Activity</span>
               </Button>
             ) : null}
             {canAccessFinance ? (
               <Button
                 onClick={() => navigateView("Finance")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                   view === "Finance"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>Finance</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>Finance</span>
               </Button>
             ) : null}
             {canAccessDjPayments ? (
               <Button
                 onClick={() => navigateView("DJPayments")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
                   view === "DJPayments"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Banknote className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>Payments</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>Payments</span>
               </Button>
             ) : null}
             </div>
@@ -6230,10 +6321,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           <div className="grid w-full grid-cols-4 items-stretch gap-1.5 md:ml-auto md:w-auto md:flex md:flex-wrap md:items-center md:justify-end md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 md:px-5"
+              className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
             >
               <CalendarDays className="h-4 w-4 shrink-0" />
-              <span>Holidays</span>
+              <span className={headerIconsOnly ? "sr-only" : ""}>Holidays</span>
             </Button>
             {canUseNotificationCenter ? (
             <div className="relative">
@@ -6244,11 +6335,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   setActiveNotificationsTab(mentionCount || !canEdit ? "mentions" : "pending");
                   setNotificationsOpen(true);
                 }}
-                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-yellow-300/25 bg-yellow-400/10 px-3 text-xs font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 md:px-5"
+                className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-yellow-300/25 bg-yellow-400/10 text-xs font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
                 title={canEdit ? "Notification center" : "Mentions notification center"}
               >
                 <Bell className="h-4 w-4 shrink-0" />
-                <span>{notificationButtonLabel}</span>
+                <span className={headerIconsOnly ? "sr-only" : ""}>{notificationButtonLabel}</span>
               </Button>
               {notificationBadgeCount ? (
                 <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
@@ -6261,11 +6352,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               <div className="relative">
                 <Button
                   onClick={() => setAddMenuOpen((open) => !open)}
-                  className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 px-3 text-xs font-black text-black hover:bg-purple-300 sm:h-10 md:w-auto md:px-6"
+                  className={`inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "px-0 md:w-11" : "px-3 md:w-auto md:px-6"}`}
                 >
                   <Plus className="h-4 w-4 shrink-0" />
-                  <span>Add</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  <span className={headerIconsOnly ? "sr-only" : ""}>Add</span>
+                  {headerIconsOnly ? null : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
                 </Button>
                 {addMenuOpen ? (
                   <div className="absolute right-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] p-1 shadow-2xl shadow-black/50">
