@@ -456,6 +456,18 @@ function normalizeDjLookupKey(value) {
   return raw.startsWith("dj ") ? raw.slice(3).trim() : raw;
 }
 
+function formatDjDisplayName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "DJ";
+  const noPrefix = raw.toLowerCase().startsWith("dj ") ? raw.slice(3).trim() : raw;
+  return noPrefix
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => (word.length ? `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}` : ""))
+    .filter(Boolean)
+    .join(" ");
+}
+
 function slotNeedsTime(slot) {
   return normalizeSlotRole(slot?.role) !== "MC";
 }
@@ -1356,6 +1368,7 @@ function AddEventDayModal({
   onChangeSeedDate,
   onSave,
   djOptions,
+  djProfiles,
   genreOptions,
   existingEventsByDate,
   holidaysByDate,
@@ -1389,6 +1402,20 @@ function AddEventDayModal({
   const [smartSchedules, setSmartSchedules] = useState({});
   const [pickerMonth, setPickerMonth] = useState(() => new Date(isoToDate(seedDateISO).getFullYear(), isoToDate(seedDateISO).getMonth(), 1));
   const [activeMentionByDate, setActiveMentionByDate] = useState({});
+
+  const djPhoneByName = useMemo(() => {
+    const map = new Map();
+    for (const p of djProfiles || []) {
+      const phone = p.phone || "";
+      const key1 = normalizeDjLookupKey(p.name);
+      const key2 = normalizeDjLookupKey(p.stageName);
+      const key3 = normalizeDjLookupKey(p.realName);
+      if (key1) map.set(key1, phone);
+      if (key2) map.set(key2, phone);
+      if (key3) map.set(key3, phone);
+    }
+    return map;
+  }, [djProfiles]);
 
   const headerDates = useMemo(() => (dateMode === "day" ? [isoToDate(seedDateISO)] : weekWedToSat(seedDateISO)), [dateMode, seedDateISO]);
   const selectedRangeLabel = useMemo(() => (dateMode === "day" ? dayLabelFromISO(seedDateISO) : weekRangeLabelFromDates(headerDates)), [dateMode, headerDates, seedDateISO]);
@@ -1478,6 +1505,28 @@ function AddEventDayModal({
     const activeMention = activeMentionToken(text, caretIndex);
     setActiveMentionByDate((prev) => ({ ...prev, [isoDate]: activeMention }));
   };
+
+  const whatsappTextForDaySlot = useCallback(
+    (day, slot) => {
+      const djName = formatDjDisplayName(slot?.dj);
+      const date = dayLabelFromISO(day.isoDate);
+      const time =
+        slotNeedsTime(slot) && slot?.start && slot?.end ? formatTimeRange(slot.start, slot.end, timeFormat) : "";
+      const detailsLine = `Date: ${date}  Stage: ${day.stage}  Set time: ${time || "TBC"}`;
+      return [`Hi ${djName},`, detailsLine, "Let me know if you are available! thank you!"].join("\n");
+    },
+    [timeFormat],
+  );
+
+  const openWhatsAppForDaySlot = useCallback(
+    (day, slot) => {
+      const phone = slot?.dj ? djPhoneByName.get(normalizeDjLookupKey(slot.dj)) : "";
+      const url = whatsappLink(phone, whatsappTextForDaySlot(day, slot));
+      if (!url) return;
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [djPhoneByName, whatsappTextForDaySlot],
+  );
 
   const insertMention = (isoDate, user, activeMention = null) => {
     const handle = mentionHandleForUser(user);
@@ -1960,7 +2009,7 @@ function AddEventDayModal({
                         {day.slots.map((slot, idx) => (
                           <div
                             key={`${day.isoDate}-${idx}`}
-                            className={`grid grid-cols-2 items-center gap-2 rounded-xl border bg-black/20 p-2 sm:grid-cols-[minmax(180px,1fr)_110px_110px_120px_40px] ${
+                            className={`grid grid-cols-2 items-center gap-2 rounded-xl border bg-black/20 p-2 sm:grid-cols-[minmax(180px,1fr)_110px_110px_120px_40px_40px] ${
                               dayConflictSlots.has(idx) ? "border-rose-300/50" : "border-white/10"
                             }`}
                           >
@@ -2041,8 +2090,19 @@ function AddEventDayModal({
                             </select>
 
                             <button
+                              type="button"
+                              onClick={() => openWhatsAppForDaySlot(day, slot)}
+                              disabled={!whatsappDigits(slot?.dj ? djPhoneByName.get(normalizeDjLookupKey(slot.dj)) : "")}
+                              title="Send WhatsApp (needs DJ phone in DJ profile)"
+                              className="col-span-1 flex h-10 w-full items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-70 sm:h-9 sm:w-9"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                              <span className="sr-only">Send WhatsApp</span>
+                            </button>
+
+                            <button
                               onClick={() => removeSlot(day.isoDate, idx)}
-                              className="col-span-2 flex h-10 w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/40 hover:bg-rose-400/20 hover:text-rose-200 sm:col-span-1 sm:h-9 sm:w-9"
+                              className="col-span-1 flex h-10 w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/40 hover:bg-rose-400/20 hover:text-rose-200 sm:col-span-1 sm:h-9 sm:w-9"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -2418,24 +2478,13 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
 
   const whatsappTextForSlot = useCallback(
     (slot) => {
-      const djName = String(slot?.dj || "").trim() || "DJ";
+      const djName = formatDjDisplayName(slot?.dj);
       const date = dayLabelFromISO(event.date);
-      const role = String(slot?.role || "").trim();
       const time = slotNeedsTime(slot) && slot?.start && slot?.end ? formatTimeRange(slot.start, slot.end, timeFormat) : "";
-      const lines = [
-        `Hi ${djName},`,
-        "",
-        `Confirmed lineup: ${event.name}`,
-        `Date: ${date}`,
-        `Stage: ${event.stage}`,
-        role ? `Role: ${role}` : "",
-        time ? `Set time: ${time}` : "",
-        "",
-        "Please reply OK to confirm.",
-      ].filter(Boolean);
-      return lines.join("\n");
+      const detailsLine = `Date: ${date}  Stage: ${event.stage}  Set time: ${time || "TBC"}`;
+      return [`Hi ${djName},`, detailsLine, "Let me know if you are available! thank you!"].join("\n");
     },
-    [event.date, event.name, event.stage, timeFormat]
+    [event.date, event.stage, timeFormat]
   );
 
   const openWhatsApp = useCallback(
@@ -7315,6 +7364,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         onChangeSeedDate={setSeedDateISO}
         onSave={saveModalDays}
         djOptions={djOptions}
+        djProfiles={djProfiles}
         genreOptions={genreOptions}
         existingEventsByDate={existingEventsByDate}
         holidaysByDate={holidaysByDate}
