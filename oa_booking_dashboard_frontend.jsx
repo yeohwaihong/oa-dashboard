@@ -1069,14 +1069,15 @@ function mapSupabaseEvent(row) {
           const assignment = firstRelated(slot.event_assignments);
           const dj = assignment?.djs?.name || assignment?.notes || "(OPENING TBD)";
           const role = normalizeSlotRole(slot.role);
+          const needsTime = role !== "MC";
           return {
             id: String(slot.id),
             assignmentId: assignment?.id ? String(assignment.id) : null,
             djId: assignment?.djs?.id ? String(assignment.djs.id) : null,
             dj,
             role,
-            start: slot.start_time ? timeForInput(slot.start_time) : "",
-            end: slot.end_time ? timeForInput(slot.end_time) : "",
+            start: needsTime && slot.start_time ? timeForInput(slot.start_time) : "",
+            end: needsTime && slot.end_time ? timeForInput(slot.end_time) : "",
             energy: slot.expected_energy ?? 3,
             warning: dj.toUpperCase().includes("TBD"),
             fee: assignment?.fee != null ? Number(assignment.fee) : null,
@@ -3125,7 +3126,7 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
   );
 }
 
-function DjProfilesPage({ profiles, events, loading, error }) {
+function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, onRefreshProfiles, onLogActivity }) {
   const [query, setQuery] = useState("");
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
@@ -3148,6 +3149,195 @@ function DjProfilesPage({ profiles, events, loading, error }) {
   }, [filteredProfiles, selectedId]);
 
   const selectedProfile = filteredProfiles.find((profile) => profile.id === selectedId) ?? filteredProfiles[0] ?? null;
+  const historyRows = useMemo(() => {
+    if (!selectedProfile) return [];
+    const selectedIsUuid = isSupabaseUuid(selectedProfile.id);
+    const selectedName = String(selectedProfile.name || selectedProfile.stageName || "").trim().toLowerCase();
+    const selectedStage = String(selectedProfile.stageName || "").trim().toLowerCase();
+
+    const rows = [];
+    for (const event of events || []) {
+      for (const slot of event.slots || []) {
+        const slotDjId = slot.djId ? String(slot.djId) : "";
+        const slotName = String(slot.dj || "").trim().toLowerCase();
+        const match =
+          (selectedIsUuid && slotDjId && slotDjId === String(selectedProfile.id)) ||
+          (!selectedIsUuid && selectedName && slotName === selectedName) ||
+          (selectedStage && slotName === selectedStage);
+        if (!match) continue;
+        if (!String(slot.dj || "").trim() || String(slot.dj || "").toUpperCase().includes("TBD")) continue;
+
+        const fee = slot.fee != null ? Number(slot.fee) : null;
+        const profileFee = selectedProfile.fees?.[0]?.amount != null ? Number(selectedProfile.fees[0].amount) : null;
+        const displayedFee = fee != null ? fee : profileFee;
+
+        rows.push({
+          key: `${event.id}-${slot.id || ""}-${slot.assignmentId || ""}-${slot.role || ""}`,
+          date: event.date,
+          eventName: event.name,
+          role: slot.role,
+          start: slot.start,
+          end: slot.end,
+          fee: displayedFee,
+          feeSource: fee != null ? "assignment" : profileFee != null ? "profile" : "unknown",
+          stage: event.stage,
+        });
+      }
+    }
+
+    return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [events, selectedProfile]);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    stageName: "",
+    realName: "",
+    email: "",
+    phone: "",
+    instagramHandle: "",
+    soundcloudUrl: "",
+    pressKitUrl: "",
+    bio: "",
+    homeCity: "",
+    country: "",
+    status: "Active",
+    notes: "",
+    genresText: "",
+    standardFee: "",
+  });
+
+  const openEdit = useCallback(() => {
+    if (!selectedProfile) return;
+    const genresText = selectedProfile.genres.map((g) => g.name).filter(Boolean).join(" / ");
+    const standardFee = selectedProfile.fees?.[0]?.amount != null ? String(selectedProfile.fees[0].amount) : "";
+    setEditForm({
+      name: selectedProfile.name || "",
+      stageName: selectedProfile.stageName || "",
+      realName: selectedProfile.realName || "",
+      email: selectedProfile.email || "",
+      phone: selectedProfile.phone || "",
+      instagramHandle: selectedProfile.instagramHandle || "",
+      soundcloudUrl: selectedProfile.soundcloudUrl || "",
+      pressKitUrl: selectedProfile.pressKitUrl || "",
+      bio: selectedProfile.bio || "",
+      homeCity: selectedProfile.homeCity || "",
+      country: selectedProfile.country || "",
+      status: selectedProfile.status || "Active",
+      notes: selectedProfile.notes || "",
+      genresText,
+      standardFee,
+    });
+    setEditOpen(true);
+  }, [selectedProfile]);
+
+  const closeEdit = useCallback(() => {
+    if (editSaving) return;
+    setEditOpen(false);
+  }, [editSaving]);
+
+  const saveEdit = useCallback(async () => {
+    if (!selectedProfile) return;
+    if (!isSupabaseConfigured) {
+      onToast?.("Supabase is not configured.", "error");
+      return;
+    }
+    if (!canEdit) {
+      onToast?.("Staff accounts are view-only", "error");
+      return;
+    }
+
+    const cleanName = String(editForm.name || "").trim() || selectedProfile.name || "Untitled DJ";
+    const payload = {
+      name: cleanName,
+      stage_name: String(editForm.stageName || "").trim() || null,
+      real_name: String(editForm.realName || "").trim() || null,
+      email: String(editForm.email || "").trim() || null,
+      phone: String(editForm.phone || "").trim() || null,
+      instagram_handle: String(editForm.instagramHandle || "").trim() || null,
+      soundcloud_url: String(editForm.soundcloudUrl || "").trim() || null,
+      press_kit_url: String(editForm.pressKitUrl || "").trim() || null,
+      bio: String(editForm.bio || "").trim() || null,
+      home_city: String(editForm.homeCity || "").trim() || null,
+      country: String(editForm.country || "").trim() || null,
+      status: String(editForm.status || "Active").trim() || "Active",
+      notes: String(editForm.notes || "").trim() || null,
+    };
+
+    const genreTags = splitGenreTags(editForm.genresText).map((t) => t.trim()).filter(Boolean);
+    const feeRaw = String(editForm.standardFee || "").trim();
+    const feeAmount = feeRaw ? Number.parseFloat(feeRaw.replace(/[^0-9.]/g, "")) : null;
+
+    setEditSaving(true);
+    try {
+      let djId = isSupabaseUuid(selectedProfile.id) ? String(selectedProfile.id) : "";
+      if (!djId) {
+        const inserted = await supabase.from("djs").insert({ name: cleanName }).select("id").single();
+        if (inserted.error) throw inserted.error;
+        djId = String(inserted.data.id);
+      }
+
+      const updated = await supabase.from("djs").update(payload).eq("id", djId);
+      if (updated.error) throw updated.error;
+
+      if (genreTags.length) {
+        const { error: genreInsertError } = await supabase.from("genres").insert(genreTags.map((name) => ({ name })));
+        if (genreInsertError && !String(genreInsertError.message || "").toLowerCase().includes("duplicate")) throw genreInsertError;
+
+        const genresAll = await supabase.from("genres").select("id, name");
+        if (genresAll.error) throw genresAll.error;
+        const byLower = new Map((genresAll.data || []).map((g) => [String(g.name || "").toLowerCase(), String(g.id)]));
+        const genreIds = genreTags.map((t) => byLower.get(String(t).toLowerCase())).filter(Boolean);
+
+        const deleted = await supabase.from("dj_genres").delete().eq("dj_id", djId);
+        if (deleted.error) throw deleted.error;
+
+        if (genreIds.length) {
+          const rows = genreIds.map((genreId, index) => ({ dj_id: djId, genre_id: genreId, is_primary: index === 0 }));
+          const insertedLinks = await supabase.from("dj_genres").insert(rows);
+          if (insertedLinks.error) throw insertedLinks.error;
+        }
+      }
+
+      if (feeAmount != null && Number.isFinite(feeAmount) && feeAmount >= 0) {
+        const existingFee = await supabase
+          .from("dj_fees")
+          .select("id")
+          .eq("dj_id", djId)
+          .eq("fee_name", "Standard")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingFee.error) throw existingFee.error;
+
+        if (existingFee.data?.id) {
+          const feeUpdate = await supabase.from("dj_fees").update({ amount: feeAmount, currency_code: "MYR", fee_type: "per_set", is_active: true }).eq("id", existingFee.data.id);
+          if (feeUpdate.error) throw feeUpdate.error;
+        } else {
+          const feeInsert = await supabase.from("dj_fees").insert({ dj_id: djId, fee_name: "Standard", currency_code: "MYR", amount: feeAmount, fee_type: "per_set", is_active: true });
+          if (feeInsert.error) throw feeInsert.error;
+        }
+      }
+
+      onLogActivity?.({
+        action: "dj_profile_updated",
+        entityType: "dj",
+        entityId: djId,
+        message: `DJ profile updated · ${cleanName}`,
+        meta: { djId, name: cleanName },
+      });
+      await onRefreshProfiles?.();
+      if (djId && djId !== selectedProfile.id) setSelectedId(djId);
+      onToast?.("DJ profile saved");
+      setEditOpen(false);
+    } catch (e) {
+      onToast?.(e?.message || "Failed to save DJ profile", "error");
+    } finally {
+      setEditSaving(false);
+    }
+  }, [canEdit, editForm, onLogActivity, onRefreshProfiles, onToast, selectedProfile]);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -3222,9 +3412,20 @@ function DjProfilesPage({ profiles, events, loading, error }) {
                   <div className="mt-1 text-sm font-bold text-white/45">{selectedProfile.realName}</div>
                 ) : null}
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-right">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Active Fees</div>
-                <div className="mt-1 text-xl font-black text-emerald-100">{selectedProfile.fees.length}</div>
+              <div className="flex items-start gap-2">
+                {canEdit ? (
+                  <Button
+                    onClick={openEdit}
+                    className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/70 hover:bg-white/10 hover:text-white"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    <span className="ml-2">Edit</span>
+                  </Button>
+                ) : null}
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-right">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Active Fees</div>
+                  <div className="mt-1 text-xl font-black text-emerald-100">{selectedProfile.fees.length}</div>
+                </div>
               </div>
             </div>
 
@@ -3288,6 +3489,44 @@ function DjProfilesPage({ profiles, events, loading, error }) {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">History</div>
+                <div className="text-[10px] font-black text-white/35">{historyRows.length} gigs</div>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {historyRows.slice(0, 40).map((row) => (
+                  <div key={row.key} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">{dayLabelFromISO(row.date)}</div>
+                        <div className="mt-1 oa-clamp-2 text-sm font-black text-white/80">{row.eventName}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/45">
+                          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5">{row.role}</span>
+                          {row.start && row.end ? <span>{formatTimeRange(row.start, row.end, "24")}</span> : null}
+                          {row.stage ? <span>{row.stage}</span> : null}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Fee</div>
+                        <div className="mt-0.5 text-sm font-black text-emerald-100">
+                          {row.fee != null ? currency(row.fee, "MYR") : "—"}
+                        </div>
+                        <div className="text-[10px] font-black text-white/25">
+                          {row.feeSource === "assignment" ? "day" : row.feeSource === "profile" ? "profile" : ""}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!historyRows.length ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35">
+                    No history yet for this DJ.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
             {selectedProfile.bio || selectedProfile.notes ? (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm font-bold leading-6 text-white/60">
                 {selectedProfile.bio || selectedProfile.notes}
@@ -3300,6 +3539,134 @@ function DjProfilesPage({ profiles, events, loading, error }) {
           </div>
         )}
       </div>
+      {editOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 backdrop-blur-sm sm:p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEdit();
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.18 }}
+            className="oa-modal-panel flex max-h-[calc(100svh-0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#16152a] to-[#0a0912] text-white shadow-2xl shadow-black/60 sm:max-h-[calc(100svh-1.5rem)] sm:rounded-3xl"
+          >
+            <div className="oa-modal-header flex items-start justify-between gap-3 border-b border-white/10 px-3 py-3 sm:px-6 sm:py-5">
+              <div>
+                <div className="text-base font-black tracking-tight sm:text-xl">Edit DJ Profile</div>
+                <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/35 sm:text-[11px] sm:tracking-[0.2em]">
+                  {selectedProfile?.stageName || selectedProfile?.name}
+                </div>
+              </div>
+              <button
+                onClick={closeEdit}
+                className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+                disabled={editSaving}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="oa-modal-body min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3 sm:px-6 sm:py-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ["Name", "name"],
+                  ["Stage Name", "stageName"],
+                  ["Real Name", "realName"],
+                  ["Email", "email"],
+                  ["Phone", "phone"],
+                  ["Instagram", "instagramHandle"],
+                  ["Soundcloud", "soundcloudUrl"],
+                  ["Press Kit", "pressKitUrl"],
+                  ["City", "homeCity"],
+                  ["Country", "country"],
+                ].map(([label, key]) => (
+                  <label key={key} className="block">
+                    <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">{label}</span>
+                    <input
+                      value={editForm[key]}
+                      onChange={(e) => setEditForm((p) => ({ ...p, [key]: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Status</span>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}
+                    className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                  >
+                    {["Active", "Inactive", "Do Not Book"].map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Standard Fee (MYR)</span>
+                  <input
+                    value={editForm.standardFee}
+                    onChange={(e) => setEditForm((p) => ({ ...p, standardFee: e.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                    placeholder="e.g. 800"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Genres</span>
+                <input
+                  value={editForm.genresText}
+                  onChange={(e) => setEditForm((p) => ({ ...p, genresText: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                  placeholder="TECHNO / TRANCE / HARD TECHNO"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Bio</span>
+                <textarea
+                  value={editForm.bio}
+                  onChange={(e) => setEditForm((p) => ({ ...p, bio: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white outline-none focus:border-purple-300/60"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notes</span>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white outline-none focus:border-purple-300/60"
+                />
+              </label>
+            </div>
+
+            <div className="oa-modal-footer flex items-center justify-end gap-2 border-t border-white/10 px-3 py-3 sm:px-6 sm:py-4">
+              <Button
+                onClick={closeEdit}
+                disabled={editSaving}
+                className="h-11 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-60"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={saveEdit}
+                disabled={editSaving}
+                className="h-11 rounded-xl bg-purple-400 px-5 text-sm font-black text-black hover:bg-purple-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+              >
+                {editSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -5241,8 +5608,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           .insert({
             event_id: savedEvent.data.id,
             slot_order: slotIndex + 1,
-            start_time: slotNeedsTime(slot) ? slot.start : null,
-            end_time: slotNeedsTime(slot) ? slot.end : null,
+            start_time: slotNeedsTime(slot) ? slot.start : "00:00",
+            end_time: slotNeedsTime(slot) ? slot.end : "00:00",
             role: normalizeSlotRole(slot.role),
             expected_energy: slot.energy ?? 3,
           })
@@ -5835,7 +6202,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         setSyncError("");
         setSyncStatus("Saving to Supabase...");
         await Promise.all(eventsToSave.map(saveEventToSupabase));
-        await loadEvents();
+        await Promise.all([loadEvents(), loadDjProfiles()]);
         setSyncStatus("Saved to Supabase");
         showToast("Saved to database");
         for (const entry of activityEntries) logActivity(entry);
@@ -6559,9 +6926,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         ) : null}
 
         {view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
-        <section className="sticky top-0 z-10 flex flex-col gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex-row md:flex-wrap md:items-center md:px-6 xl:px-8">
+        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           {view === "List" ? (
-          <div className="flex w-full items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1 pb-1.5 md:w-auto md:overflow-visible md:pb-1">
+          <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
               { key: "Past", label: "Past Events", count: pastCount },
@@ -6582,7 +6949,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
           ) : null}
 
-          <div className="flex w-full gap-1.5 overflow-x-auto pb-1.5 md:w-auto md:flex-wrap md:overflow-visible md:pb-0">
+          <div className="grid w-full grid-cols-2 gap-1.5 min-[420px]:grid-cols-4 md:flex md:w-auto md:flex-wrap md:justify-start md:px-0">
             {filterItems.map((item) => {
               const Icon = item.icon;
               const active = activeFilter === item.key;
@@ -6601,7 +6968,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
 
           {view === "List" ? (
-            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:justify-start md:overflow-visible md:pb-0">
+            <div className="flex flex-wrap items-center justify-center gap-2 md:ml-auto md:justify-start">
               <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
                 <button
                   onClick={() => setListGrouping("month")}
@@ -6649,17 +7016,17 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             </div>
           ) : null}
 
-          <div className="flex w-full flex-col gap-2 sm:flex-row md:ml-auto md:w-auto md:items-center">
+          <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
             <select
               value={dateSort}
               onChange={(e) => setDateSort(e.target.value)}
-              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:w-[120px] sm:px-3 sm:text-sm"
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:px-3 sm:text-sm lg:ml-auto"
             >
               <option value="asc">Date ↑</option>
               <option value="desc">Date ↓</option>
             </select>
 
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px]">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 value={search}
@@ -6695,6 +7062,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               events={events}
               loading={djProfilesLoading}
               error={djProfilesError}
+              canEdit={canEdit}
+              onToast={showToast}
+              onRefreshProfiles={loadDjProfiles}
+              onLogActivity={logActivity}
             />
           ) : view === "List" ? (
             <>
