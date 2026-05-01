@@ -38,6 +38,59 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isSupabaseConfigured, supabase } from "./src/supabaseClient.js";
 
+async function dashboardAccessToken({ refresh = false } = {}) {
+  if (!isSupabaseConfigured) return "";
+  if (refresh) {
+    const refreshed = await supabase.auth.refreshSession();
+    const refreshedToken = refreshed.data?.session?.access_token;
+    if (refreshedToken) return refreshedToken;
+  }
+
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token || "";
+}
+
+async function dashboardApiRequest(path, { method = "GET", body } = {}) {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const request = async (token) => {
+    const response = await fetch(path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : null),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = { error: text || `Request failed (${response.status})` };
+    }
+    return { response, payload };
+  };
+
+  let token = await dashboardAccessToken();
+  if (!token) throw new Error("No active session.");
+
+  let result = await request(token);
+  const message = result.payload?.error || "";
+  if (result.response.status === 401 && message.toLowerCase().includes("invalid session")) {
+    token = await dashboardAccessToken({ refresh: true });
+    if (token) result = await request(token);
+  }
+
+  if (!result.response.ok) {
+    throw new Error(result.payload?.error || `Request failed (${result.response.status})`);
+  }
+
+  return result.payload;
+}
+
 const eventsSeed = [
   {
     id: 1,
@@ -3679,36 +3732,7 @@ function UserManagementPage({ onToast }) {
   const [roleByUserId, setRoleByUserId] = useState({});
 
   const adminApiRequest = useCallback(async (path, { method = "GET", body } = {}) => {
-    if (!isSupabaseConfigured) {
-      throw new Error("Supabase is not configured.");
-    }
-
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) throw new Error("No active session.");
-
-    const res = await fetch(path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body ? { "Content-Type": "application/json" } : null),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    const text = await res.text();
-    let payload = null;
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      payload = { error: text || `Request failed (${res.status})` };
-    }
-
-    if (!res.ok) {
-      throw new Error(payload?.error || `Request failed (${res.status})`);
-    }
-
-    return payload;
+    return dashboardApiRequest(path, { method, body });
   }, []);
 
   const loadUsers = useCallback(async () => {
@@ -4574,12 +4598,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
     async function loadMentionUsers() {
       try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        if (!token) return;
-        const response = await fetch("/api/users", { headers: { Authorization: `Bearer ${token}` } });
-        if (!response.ok) return;
-        const payload = await response.json();
+        const payload = await dashboardApiRequest("/api/users");
         if (!cancelled) setMentionUsers(Array.isArray(payload?.users) ? payload.users : []);
       } catch {
         if (!cancelled) setMentionUsers([]);
@@ -4596,25 +4615,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (!isSupabaseConfigured) return;
 
     try {
-      const sessionResult = await supabase.auth.getSession();
-      const token = sessionResult.data?.session?.access_token;
-      if (token) {
-        const response = await fetch("/api/comments", { headers: { Authorization: `Bearer ${token}` } });
-        const payload = await response.json().catch(() => ({}));
-        if (response.ok) {
-          setCommentsError("");
-          setComments(Array.isArray(payload?.comments) ? payload.comments.map(mapSupabaseComment) : []);
-          return;
-        }
-
-        const message = payload?.error || "Could not load comments.";
-        if (response.status === 401 || message.toLowerCase().includes("invalid session")) {
-          throw new Error(message);
-        }
-        setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
-        setComments([]);
-        return;
-      }
+      const payload = await dashboardApiRequest("/api/comments");
+      setCommentsError("");
+      setComments(Array.isArray(payload?.comments) ? payload.comments.map(mapSupabaseComment) : []);
+      return;
     } catch {
       // ignore and fallback to direct select
     }
