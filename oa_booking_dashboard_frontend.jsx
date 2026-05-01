@@ -6229,7 +6229,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:flex-1">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
-              className={`grid w-full min-w-0 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 sm:flex-1 md:flex md:w-auto md:flex-none ${primaryNavGridClass}`}
+              className={`flex w-full min-w-0 gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-black/20 p-1 pb-1.5 sm:flex-1 md:w-auto md:flex-none md:flex-wrap md:overflow-visible md:pb-1`}
             >
             <Button
               onClick={() => navigateView("List")}
@@ -6318,7 +6318,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             </div>
           </div>
-          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 md:ml-auto md:w-auto md:flex md:flex-wrap md:items-center md:justify-end md:gap-2">
+          <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:items-center md:justify-end md:gap-2 md:overflow-visible md:pb-0">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
@@ -6559,9 +6559,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         ) : null}
 
         {view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
-        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
+        <section className="sticky top-0 z-10 flex flex-col gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex-row md:flex-wrap md:items-center md:px-6 xl:px-8">
           {view === "List" ? (
-          <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
+          <div className="flex w-full items-center gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1 pb-1.5 md:w-auto md:overflow-visible md:pb-1">
             {[
               { key: "Upcoming", label: "Upcoming", count: upcomingCount },
               { key: "Past", label: "Past Events", count: pastCount },
@@ -6582,7 +6582,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
           ) : null}
 
-          <div className="grid w-full grid-cols-2 gap-1.5 min-[420px]:grid-cols-4 md:flex md:w-auto md:flex-wrap md:justify-start md:px-0">
+          <div className="flex w-full gap-1.5 overflow-x-auto pb-1.5 md:w-auto md:flex-wrap md:overflow-visible md:pb-0">
             {filterItems.map((item) => {
               const Icon = item.icon;
               const active = activeFilter === item.key;
@@ -6601,7 +6601,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
 
           {view === "List" ? (
-            <div className="flex flex-wrap items-center justify-center gap-2 md:ml-auto md:justify-start">
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:justify-start md:overflow-visible md:pb-0">
               <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
                 <button
                   onClick={() => setListGrouping("month")}
@@ -6649,17 +6649,17 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-2 md:contents">
+          <div className="flex w-full flex-col gap-2 sm:flex-row md:ml-auto md:w-auto md:items-center">
             <select
               value={dateSort}
               onChange={(e) => setDateSort(e.target.value)}
-              className="h-10 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:px-3 sm:text-sm lg:ml-auto"
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60 sm:h-11 sm:w-[120px] sm:px-3 sm:text-sm"
             >
               <option value="asc">Date ↑</option>
               <option value="desc">Date ↓</option>
             </select>
 
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px] lg:flex-none xl:min-w-[340px]">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-white/40 sm:min-w-[260px]">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 value={search}
