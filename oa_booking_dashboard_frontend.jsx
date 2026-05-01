@@ -7,6 +7,7 @@ import {
   Music,
   Users,
   Plus,
+  MessageCircle,
   RefreshCcw,
   Save,
   Search,
@@ -427,6 +428,22 @@ function formatClockTime(time, mode = "24") {
 function formatTimeRange(start, end, mode = "24") {
   if (!start || !end) return "";
   return `${formatClockTime(start, mode)}-${formatClockTime(end, mode)}`;
+}
+
+function whatsappDigits(raw) {
+  const digits = String(raw || "").replace(/[^\d+]/g, "");
+  const cleaned = digits.startsWith("+") ? digits.slice(1) : digits;
+  const numbersOnly = cleaned.replace(/\D/g, "");
+  if (!numbersOnly) return "";
+  if (numbersOnly.startsWith("0")) return `60${numbersOnly.slice(1)}`;
+  if (numbersOnly.startsWith("60")) return numbersOnly;
+  return numbersOnly;
+}
+
+function whatsappLink(phone, text) {
+  const digits = whatsappDigits(phone);
+  if (!digits) return "";
+  return `https://wa.me/${digits}?text=${encodeURIComponent(String(text || ""))}`;
 }
 
 function slotNeedsTime(slot) {
@@ -1790,7 +1807,7 @@ function AddEventDayModal({
                 >
                   <div className="text-[11px] font-black uppercase tracking-[0.2em] text-purple-200/80">{header}</div>
 
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Event Name</div>
                       <input
@@ -1799,6 +1816,20 @@ function AddEventDayModal({
                         className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/85 outline-none focus:border-purple-300/60"
                         placeholder="CITY FLOW"
                       />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Stage</div>
+                      <select
+                        value={day.stage || stageOptions[0]}
+                        onChange={(e) => setDayField(day.isoDate, { stage: e.target.value })}
+                        className="mt-1 h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                      >
+                        {stageOptions.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Genre</div>
@@ -2188,6 +2219,9 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
                   {statusLabel(event.status)}
                 </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white/55">
+                  Stage {event.stage}
+                </span>
                 {holidaySummary ? (
                   <span
                     title={holidayTitle}
@@ -2245,7 +2279,6 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                   <span className="text-xs font-bold text-rose-300">No lineup</span>
                 )}
               </div>
-              <div className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30 md:text-xs">{event.stage}</div>
               {event.notes ? (
                 <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold text-white/55">
                   <MentionText text={event.notes} users={mentionUsers} />
@@ -2348,9 +2381,61 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
   );
 }
 
-function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, onAddComment, onClose, onEdit, onDelete, onConfirm, canEdit }) {
+function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, djProfiles, onAddComment, onClose, onEdit, onDelete, onConfirm, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
+  const djPhoneById = useMemo(() => {
+    const map = new Map();
+    for (const p of djProfiles || []) {
+      if (!p?.id) continue;
+      map.set(String(p.id), p.phone || "");
+    }
+    return map;
+  }, [djProfiles]);
+  const djPhoneByName = useMemo(() => {
+    const map = new Map();
+    for (const p of djProfiles || []) {
+      const key = String(p.name || p.stageName || "").trim().toLowerCase();
+      if (!key) continue;
+      map.set(key, p.phone || "");
+    }
+    return map;
+  }, [djProfiles]);
+
+  const whatsappTextForSlot = useCallback(
+    (slot) => {
+      const djName = String(slot?.dj || "").trim() || "DJ";
+      const date = dayLabelFromISO(event.date);
+      const role = String(slot?.role || "").trim();
+      const time = slotNeedsTime(slot) && slot?.start && slot?.end ? formatTimeRange(slot.start, slot.end, timeFormat) : "";
+      const lines = [
+        `Hi ${djName},`,
+        "",
+        `Confirmed lineup: ${event.name}`,
+        `Date: ${date}`,
+        `Stage: ${event.stage}`,
+        role ? `Role: ${role}` : "",
+        time ? `Set time: ${time}` : "",
+        "",
+        "Please reply OK to confirm.",
+      ].filter(Boolean);
+      return lines.join("\n");
+    },
+    [event.date, event.name, event.stage, timeFormat]
+  );
+
+  const openWhatsApp = useCallback(
+    (slot) => {
+      const phone =
+        (slot?.djId && djPhoneById.get(String(slot.djId))) ||
+        (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
+        "";
+      const url = whatsappLink(phone, whatsappTextForSlot(slot));
+      if (!url) return;
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [djPhoneById, djPhoneByName, whatsappTextForSlot]
+  );
 
   return (
     <div
@@ -2384,6 +2469,9 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusClass(event.status)}`}>
               {statusLabel(event.status)}
             </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-wider text-white/55">
+                  Stage {event.stage}
+                </span>
             {splitGenreTags(event.genre).map((genre) => (
               <span key={genre} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">
                 {genre}
@@ -2421,12 +2509,31 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
                       </div>
                       <div className="text-sm font-black text-white">{slot.dj}</div>
                     </div>
-                    {slotNeedsTime(slot) && slot.start && slot.end ? (
-                      <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
-                        <Clock className="h-3.5 w-3.5" />
-                        {formatTimeRange(slot.start, slot.end, timeFormat)}
-                      </div>
-                    ) : null}
+                    <div className="flex items-center gap-2">
+                      {slotNeedsTime(slot) && slot.start && slot.end ? (
+                        <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-black text-white/65">
+                          <Clock className="h-3.5 w-3.5" />
+                          {formatTimeRange(slot.start, slot.end, timeFormat)}
+                        </div>
+                      ) : null}
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => openWhatsApp(slot)}
+                          disabled={
+                            !whatsappDigits(
+                              (slot?.djId && djPhoneById.get(String(slot.djId))) ||
+                                (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
+                                ""
+                            )
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Send WhatsApp"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3416,10 +3523,11 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
                 {canEdit ? (
                   <Button
                     onClick={openEdit}
-                    className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/70 hover:bg-white/10 hover:text-white"
+                    title="Edit DJ profile"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
                   >
                     <Pencil className="h-4 w-4" />
-                    <span className="ml-2">Edit</span>
+                    <span className="sr-only">Edit</span>
                   </Button>
                 ) : null}
                 <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-right">
@@ -6719,7 +6827,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               <div className="relative">
                 <Button
                   onClick={() => setAddMenuOpen((open) => !open)}
-                  className={`inline-flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "px-0 md:w-11" : "px-3 md:w-auto md:px-6"}`}
+                  className={`inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "w-12 px-0 md:w-11" : "w-full px-3 md:w-auto md:px-6"}`}
                 >
                   <Plus className="h-4 w-4 shrink-0" />
                   <span className={headerIconsOnly ? "sr-only" : ""}>Add</span>
@@ -7211,6 +7319,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         event={previewEvent}
         timeFormat={timeFormat}
         mentionUsers={mentionUsers}
+        djProfiles={djProfiles}
         comments={previewEvent ? commentsByEventId.get(previewEvent.id) ?? [] : []}
         commentsError={commentsError}
         currentUser={currentUser}
