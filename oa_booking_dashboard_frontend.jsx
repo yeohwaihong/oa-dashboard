@@ -2126,6 +2126,17 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                 ))}
               </div>
 
+              <button
+                type="button"
+                onClick={onOpenDetails}
+                className="mt-2 inline-flex w-full items-center justify-between gap-2 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-left text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:hidden"
+              >
+                <span>Comments</span>
+                <span className="rounded-full border border-cyan-300/20 bg-black/20 px-2 py-0.5 text-[10px]">
+                  {comments.length}
+                </span>
+              </button>
+
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {event.slots.length ? (
                   event.slots.map((slot, idx) => (
@@ -2171,7 +2182,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                   <MentionText text={event.notes} users={mentionUsers} />
                 </div>
               ) : null}
-              <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+              <div className="mt-2 hidden rounded-xl border border-white/10 bg-black/20 px-3 py-2 sm:block">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">Comments</div>
                   <button
@@ -4944,7 +4955,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
   const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
-  const primaryNavGridClass = canAccessDjs && canAccessFinance && canManageUsers ? "grid-cols-6" : canAccessDjs && canAccessFinance ? "grid-cols-5" : "grid-cols-2";
+  const primaryNavGridClass = canAccessDjs && canAccessFinance && canManageUsers ? "grid-cols-3 sm:grid-cols-6" : canAccessDjs && canAccessFinance ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-2";
 
   const updateNotificationsPopoverPosition = useCallback(() => {
     const node = notificationsButtonRef.current;
@@ -5631,10 +5642,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       `}</style>
       <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:items-center md:justify-between md:px-6 xl:px-8">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
             <div
-              className={`grid min-w-0 flex-1 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 md:flex md:flex-none ${primaryNavGridClass}`}
+              className={`grid w-full min-w-0 gap-1 rounded-2xl border border-white/10 bg-black/20 p-1 sm:flex-1 md:flex md:w-auto md:flex-none ${primaryNavGridClass}`}
             >
             <Button
               onClick={() => setView("List")}
@@ -5710,7 +5721,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ) : null}
             </div>
           </div>
-          <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1 md:w-auto md:flex-wrap md:items-center md:gap-2 md:overflow-visible md:pb-0">
+          <div className="grid w-full grid-cols-4 items-stretch gap-1.5 md:w-auto md:flex md:flex-wrap md:items-center md:gap-2">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
               className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 md:px-5"
@@ -5954,7 +5965,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
           ) : null}
 
-          <div className="-mx-1 flex justify-center gap-1.5 overflow-x-auto px-1 md:mx-0 md:justify-start md:flex-wrap md:overflow-visible md:px-0">
+          <div className="grid w-full grid-cols-2 gap-1.5 min-[420px]:grid-cols-4 md:flex md:w-auto md:flex-wrap md:justify-start md:px-0">
             {filterItems.map((item) => {
               const Icon = item.icon;
               const active = activeFilter === item.key;
@@ -5962,7 +5973,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <button
                   key={item.key}
                   onClick={() => setActiveFilter(item.key)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-black transition md:rounded-full md:px-4 md:text-sm ${
+                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[10px] font-black transition md:rounded-full md:px-4 md:text-sm ${
                     active ? "border-purple-300 bg-purple-400 text-black" : "border-white/10 bg-white/5 text-white/45 hover:text-white"
                   }`}
                 >
