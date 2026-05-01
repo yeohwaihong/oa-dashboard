@@ -446,6 +446,16 @@ function whatsappLink(phone, text) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(String(text || ""))}`;
 }
 
+function normalizeDjLookupKey(value) {
+  const raw = String(value || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^a-z0-9\s']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return raw.startsWith("dj ") ? raw.slice(3).trim() : raw;
+}
+
 function slotNeedsTime(slot) {
   return normalizeSlotRole(slot?.role) !== "MC";
 }
@@ -2395,9 +2405,13 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
   const djPhoneByName = useMemo(() => {
     const map = new Map();
     for (const p of djProfiles || []) {
-      const key = String(p.name || p.stageName || "").trim().toLowerCase();
-      if (!key) continue;
-      map.set(key, p.phone || "");
+      const phone = p.phone || "";
+      const key1 = normalizeDjLookupKey(p.name);
+      const key2 = normalizeDjLookupKey(p.stageName);
+      const key3 = normalizeDjLookupKey(p.realName);
+      if (key1) map.set(key1, phone);
+      if (key2) map.set(key2, phone);
+      if (key3) map.set(key3, phone);
     }
     return map;
   }, [djProfiles]);
@@ -2428,7 +2442,7 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
     (slot) => {
       const phone =
         (slot?.djId && djPhoneById.get(String(slot.djId))) ||
-        (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
+        (slot?.dj && djPhoneByName.get(normalizeDjLookupKey(slot.dj))) ||
         "";
       const url = whatsappLink(phone, whatsappTextForSlot(slot));
       if (!url) return;
@@ -2522,11 +2536,11 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
                         disabled={
                           !whatsappDigits(
                             (slot?.djId && djPhoneById.get(String(slot.djId))) ||
-                              (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
+                              (slot?.dj && djPhoneByName.get(normalizeDjLookupKey(slot.dj))) ||
                               ""
                           )
                         }
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-70"
                         title="Send WhatsApp (needs DJ phone in DJ profile)"
                       >
                         <MessageCircle className="h-4 w-4" />
