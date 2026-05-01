@@ -1227,8 +1227,8 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
         </div>
       </div>
 
-      <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:px-0">
-        <div className="grid min-w-[720px] grid-cols-7 gap-1 sm:min-w-0 sm:gap-2">
+      <div className="overflow-hidden">
+        <div className="grid min-w-0 grid-cols-7 gap-1 sm:gap-2">
           {weekdayLabels.map((label) => (
             <div key={label} className="px-0.5 text-center text-[9px] font-black uppercase text-white/30 sm:px-2 sm:text-left sm:text-[10px] sm:tracking-[0.25em] md:text-xs">
               {label}
@@ -1257,7 +1257,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                     }
                   }
                 }}
-                className={`group min-h-[96px] rounded-xl border p-1.5 text-left transition sm:min-h-[108px] sm:rounded-2xl sm:p-2 md:min-h-[126px] md:p-3 ${
+                className={`group min-w-0 rounded-lg border p-1 text-left transition sm:min-h-[108px] sm:rounded-2xl sm:p-2 md:min-h-[126px] md:p-3 ${
                   isToday
                     ? "border-purple-200/70 bg-purple-400/10 shadow-[0_0_0_1px_rgba(216,180,254,0.25)]"
                     : isCurrentMonth
@@ -1285,7 +1285,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                   {holidays.slice(0, 2).map((holiday) => (
                     <div
                       key={`${holiday.date}-${holiday.name}`}
-                      className="truncate rounded-md border border-cyan-300/30 bg-cyan-400/10 px-1 py-0.5 text-[9px] font-black text-cyan-100 sm:rounded-lg sm:px-2 sm:py-1 sm:text-[10px]"
+                      className="min-w-0 truncate rounded-md border border-cyan-300/30 bg-cyan-400/10 px-1 py-0.5 text-[9px] font-black text-cyan-100 sm:rounded-lg sm:px-2 sm:py-1 sm:text-[10px]"
                       title={holidayLabel(holiday)}
                     >
                       🎉 {holiday.localName || holiday.name}
@@ -1295,7 +1295,7 @@ function CalendarView({ cursorMonth, onChangeMonth, eventsByDate, holidaysByDate
                     <button
                       key={event.id}
                       type="button"
-                      className={`oa-clamp-2 block w-full rounded-md border px-1 py-1 text-left text-[10px] font-black leading-tight sm:oa-clamp-1 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-[10px] md:text-xs ${getStatusCalendarClass(event.status)}`}
+                      className={`oa-clamp-2 block min-w-0 w-full rounded-md border px-1 py-1 text-left text-[10px] font-black leading-tight sm:oa-clamp-1 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-[10px] md:text-xs ${getStatusCalendarClass(event.status)}`}
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
