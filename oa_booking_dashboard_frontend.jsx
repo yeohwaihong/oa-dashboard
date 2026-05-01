@@ -2070,7 +2070,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, onEdit, onAssignIC, onConfirm, onOpenDetails }) {
+function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onOpenDetails, onAddComment }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -2079,6 +2079,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
   const holidayExtra = dayHolidays.length > 1 ? ` +${dayHolidays.length - 1}` : "";
   const holidayTitle = dayHolidays.length ? dayHolidays.map(holidayLabel).join(", ") : "";
   const latestComments = comments.slice().reverse();
+  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
 
   return (
     <motion.div
@@ -2200,6 +2201,28 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                     No comments yet.
                   </div>
                 )}
+                {commentComposerOpen ? (
+                  <div className="mt-2">
+                    <CommentComposer
+                      mentionUsers={mentionUsers}
+                      disabled={Boolean(commentsError)}
+                      onSubmit={(body) => onAddComment(event, body)}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCommentComposerOpen(true)}
+                    className="mt-2 w-full rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-left text-xs font-black text-cyan-100 hover:bg-cyan-400/20"
+                  >
+                    Add comment
+                  </button>
+                )}
+                {commentsError ? (
+                  <div className="mt-2 rounded-lg border border-yellow-300/25 bg-yellow-400/10 px-2 py-1.5 text-[11px] font-bold text-yellow-100">
+                    {commentsError}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -6118,10 +6141,12 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                         mentionUsers={mentionUsers}
                         comments={commentsByEventId.get(event.id) ?? []}
                         currentUser={currentUser}
+                        commentsError={commentsError}
                         onEdit={() => openEditModal(event)}
                         onAssignIC={(ic) => assignIC(event.id, ic)}
                         onConfirm={() => updateEventStatus(event, "Confirmed")}
                         onOpenDetails={() => setPreviewEvent(event)}
+                        onAddComment={addEventComment}
                       />
                     </div>
                   ))}
