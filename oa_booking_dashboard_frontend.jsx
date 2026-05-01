@@ -1516,7 +1516,7 @@ function AddEventDayModal({
         `Hi ${djName},`,
         `Date: ${date}`,
         `Set time: ${time || "TBC"}`,
-        "Let me know if you are available! thank you!",
+        "Let me know if you are available! Thank you!",
       ].join("\n");
     },
     [timeFormat],
