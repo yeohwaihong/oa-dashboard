@@ -206,6 +206,7 @@ const dashboardViewRoutes = {
   Calendar: "/calendar",
   DJs: "/djs",
   Users: "/users",
+  Activity: "/activity",
   Finance: "/finance",
   DJPayments: "/payments",
 };
@@ -3746,7 +3747,7 @@ function LoginScreen() {
   );
 }
 
-function UserManagementPage({ onToast }) {
+function UserManagementPage({ onToast, onLogActivity }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
@@ -3809,6 +3810,12 @@ function UserManagementPage({ onToast }) {
       });
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: nextRole || null } : u)));
       onToast?.("Role updated");
+      onLogActivity?.({
+        action: "user_role_updated",
+        entityType: "user",
+        entityId: userId,
+        meta: { role: nextRole || null },
+      });
     } catch (e) {
       setError(e?.message || "Failed to update role.");
     } finally {
@@ -3848,6 +3855,12 @@ function UserManagementPage({ onToast }) {
       });
       closePasswordModal();
       onToast?.("Password updated");
+      onLogActivity?.({
+        action: "user_password_updated",
+        entityType: "user",
+        entityId: userId,
+        meta: {},
+      });
     } catch (e) {
       setError(e?.message || "Failed to set password.");
     } finally {
@@ -4079,7 +4092,7 @@ function djPayStatusIcon(s) {
   return <CircleDot className="h-3 w-3" />;
 }
 
-function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
+function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity }) {
   // Payment status: keyed by assignmentId, stored in localStorage
   const [statusMap, setStatusMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem("oa_djpay_status_v2") || "{}"); }
@@ -4182,7 +4195,13 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
       localStorage.setItem("oa_djpay_status_v2", JSON.stringify(updated));
       return updated;
     });
-  }, []);
+    onLogActivity?.({
+      action: "dj_payment_status_updated",
+      entityType: "event_assignment",
+      entityId: assignmentId,
+      meta: { from: current, to: next },
+    });
+  }, [onLogActivity]);
 
   const saveFee = useCallback(
     async (slot) => {
@@ -4244,6 +4263,18 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
         }
 
         await onRefresh?.();
+        onLogActivity?.({
+          action: "dj_fee_updated",
+          entityType: scope === "fixed" ? "dj" : "event_assignment",
+          entityId: scope === "fixed" ? String(slot.djId || "") : String(slot.assignmentId || ""),
+          meta: {
+            scope,
+            amount,
+            assignmentId: slot.assignmentId ?? null,
+            djId: slot.djId ?? null,
+            djName: slot.dj ?? null,
+          },
+        });
 
         setFeeEdits((p) => {
           const next = { ...p };
@@ -4266,7 +4297,7 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
         setSaving((p) => ({ ...p, [slot.assignmentId]: false }));
       }
     },
-    [feeEdits, getFeeScope, djProfiles, onRefresh, onToast]
+    [feeEdits, getFeeScope, djProfiles, onRefresh, onToast, onLogActivity]
   );
 
   // Filter slots by payment status
@@ -4623,6 +4654,201 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast }) {
   );
 }
 
+function formatActivityTimestamp(value) {
+  if (!value) return "—";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return String(value);
+  return dt.toLocaleString("en-MY", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function ActivityMonitorPage({ userRole }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [filterAction, setFilterAction] = useState("ALL");
+
+  const load = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured.");
+      setItems([]);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("id, actor_user_id, actor_email, actor_role, action, entity_type, entity_id, message, meta, created_at")
+      .order("created_at", { ascending: false })
+      .limit(250);
+    setLoading(false);
+
+    if (error) {
+      const message = error.message || "Could not load activity.";
+      setError(message.toLowerCase().includes("activity_log") ? "Run supabase/required_dashboard_schema_updates.sql in Supabase SQL Editor to enable the activity monitor." : message);
+      setItems([]);
+      return;
+    }
+
+    setItems(Array.isArray(data) ? data : []);
+  }, []);
+
+  useEffect(() => {
+    if (userRole !== "superadmin") return;
+    load();
+  }, [load, userRole]);
+
+  useEffect(() => {
+    if (userRole !== "superadmin") return undefined;
+    if (!isSupabaseConfigured) return undefined;
+    const channel = supabase
+      .channel("oa-dashboard-activity")
+      .on("postgres_changes", { event: "*", schema: "public", table: "activity_log" }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load, userRole]);
+
+  const actions = useMemo(() => {
+    const set = new Set(items.map((x) => String(x.action || "").trim()).filter(Boolean));
+    return ["ALL", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((x) => {
+      if (filterAction !== "ALL" && String(x.action) !== filterAction) return false;
+      if (!q) return true;
+      const hay = [
+        x.actor_email,
+        x.actor_role,
+        x.action,
+        x.entity_type,
+        x.entity_id,
+        x.message,
+        typeof x.meta === "string" ? x.meta : JSON.stringify(x.meta || {}),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [filterAction, items, search]);
+
+  if (userRole !== "superadmin") {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-10 text-center text-sm font-black text-white/30">
+        Superadmin only
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Superadmin</div>
+          <h2 className="mt-0.5 text-xl font-black text-white">Activity Monitor</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white/40">
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search activity…"
+              className="w-44 bg-transparent text-xs font-black text-white outline-none placeholder:text-white/25 sm:w-56"
+            />
+            {search ? (
+              <button onClick={() => setSearch("")} className="text-white/30 hover:text-white" title="Clear">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <select
+            value={filterAction}
+            onChange={(e) => setFilterAction(e.target.value)}
+            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-xs font-black text-white/70 outline-none hover:bg-white/5 focus:border-purple-300/60"
+          >
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {a === "ALL" ? "All actions" : a}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={load}
+            className="h-10 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white"
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="rounded-2xl border border-rose-300/20 bg-rose-500/10 px-4 py-3 text-sm font-black text-rose-100">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
+            {loading ? "Loading…" : `${filtered.length} item${filtered.length !== 1 ? "s" : ""}`}
+          </div>
+        </div>
+        <div className="max-h-[68svh] overflow-auto">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm font-black text-white/30">No activity</div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filtered.map((row) => (
+                <div key={row.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/60">
+                          {row.action}
+                        </span>
+                        {row.entity_type ? (
+                          <span className="rounded-full border border-purple-300/20 bg-purple-400/10 px-2 py-0.5 text-[10px] font-black text-purple-100">
+                            {row.entity_type}
+                          </span>
+                        ) : null}
+                        {row.entity_id ? (
+                          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-black text-white/50">
+                            {row.entity_id}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 oa-clamp-2 text-sm font-black text-white/80">
+                        {row.message || "—"}
+                      </div>
+                      <div className="mt-1 oa-clamp-2 text-xs font-bold text-white/40">
+                        {row.actor_email || row.actor_user_id} {row.actor_role ? `· ${row.actor_role}` : ""}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-[10px] font-black text-white/35">
+                      {formatActivityTimestamp(row.created_at)}
+                    </div>
+                  </div>
+                  {row.meta && Object.keys(row.meta || {}).length ? (
+                    <pre className="mt-2 overflow-auto rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-bold text-white/50">
+                      {JSON.stringify(row.meta, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeFilter, setActiveFilter] = useState("All");
@@ -4677,6 +4903,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const canAccessDjs = userRole === "admin" || userRole === "superadmin";
   const canAccessDjPayments = userRole === "admin" || userRole === "superadmin";
   const canManageUsers = userRole === "superadmin";
+  const canViewActivity = userRole === "superadmin";
   const canUseNotificationCenter = userRole === "staff" || canEdit;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
@@ -4708,6 +4935,33 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
   }, []);
+
+  const logActivity = useCallback(
+    (entry) => {
+      if (!isSupabaseConfigured) return;
+      const actorId = currentUser?.id;
+      if (!actorId) return;
+
+      const payload = {
+        actor_user_id: actorId,
+        actor_email: currentUser?.email || null,
+        actor_role: userRole || null,
+        action: String(entry?.action || "").trim() || "unknown",
+        entity_type: entry?.entityType ? String(entry.entityType) : null,
+        entity_id: entry?.entityId ? String(entry.entityId) : null,
+        message: entry?.message ? String(entry.message) : null,
+        meta: entry?.meta && typeof entry.meta === "object" ? entry.meta : {},
+      };
+
+      Promise.resolve()
+        .then(() => supabase.from("activity_log").insert(payload))
+        .then((res) => {
+          if (res?.error) return;
+        })
+        .catch(() => {});
+    },
+    [currentUser?.email, currentUser?.id, userRole]
+  );
 
   const denyEdit = useCallback(() => {
     showToast("Staff accounts are view-only", "error");
@@ -4745,6 +4999,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (!canManageUsers && view === "Users") navigateView("List", { replace: true });
   }, [canManageUsers, navigateView, view]);
+
+  useEffect(() => {
+    if (!canViewActivity && view === "Activity") navigateView("List", { replace: true });
+  }, [canViewActivity, navigateView, view]);
 
   useEffect(() => {
     if (!canAccessDjPayments && view === "DJPayments") navigateView("List", { replace: true });
@@ -4857,8 +5115,15 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     const created = await supabase.from("djs").insert({ name }).select("id").single();
     if (created.error?.message?.includes("row-level security policy")) return null;
     if (created.error) throw created.error;
+    logActivity({
+      action: "dj_created",
+      entityType: "dj",
+      entityId: created.data.id,
+      message: `DJ created · ${name}`,
+      meta: { djId: created.data.id, name },
+    });
     return created.data.id;
-  }, []);
+  }, [logActivity]);
 
   const saveEventToSupabase = useCallback(
     async (event) => {
@@ -5132,7 +5397,21 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
   const mentionCount = mentionedEvents.length + mentionedComments.length;
   const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
-  const primaryNavGridClass = canAccessDjs && canAccessFinance && canManageUsers ? "grid-cols-3 sm:grid-cols-6" : canAccessDjs && canAccessFinance ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-2";
+  const primaryNavCount =
+    2 +
+    (canAccessDjs ? 1 : 0) +
+    (canManageUsers ? 1 : 0) +
+    (canViewActivity ? 1 : 0) +
+    (canAccessFinance ? 1 : 0) +
+    (canAccessDjPayments ? 1 : 0);
+  const primaryNavGridClass =
+    primaryNavCount >= 6
+      ? "grid-cols-3 sm:grid-cols-6"
+      : primaryNavCount === 5
+        ? "grid-cols-3 sm:grid-cols-5"
+        : primaryNavCount === 4
+          ? "grid-cols-2 sm:grid-cols-4"
+          : "grid-cols-2";
 
   const updateNotificationsPopoverPosition = useCallback(() => {
     const node = notificationsButtonRef.current;
@@ -5398,6 +5677,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     const next = [...events];
     let nextId = events.reduce((max, e) => Math.max(max, Number(e.id) || 0), 0) + 1;
     const eventsToSave = [];
+    const activityEntries = [];
 
     for (const d of modalDays) {
       const dateObj = isoToDate(d.isoDate);
@@ -5438,6 +5718,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         mentionedUserIds: mentionedUserIdsFromText(remarks, mentionUsers),
         notes: remarks,
       };
+      activityEntries.push({
+        action: existing ? "event_day_updated" : "event_day_created",
+        entityType: "event_day",
+        entityId: d.isoDate,
+        message: `${existing ? "Updated" : "Created"} ${name} · ${dayLabelFromISO(d.isoDate)}`,
+        meta: { date: d.isoDate, name, status, stage, slotCount: slots.length, mode: modalDateMode },
+      });
 
       if (event.status === "Confirmed") {
         const blockers = getConfirmationBlockers(event);
@@ -5469,6 +5756,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         await loadEvents();
         setSyncStatus("Saved to Supabase");
         showToast("Saved to database");
+        for (const entry of activityEntries) logActivity(entry);
       } catch (error) {
         const message = error.message || "Could not save to Supabase";
         setSyncError(message);
@@ -5502,6 +5790,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           if (error) throw error;
           setSyncStatus("PIC saved to Supabase");
           showToast("PIC saved to database");
+          logActivity({
+            action: "event_pic_updated",
+            entityType: "event",
+            entityId: eventId,
+            message: `PIC updated · ${existing.name} · ${dayLabelFromISO(existing.date)}`,
+            meta: { eventId, date: existing.date, name: existing.name, ic },
+          });
         } catch (error) {
           setSyncError(error.message || "Could not update PIC");
           setSyncStatus("");
@@ -5547,6 +5842,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           }
           setSyncStatus("Status saved to Supabase");
           showToast(status === "Confirmed" ? "Night confirmed" : "Status saved");
+          logActivity({
+            action: "event_status_updated",
+            entityType: "event",
+            entityId: event.id,
+            message: `Status updated · ${event.name} · ${dayLabelFromISO(event.date)}`,
+            meta: { eventId: event.id, date: event.date, name: event.name, from: event.status, to: status },
+          });
         } catch (error) {
           setEvents(previousEvents);
           setPreviewEvent((prev) => (prev?.id === event.id ? event : prev));
@@ -5601,8 +5903,15 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       setCommentsError("");
       await loadComments();
       showToast("Comment posted");
+      logActivity({
+        action: "event_comment_created",
+        entityType: "event",
+        entityId: event.id,
+        message: `Comment added · ${event.name} · ${dayLabelFromISO(event.date)}`,
+        meta: { eventId: event.id, date: event.date, name: event.name, mentionCount: mentionUserIds.length },
+      });
     },
-    [currentUser, loadComments, mentionUsers, showToast],
+    [currentUser, loadComments, mentionUsers, showToast, logActivity],
   );
 
   const deleteEventDay = async (event) => {
@@ -5629,6 +5938,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         await loadEvents();
         setSyncStatus("Day deleted");
         showToast("Day deleted");
+        logActivity({
+          action: "event_day_deleted",
+          entityType: "event",
+          entityId: event.id,
+          message: `Deleted ${event.name} · ${dayLabelFromISO(event.date)}`,
+          meta: { eventId: event.id, date: event.date, name: event.name },
+        });
       } catch (error) {
         setEvents(previousEvents);
         setSyncError(error.message || "Could not delete day");
@@ -5868,6 +6184,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               >
                 <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span>Users</span>
+              </Button>
+            ) : null}
+            {canViewActivity ? (
+              <Button
+                onClick={() => navigateView("Activity")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm md:px-4 ${
+                  view === "Activity"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>Activity</span>
               </Button>
             ) : null}
             {canAccessFinance ? (
@@ -6254,7 +6583,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
 
         <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
           {view === "Users" ? (
-            <UserManagementPage onToast={showToast} />
+            <UserManagementPage onToast={showToast} onLogActivity={logActivity} />
+          ) : view === "Activity" && canViewActivity ? (
+            <ActivityMonitorPage userRole={userRole} />
           ) : view === "Finance" ? (
             <FinanceMathPage />
           ) : view === "DJPayments" && canAccessDjPayments ? (
@@ -6265,6 +6596,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 await Promise.all([loadEvents(), loadDjProfiles()]);
               }}
               onToast={showToast}
+              onLogActivity={logActivity}
             />
           ) : view === "DJs" && canAccessDjs ? (
             <DjProfilesPage
