@@ -2219,8 +2219,8 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass(event.status)}`}>
                   {statusLabel(event.status)}
                 </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white/55">
-                  Stage {event.stage}
+                <span className="rounded-full border border-orange-300/25 bg-orange-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-100">
+                  {event.stage}
                 </span>
                 {holidaySummary ? (
                   <span
@@ -2469,9 +2469,9 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
             <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wider ${statusClass(event.status)}`}>
               {statusLabel(event.status)}
             </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black uppercase tracking-wider text-white/55">
-                  Stage {event.stage}
-                </span>
+            <span className="rounded-full border border-orange-300/25 bg-orange-400/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-orange-100">
+              {event.stage}
+            </span>
             {splitGenreTags(event.genre).map((genre) => (
               <span key={genre} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-black text-white/55">
                 {genre}
@@ -2516,23 +2516,22 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
                           {formatTimeRange(slot.start, slot.end, timeFormat)}
                         </div>
                       ) : null}
-                      {canEdit ? (
-                        <button
-                          type="button"
-                          onClick={() => openWhatsApp(slot)}
-                          disabled={
-                            !whatsappDigits(
-                              (slot?.djId && djPhoneById.get(String(slot.djId))) ||
-                                (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
-                                ""
-                            )
-                          }
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
-                          title="Send WhatsApp"
-                        >
-                          <MessageCircle className="h-4 w-4" />
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => openWhatsApp(slot)}
+                        disabled={
+                          !whatsappDigits(
+                            (slot?.djId && djPhoneById.get(String(slot.djId))) ||
+                              (slot?.dj && djPhoneByName.get(String(slot.dj).trim().toLowerCase())) ||
+                              ""
+                          )
+                        }
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Send WhatsApp (needs DJ phone in DJ profile)"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        <span className="sr-only">Send WhatsApp</span>
+                      </button>
                     </div>
                   </div>
                 ))}
