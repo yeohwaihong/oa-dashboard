@@ -3015,6 +3015,174 @@ function MalaysiaHolidaysModal({ open, holidays, error, onClose }) {
   );
 }
 
+// ─── Ticket Sales Data (from P&L Master) ────────────────────────────────────
+const TICKET_SALES_DATA = [
+  {
+    event: "Ascend x Winson", date: "2025-05-10", capacity: 600,
+    revenue: 39516.625, expenses: 25550, profit: 13966.625,
+    tiers: [
+      { name: "GA - Early Birds", sold: 38, price: 88, amount: 3344 },
+      { name: "GA - Phase 1", sold: 70, price: 108, amount: 7560 },
+      { name: "GA - Final Phase", sold: 1, price: 128, amount: 128 },
+      { name: "GA - Door Sales", sold: 80, price: 150, amount: 11200 },
+      { name: "GA - Combo EB (Ascend + Aftermath)", sold: 20, price: null, amount: 1600 },
+      { name: "GA - Combo P1 (Ascend + Aftermath)", sold: 11, price: null, amount: 1072.5 },
+      { name: "GA - Combo (Ascend + Verknipt + Aftermath)", sold: 2, price: null, amount: 205 },
+    ],
+  },
+  {
+    event: "Aftermath x Fatima Hajji", date: "2025-05-11", capacity: 600,
+    revenue: 57009.95, expenses: 25550, profit: 31459.95,
+    tiers: [
+      { name: "GA - Early Birds", sold: 50, price: 88, amount: 4400 },
+      { name: "GA - Phase 1", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Final Phase", sold: 62, price: 128, amount: 7936 },
+      { name: "GA - Door Sales", sold: 96, price: 150, amount: 14400 },
+      { name: "GA - Combo EB (Ascend + Aftermath)", sold: 20, price: null, amount: 1600 },
+      { name: "GA - Combo P1 (Ascend + Aftermath)", sold: 11, price: null, amount: 1072.5 },
+      { name: "GA - Combo (Ascend + Verknipt + Aftermath)", sold: 2, price: null, amount: 205 },
+    ],
+  },
+  {
+    event: "BLAK Room x Callush", date: "2025-08-01", capacity: 500,
+    revenue: 36005.5, expenses: 19930.334, profit: 16075.166,
+    tiers: [
+      { name: "GA - Blind Sales", sold: 2, price: 68, amount: 136 },
+      { name: "GA - Early Birds", sold: 24, price: 88, amount: 2112 },
+      { name: "GA - Phase 1", sold: 70, price: 108, amount: 7560 },
+      { name: "GA - Door Sales", sold: 110, price: 108, amount: 11512 },
+    ],
+  },
+  {
+    event: "BLAK Room x Mish", date: "2025-08-21", capacity: 600,
+    revenue: 39634.7, expenses: 28224.0296, profit: 11410.6704,
+    tiers: [
+      { name: "GA - Early Birds", sold: 50, price: 88, amount: 4400 },
+      { name: "GA - Phase 1", sold: 121, price: 108, amount: 13068 },
+      { name: "GA - Final Phase", sold: 62, price: 128, amount: 7936 },
+      { name: "GA - Door Sales", sold: 25, price: 128, amount: 3200 },
+    ],
+  },
+  {
+    event: "BLAK Room x Dual Damage", date: "2025-09-18", capacity: 600,
+    revenue: 32581.1, expenses: 24576.45755, profit: 8004.64245,
+    tiers: [
+      { name: "GA - Final Phase", sold: 61, price: 128, amount: 22568 },
+      { name: "GA - Door Sales", sold: 30, price: 128, amount: 3200 },
+    ],
+  },
+  {
+    event: "BLAK Room x Anderex", date: "2025-11-20", capacity: 850,
+    revenue: 11645.9, expenses: 20440, profit: -8794.1,
+    tiers: [
+      { name: "GA - Early Birds", sold: 49, price: 68, amount: 7732 },
+      { name: "GA - Door Sales", sold: 0, price: null, amount: 1720 },
+    ],
+  },
+  {
+    event: "BLAK Room x Anxhela", date: "2025-11-21", capacity: 850,
+    revenue: 31424.1, expenses: 20440, profit: 10984.1,
+    tiers: [
+      { name: "GA - Early Birds", sold: 49, price: 68, amount: 14608 },
+      { name: "GA - Door Sales", sold: 0, price: 108, amount: 13444 },
+    ],
+  },
+  {
+    event: "BLAK Boiler x Alt8", date: "2025-12-19", capacity: 850,
+    revenue: 33141.7, expenses: 20945.37, profit: 12196.33,
+    tiers: [
+      { name: "GA - Early Birds", sold: 50, price: 68, amount: 22972 },
+      { name: "GA - Door Sales", sold: 52, price: 128, amount: 6656 },
+    ],
+  },
+  {
+    event: "Evo Asia presents Angerfist", date: "2026-01-16", capacity: 850,
+    revenue: 83447.4, expenses: 31909.844, profit: 51537.556,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 88, amount: 66708 },
+      { name: "GA - Door Sales", sold: 58, price: 148, amount: 8584 },
+    ],
+  },
+  {
+    event: "Unofficial F2F MY Afterparty", date: "2026-02-07", capacity: 850,
+    revenue: 26203.9, expenses: 21767.5, profit: 4436.4,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 68, amount: 7588 },
+      { name: "Cover Charge 1", sold: 127, price: 50, amount: 6350 },
+      { name: "Cover Charge 2", sold: 70, price: 100, amount: 7000 },
+      { name: "Cover Charge 3", sold: 15, price: 80, amount: 1040 },
+    ],
+  },
+  {
+    event: "Onlynumbers (Raya Public Holiday)", date: "2026-03-22", capacity: 850,
+    revenue: 54742, expenses: 37811.615, profit: 16930.385,
+    tiers: [
+      { name: "GA - Early Birds", sold: 98, price: 88, amount: 39712 },
+      { name: "GA - Final or Door Sales", sold: 26, price: 148, amount: 3848 },
+    ],
+  },
+  {
+    event: "FBSJ ANL", date: "2026-04-17", capacity: 850,
+    revenue: 45550.875, expenses: 5500, profit: 40050.875,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 58, amount: 5800 },
+      { name: "GA - Phase 1", sold: 100, price: 78, amount: 7800 },
+      { name: "GA - Phase 2", sold: 100, price: 98, amount: 9800 },
+      { name: "GA - Final or Door Sales", sold: 50, price: 118, amount: 5900 },
+    ],
+  },
+  {
+    event: "Verknipt AP Feat Restricted", date: "2026-05-09", capacity: 850,
+    revenue: 52600.7, expenses: 26542.76, profit: 26057.94,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 88, amount: 8800 },
+      { name: "GA - Phase 1", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Phase 2", sold: 100, price: 128, amount: 12800 },
+      { name: "GA - Final or Door Sales", sold: 50, price: 148, amount: 11200 },
+    ],
+  },
+  {
+    event: "Darren Styles", date: "2026-05-30", capacity: 850,
+    revenue: 47300.875, expenses: 30300, profit: 17000.875,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 88, amount: 8800 },
+      { name: "GA - Phase 1", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Phase 2", sold: 100, price: 128, amount: 12800 },
+      { name: "GA - Final or Door Sales", sold: 50, price: 148, amount: 7400 },
+    ],
+  },
+  {
+    event: "Rebelion", date: "2026-06-11", capacity: 850,
+    revenue: 48450.875, expenses: 27775, profit: 20675.875,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 88, amount: 8800 },
+      { name: "GA - Phase 1", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Phase 2", sold: 50, price: 128, amount: 6400 },
+      { name: "GA - Final or Door Sales", sold: 50, price: 148, amount: 11200 },
+    ],
+  },
+  {
+    event: "Karah", date: "2026-07-03", capacity: 850,
+    revenue: 53450.875, expenses: 25250, profit: 28200.875,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 88, amount: 8800 },
+      { name: "GA - Phase 1", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Phase 2", sold: 50, price: 128, amount: 6400 },
+      { name: "GA - Final or Door Sales", sold: 50, price: 148, amount: 11200 },
+    ],
+  },
+  {
+    event: "Sanctuary Afterparty x David Forbes", date: "2026-07-18", capacity: 850,
+    revenue: 43200.7, expenses: 22725, profit: 20475.7,
+    tiers: [
+      { name: "GA - Early Birds", sold: 100, price: 68, amount: 6800 },
+      { name: "GA - Phase 1", sold: 100, price: 88, amount: 8800 },
+      { name: "GA - Phase 2", sold: 100, price: 108, amount: 10800 },
+      { name: "GA - Final or Door Sales", sold: 100, price: 128, amount: 12800 },
+    ],
+  },
+];
+
 function FinanceMathPage() {
   const [inputs, setInputs] = useState(financeDefaultInputs);
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
@@ -3655,6 +3823,242 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
           </tfoot>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ─── Ticket Sales Forecast Page ──────────────────────────────────────────────
+function TicketSalesPage() {
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const fmtRM = (n) =>
+    n == null ? "—" : `RM ${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const monthLabel = (d) =>
+    d.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
+  const prevMonth = () =>
+    setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
+  const nextMonth = () =>
+    setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
+
+  const monthStart = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, "0")}-01`;
+  const monthEnd = (() => {
+    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+  })();
+
+  const monthEvents = useMemo(
+    () => TICKET_SALES_DATA.filter((e) => e.date >= monthStart && e.date <= monthEnd),
+    [monthStart, monthEnd]
+  );
+
+  const monthStats = useMemo(() => {
+    let ticketRev = 0, totalSold = 0, totalCapacity = 0, totalRevenue = 0, totalProfit = 0;
+    for (const ev of monthEvents) {
+      const tierRev = ev.tiers.reduce((s, t) => s + t.amount, 0);
+      ticketRev += tierRev;
+      totalSold += ev.tiers.reduce((s, t) => s + (t.sold || 0), 0);
+      totalCapacity += ev.capacity;
+      totalRevenue += ev.revenue;
+      totalProfit += ev.profit;
+    }
+    return { ticketRev, totalSold, totalCapacity, totalRevenue, totalProfit };
+  }, [monthEvents]);
+
+  const dateLabel = (d) => {
+    const dt = new Date(d + "T00:00:00");
+    return dt.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const tierBg = (idx) => (idx % 2 === 0 ? "bg-transparent" : "bg-white/[0.015]");
+
+  const tierColor = (name) => {
+    const n = name.toLowerCase();
+    if (n.includes("blind") || n.includes("early")) return "text-emerald-300";
+    if (n.includes("phase 1") || n.includes("cover charge 1")) return "text-cyan-300";
+    if (n.includes("phase 2") || n.includes("cover charge 2")) return "text-blue-300";
+    if (n.includes("phase 3") || n.includes("cover charge 3")) return "text-indigo-300";
+    if (n.includes("final") || n.includes("door")) return "text-orange-300";
+    if (n.includes("combo")) return "text-purple-300";
+    return "text-white/70";
+  };
+
+  return (
+    <section className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">P&L Master · Malaysia</div>
+          <h2 className="mt-0.5 text-xl font-black text-white">Ticket Sales Forecast</h2>
+        </div>
+        {/* Month navigator */}
+        <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/20 px-1 py-1">
+          <button
+            onClick={prevMonth}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="min-w-[130px] text-center text-xs font-black text-white">
+            {monthLabel(monthCursor)}
+          </span>
+          <button
+            onClick={nextMonth}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Month summary stats */}
+      {monthEvents.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: "Total Revenue", val: fmtRM(monthStats.totalRevenue), color: "text-white" },
+            { label: "Ticket Revenue", val: fmtRM(monthStats.ticketRev), color: "text-purple-200" },
+            { label: "Net Profit", val: fmtRM(monthStats.totalProfit), color: monthStats.totalProfit >= 0 ? "text-emerald-300" : "text-rose-300" },
+            { label: "Tickets Sold", val: `${monthStats.totalSold.toLocaleString()} / ${monthStats.totalCapacity.toLocaleString()}`, color: "text-cyan-300" },
+          ].map(({ label, val, color }) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 md:p-4">
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{label}</div>
+              <div className={`mt-1 text-base font-black sm:text-lg ${color}`}>{val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Event cards */}
+      {monthEvents.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-12 text-center text-sm font-black text-white/30">
+          No events in {monthLabel(monthCursor)}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {monthEvents.map((ev) => {
+            const tierTotal = ev.tiers.reduce((s, t) => s + t.amount, 0);
+            const totalSold = ev.tiers.reduce((s, t) => s + (t.sold || 0), 0);
+            const occupancy = ev.capacity > 0 ? Math.round((totalSold / ev.capacity) * 100) : 0;
+            const isProfitable = ev.profit >= 0;
+
+            return (
+              <div key={ev.date + ev.event} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+                {/* Event header */}
+                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/10 bg-white/[0.02] px-4 py-3">
+                  <div>
+                    <div className="text-sm font-black text-white">{ev.event}</div>
+                    <div className="mt-0.5 text-[10px] font-bold text-white/40">{dateLabel(ev.date)}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-right">
+                    {/* Occupancy pill */}
+                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                      occupancy >= 80 ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300"
+                      : occupancy >= 50 ? "border-yellow-300/30 bg-yellow-400/10 text-yellow-300"
+                      : "border-rose-300/30 bg-rose-400/10 text-rose-300"
+                    }`}>
+                      {occupancy}% full · {totalSold}/{ev.capacity}
+                    </span>
+                    {/* P&L summary */}
+                    <div className="text-right">
+                      <div className="text-[10px] font-black text-white/30">Profit</div>
+                      <div className={`text-sm font-black ${isProfitable ? "text-emerald-300" : "text-rose-300"}`}>
+                        {isProfitable ? "+" : ""}{fmtRM(ev.profit)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tier breakdown table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[360px] text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5">
+                        <th className="py-2 pl-4 pr-2 text-left text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Tier</th>
+                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Sold</th>
+                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Price</th>
+                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Revenue</th>
+                        <th className="py-2 pl-2 pr-4 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ev.tiers.map((tier, idx) => {
+                        const share = tierTotal > 0 ? Math.round((tier.amount / tierTotal) * 100) : 0;
+                        return (
+                          <tr key={tier.name} className={`border-b border-white/5 ${tierBg(idx)}`}>
+                            <td className="py-2.5 pl-4 pr-2">
+                              <span className={`font-black ${tierColor(tier.name)}`}>{tier.name}</span>
+                            </td>
+                            <td className="px-2 py-2.5 text-right font-black text-white/70">{tier.sold}</td>
+                            <td className="px-2 py-2.5 text-right font-black text-white/50">
+                              {tier.price != null ? `RM ${tier.price}` : "—"}
+                            </td>
+                            <td className="px-2 py-2.5 text-right font-black text-white">{fmtRM(tier.amount)}</td>
+                            <td className="py-2.5 pl-2 pr-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <div className="hidden h-1.5 w-12 overflow-hidden rounded-full bg-white/10 sm:block">
+                                  <div className="h-full rounded-full bg-purple-400/60" style={{ width: `${share}%` }} />
+                                </div>
+                                <span className="text-[10px] font-black text-white/40">{share}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Total row */}
+                      <tr className="bg-white/[0.03]">
+                        <td className="py-2.5 pl-4 pr-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/40">Ticket Total</td>
+                        <td className="px-2 py-2.5 text-right text-[10px] font-black text-white/60">{totalSold}</td>
+                        <td className="px-2 py-2.5" />
+                        <td className="px-2 py-2.5 text-right font-black text-purple-200">{fmtRM(tierTotal)}</td>
+                        <td className="py-2.5 pl-2 pr-4 text-right text-[10px] font-black text-white/40">100%</td>
+                      </tr>
+                      {/* Full P&L row */}
+                      <tr className="border-t border-white/10 bg-white/[0.015]">
+                        <td className="py-2 pl-4 pr-2 text-[9px] font-black uppercase tracking-[0.12em] text-white/25">Total Revenue (incl. bar/spon.)</td>
+                        <td />
+                        <td />
+                        <td className="px-2 py-2 text-right text-[10px] font-black text-white/50">{fmtRM(ev.revenue)}</td>
+                        <td className="py-2 pl-2 pr-4 text-right text-[9px] font-black text-white/25">
+                          {ev.revenue > 0 ? `${Math.round((tierTotal / ev.revenue) * 100)}% tix` : ""}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Finance Page (P&L Calculator + Ticket Sales tabs) ───────────────────────
+function FinancePage() {
+  const [tab, setTab] = useState("pl");
+  return (
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex gap-1">
+        {[["pl", "P&L Calculator"], ["tickets", "Ticket Sales"]].map(([val, label]) => (
+          <button
+            key={val}
+            onClick={() => setTab(val)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+              tab === val
+                ? "border-purple-300/50 bg-purple-400/20 text-purple-100"
+                : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "pl" ? <FinanceMathPage /> : <TicketSalesPage />}
     </div>
   );
 }
@@ -8002,7 +8406,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Activity" && canViewActivity ? (
             <ActivityMonitorPage userRole={userRole} />
           ) : view === "Finance" ? (
-            <FinanceMathPage />
+            <FinancePage />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
