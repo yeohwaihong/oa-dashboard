@@ -11,4 +11,8 @@ Run `supabase/seed_dj_fee_estimates_from_finance_sheets.sql` to add rough DJ fee
 
 Run `supabase/dj_user_booking_approvals.sql` to link DJ profiles to dashboard users and let linked DJs accept or reject confirmed-night booking requests.
 
+Run `supabase/allow_dj_role.sql` to enable the read-only `dj` user role used by DJ profile linking.
+
+Run `supabase/merge_duplicate_djs_uppercase.sql` if DJ profile names have duplicates with different casing; it merges related assignments, genres, and fees into one uppercase DJ row.
+
 For local anonymous writes, run `supabase/dev_dashboard_policies.sql` after the DJ database SQL. For realtime updates, rerun `supabase/realtime_setup.sql`.

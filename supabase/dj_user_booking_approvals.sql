@@ -87,3 +87,16 @@ with check (
   )
   and assignment_status in ('Accepted', 'Rejected')
 );
+
+-- Backfill future confirmed assignments for already-linked DJs so they show
+-- as booking requests without needing admins to reconfirm each night.
+update public.event_assignments ea
+set assignment_status = 'Pending'
+from public.event_slots es, public.events e, public.djs d
+where ea.event_slot_id = es.id
+  and es.event_id = e.id
+  and ea.dj_id = d.id
+  and d.linked_user_id is not null
+  and e.status = 'Confirmed'
+  and e.event_date >= current_date
+  and ea.assignment_status = 'Confirmed';

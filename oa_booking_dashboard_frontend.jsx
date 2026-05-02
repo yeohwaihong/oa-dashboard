@@ -456,6 +456,13 @@ function normalizeDjLookupKey(value) {
   return raw.startsWith("dj ") ? raw.slice(3).trim() : raw;
 }
 
+function canonicalDjName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
 function formatDjDisplayName(value) {
   const raw = String(value || "").trim();
   if (!raw) return "DJ";
@@ -3368,6 +3375,7 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
   const [query, setQuery] = useState("");
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
+  const djUsers = useMemo(() => mentionUsers.filter((user) => String(user.role || "").toLowerCase() === "dj"), [mentionUsers]);
   const filteredProfiles = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return availableProfiles;
@@ -3488,10 +3496,10 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
       return;
     }
 
-    const cleanName = String(editForm.name || "").trim() || selectedProfile.name || "Untitled DJ";
+    const cleanName = canonicalDjName(editForm.name || selectedProfile.name || "Untitled DJ");
     const payload = {
       name: cleanName,
-      stage_name: String(editForm.stageName || "").trim() || null,
+      stage_name: canonicalDjName(editForm.stageName) || null,
       real_name: String(editForm.realName || "").trim() || null,
       email: String(editForm.email || "").trim() || null,
       phone: String(editForm.phone || "").trim() || null,
@@ -3521,6 +3529,26 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
 
       const updated = await supabase.from("djs").update(payload).eq("id", djId);
       if (updated.error) throw updated.error;
+
+      if (payload.linked_user_id) {
+        const futureLinkedAssignments = await supabase
+          .from("event_assignments")
+          .select("id, event_slots!inner(events!inner(event_date, status))")
+          .eq("dj_id", djId)
+          .eq("assignment_status", "Confirmed")
+          .eq("event_slots.events.status", "Confirmed")
+          .gte("event_slots.events.event_date", isoFromDate(new Date()));
+        if (futureLinkedAssignments.error) throw futureLinkedAssignments.error;
+
+        const assignmentIds = (futureLinkedAssignments.data || []).map((row) => row.id).filter(Boolean);
+        if (assignmentIds.length) {
+          const reopened = await supabase
+            .from("event_assignments")
+            .update({ assignment_status: "Pending" })
+            .in("id", assignmentIds);
+          if (reopened.error) throw reopened.error;
+        }
+      }
 
       if (genreTags.length) {
         const { error: genreInsertError } = await supabase.from("genres").insert(genreTags.map((name) => ({ name })));
@@ -3870,12 +3898,17 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
                   className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm font-black text-white outline-none focus:border-purple-300/60"
                 >
                   <option value="">Not linked</option>
-                  {mentionUsers.map((user) => (
+                  {djUsers.map((user) => (
                     <option key={user.id} value={user.id}>
                       {displayNameForUser(user) || user.email} {user.role ? `(${user.role})` : ""}
                     </option>
                   ))}
                 </select>
+                {!djUsers.length ? (
+                  <div className="mt-2 text-xs font-bold text-yellow-100/70">
+                    No DJ users yet. Assign the DJ role in User Management first.
+                  </div>
+                ) : null}
               </label>
 
               <label className="block">
@@ -4544,6 +4577,7 @@ function UserManagementPage({ onToast, onLogActivity }) {
                   >
                     <option value="">Unassigned</option>
                     <option value="staff">staff</option>
+                    <option value="dj">dj</option>
                     <option value="admin">admin</option>
                     <option value="superadmin">superadmin</option>
                   </select>
@@ -4621,7 +4655,7 @@ function UserManagementPage({ onToast, onLogActivity }) {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="text-sm font-black text-white/85">Active users</div>
-              <div className="mt-1 text-xs font-bold text-white/35">Approved staff, admins, and superadmins.</div>
+              <div className="mt-1 text-xs font-bold text-white/35">Approved DJs, staff, admins, and superadmins.</div>
             </div>
             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/45">
               {approvedUsers.length}
@@ -4821,10 +4855,10 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
       const existingDjId = slot?.djId ? String(slot.djId) : "";
       if (existingDjId) return existingDjId;
       if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
-      const name = String(slot?.dj || "").trim();
+      const name = canonicalDjName(slot?.dj);
       if (!name || name.toUpperCase().includes("TBD")) throw new Error("Invalid DJ name.");
 
-      const existing = await supabase.from("djs").select("id").eq("name", name).limit(1).maybeSingle();
+      const existing = await supabase.from("djs").select("id").ilike("name", name).limit(1).maybeSingle();
       if (existing.error) throw existing.error;
 
       let djId = existing.data?.id ? String(existing.data.id) : "";
@@ -5599,7 +5633,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const canManageUsers = userRole === "superadmin";
   const canViewActivity = userRole === "superadmin";
   const headerIconsOnly = userRole === "superadmin";
-  const canUseNotificationCenter = userRole === "staff" || canEdit;
+  const canUseNotificationCenter = userRole === "staff" || userRole === "dj" || canEdit;
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
     const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
@@ -5819,10 +5853,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [withPending]);
 
   const findOrCreateDj = useCallback(async (rawName) => {
-    const name = String(rawName || "").trim();
+    const name = canonicalDjName(rawName);
     if (!name || name.toUpperCase().includes("TBD")) return null;
 
-    const existing = await supabase.from("djs").select("id").eq("name", name).limit(1).maybeSingle();
+    const existing = await supabase.from("djs").select("id").ilike("name", name).limit(1).maybeSingle();
     if (existing.error) throw existing.error;
     if (existing.data?.id) return existing.data.id;
 
@@ -6091,7 +6125,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       if (event.date < todayISO || event.status !== "Confirmed") continue;
       for (const slot of event.slots || []) {
         if (!slot.assignmentId || String(slot.linkedUserId || "") !== currentUserId) continue;
-        if (slot.assignmentStatus !== "Pending") continue;
+        if (slot.assignmentStatus === "Accepted" || slot.assignmentStatus === "Rejected") continue;
         rows.push({ event, slot });
       }
     }
@@ -6487,7 +6521,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       const dateObj = isoToDate(d.isoDate);
       const { day, dayNo, month } = formatEventDatePieces(dateObj);
       const slots = d.slots
-        .map((s) => ({ ...s, dj: String(s.dj || "").trim() }))
+        .map((s) => ({ ...s, dj: canonicalDjName(s.dj) }))
         .filter((s) => s.dj.length && slotHasValidTime(s))
         .map((s) => ({
           dj: s.dj,

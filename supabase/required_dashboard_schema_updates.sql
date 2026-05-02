@@ -54,7 +54,7 @@ on public.activity_log for insert
 to authenticated
 with check (
   actor_user_id = auth.uid()
-  and exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin', 'staff'))
+  and exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin', 'staff', 'dj'))
 );
 
 drop policy if exists "dashboard superadmin read activity log" on public.activity_log;

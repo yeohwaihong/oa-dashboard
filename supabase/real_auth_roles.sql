@@ -5,7 +5,7 @@
 
 create table if not exists public.user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('superadmin', 'admin', 'staff')),
+  role text not null check (role in ('superadmin', 'admin', 'staff', 'dj')),
   created_at timestamptz not null default now()
 );
 
@@ -22,7 +22,8 @@ using (user_id = auth.uid());
 -- values
 --   ('00000000-0000-0000-0000-000000000000', 'superadmin'),
 --   ('11111111-1111-1111-1111-111111111111', 'admin'),
---   ('22222222-2222-2222-2222-222222222222', 'staff')
+--   ('22222222-2222-2222-2222-222222222222', 'staff'),
+--   ('33333333-3333-3333-3333-333333333333', 'dj')
 -- on conflict (user_id) do update set role = excluded.role;
 
 -- Keep public read access for the launch schedule.
