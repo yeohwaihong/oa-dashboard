@@ -300,6 +300,7 @@ const financeSuggestedFixedCosts = {
   sstRate: 8,
   bottleCostRate: 40,
   utilities: 1500,
+  manpower: 13100,
 };
 
 const financeScenariosStorageKey = "oa_dashboard_finance_scenarios";
@@ -3251,15 +3252,13 @@ function FinanceMathPage() {
       ...prev,
       includeSuggestedFixedCosts: enabled,
       ...(enabled
-        ? {
-            ...financeSuggestedFixedCosts,
-            utilities: financeSuggestedFixedCosts.utilities,
-          }
+        ? { ...financeSuggestedFixedCosts }
         : {
             serviceRate: 0,
             sstRate: 0,
             bottleCostRate: 0,
             utilities: 0,
+            manpower: 0,
           }),
     }));
   };
