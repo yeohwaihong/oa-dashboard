@@ -5477,7 +5477,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [commentsError, setCommentsError] = useState("");
   const [pendingNotificationTarget, setPendingNotificationTarget] = useState(null);
   const notificationsButtonRef = React.useRef(null);
+  const addButtonRef = React.useRef(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addMenuStyle, setAddMenuStyle] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
@@ -6067,6 +6069,34 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       if (raf) cancelAnimationFrame(raf);
     };
   }, [notificationsOpen, updateNotificationsPopoverPosition]);
+
+  const updateAddMenuPosition = useCallback(() => {
+    const node = addButtonRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const gutter = 12;
+    const width = 176;
+    const left = Math.max(gutter, Math.min(window.innerWidth - width - gutter, rect.right - width));
+    const top = rect.bottom + 8;
+    setAddMenuStyle({ position: "fixed", left, top, width });
+  }, []);
+
+  useEffect(() => {
+    if (!addMenuOpen) return undefined;
+    updateAddMenuPosition();
+    let raf = 0;
+    const handle = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateAddMenuPosition);
+    };
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [addMenuOpen, updateAddMenuPosition]);
 
   const upcomingMalaysiaHolidays = useMemo(() => {
     return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
@@ -6894,17 +6924,21 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             </div>
             ) : null}
             {canEdit ? (
-              <div className="relative">
+              <div>
                 <Button
-                  onClick={() => setAddMenuOpen((open) => !open)}
-                  className={`inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "w-12 px-0 md:w-11" : "w-full px-3 md:w-auto md:px-6"}`}
+                  ref={addButtonRef}
+                  onClick={() => {
+                    updateAddMenuPosition();
+                    setAddMenuOpen((open) => !open);
+                  }}
+                  className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-6"}`}
                 >
                   <Plus className="h-4 w-4 shrink-0" />
                   <span className={headerIconsOnly ? "sr-only" : ""}>Add</span>
                   {headerIconsOnly ? null : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
                 </Button>
                 {addMenuOpen ? (
-                  <div className="absolute right-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] p-1 shadow-2xl shadow-black/50">
+                  <div style={addMenuStyle || undefined} className="z-40 overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] p-1 shadow-2xl shadow-black/50">
                     <button
                       type="button"
                       onClick={() => {
