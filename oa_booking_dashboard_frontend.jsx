@@ -463,6 +463,31 @@ function canonicalDjName(value) {
     .toUpperCase();
 }
 
+function parseDjLineup(value) {
+  const displayName = canonicalDjName(value);
+  if (!displayName) return { displayName: "", connector: "", participants: [] };
+  const connector = displayName.match(/\s(B2B|B3B|F2F)\s/)?.[1] || "";
+  const participants = displayName
+    .split(/\s+(?:B2B|B3B|F2F)\s+/i)
+    .map(canonicalDjName)
+    .filter(Boolean);
+
+  return {
+    displayName,
+    connector,
+    participants: participants.length ? Array.from(new Set(participants)) : [displayName],
+  };
+}
+
+function aggregateAssignmentStatus(assignments) {
+  const statuses = (assignments || []).map((assignment) => assignment.assignmentStatus).filter(Boolean);
+  if (!statuses.length) return "Pending";
+  if (statuses.includes("Pending")) return "Pending";
+  if (statuses.includes("Rejected")) return "Rejected";
+  if (statuses.every((status) => status === "Accepted")) return "Accepted";
+  return "Confirmed";
+}
+
 function formatDjDisplayName(value) {
   const raw = String(value || "").trim();
   if (!raw) return "DJ";
@@ -639,6 +664,7 @@ const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
 const mentionsNotePattern = /\[dashboard:mentions=([^\]]*)\]/;
+const consoleFeeNotePattern = /\[dashboard:console_fee=([^\]]*)\]/;
 const malaysiaHolidayFallback = [
   { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day", countryCode: "MY", global: true, types: ["National"] },
   { date: "2026-02-01", localName: "Federal Territory Day", name: "Federal Territory Day", countryCode: "MY", global: true, types: ["National"] },
@@ -811,21 +837,31 @@ function parseMentionUserIds(notes) {
     .filter(Boolean);
 }
 
+function parseConsoleFeeAmount(notes) {
+  const raw = String(notes || "").match(consoleFeeNotePattern)?.[1] || "";
+  if (!raw) return null;
+  const amount = Number.parseFloat(raw);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
 function stripDashboardNotes(notes) {
   return String(notes || "")
     .replace(icNotePattern, "")
     .replace(mentionsNotePattern, "")
+    .replace(consoleFeeNotePattern, "")
     .trim();
 }
 
-function setDashboardNotes(notes, ic, mentionUserIds = []) {
+function setDashboardNotes(notes, ic, mentionUserIds = [], consoleFeeAmount = null) {
   const cleanNotes = stripDashboardNotes(notes);
   const cleanIc = String(ic || "").trim();
   const cleanMentionUserIds = Array.from(new Set((mentionUserIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  const cleanConsoleFee = consoleFeeAmount != null ? Number(consoleFeeAmount) : null;
   return [
     cleanNotes,
     cleanIc ? `[dashboard:ic=${cleanIc}]` : "",
     cleanMentionUserIds.length ? `[dashboard:mentions=${cleanMentionUserIds.join(",")}]` : "",
+    Number.isFinite(cleanConsoleFee) && cleanConsoleFee >= 0 ? `[dashboard:console_fee=${cleanConsoleFee}]` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -1097,33 +1133,35 @@ function deriveDjProfilesFromEvents(events) {
   const byName = new Map();
   for (const event of events) {
     for (const slot of event.slots || []) {
-      const name = String(slot.dj || "").trim();
-      if (!name || name.toUpperCase().includes("TBD") || slot.role === "MC") continue;
-      const profile = byName.get(name) ?? {
-        id: name,
-        name,
-        stageName: "",
-        realName: "",
-        email: "",
-        phone: "",
-        instagramHandle: "",
-        soundcloudUrl: "",
-        pressKitUrl: "",
-        bio: "",
-        homeCity: "",
-        country: "",
-        status: "Active",
-        notes: "",
-        genres: [],
-        fees: [],
-      };
-      const genreNames = new Set(profile.genres.map((genre) => genre.name.toLowerCase()));
-      for (const genreName of splitGenreTags(event.genre)) {
-        if (genreNames.has(genreName.toLowerCase())) continue;
-        profile.genres.push({ id: `${name}-${genreName}`, name: genreName, isPrimary: !profile.genres.length });
-        genreNames.add(genreName.toLowerCase());
+      const lineup = parseDjLineup(slot.dj);
+      for (const name of lineup.participants) {
+        if (!name || name.toUpperCase().includes("TBD") || slot.role === "MC") continue;
+        const profile = byName.get(name) ?? {
+          id: name,
+          name,
+          stageName: "",
+          realName: "",
+          email: "",
+          phone: "",
+          instagramHandle: "",
+          soundcloudUrl: "",
+          pressKitUrl: "",
+          bio: "",
+          homeCity: "",
+          country: "",
+          status: "Active",
+          notes: "",
+          genres: [],
+          fees: [],
+        };
+        const genreNames = new Set(profile.genres.map((genre) => genre.name.toLowerCase()));
+        for (const genreName of splitGenreTags(event.genre)) {
+          if (genreNames.has(genreName.toLowerCase())) continue;
+          profile.genres.push({ id: `${name}-${genreName}`, name: genreName, isPrimary: !profile.genres.length });
+          genreNames.add(genreName.toLowerCase());
+        }
+        byName.set(name, profile);
       }
-      byName.set(name, profile);
     }
   }
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -1166,23 +1204,37 @@ function mapSupabaseEvent(row) {
     ? [...row.event_slots]
         .sort((a, b) => (a.slot_order ?? 0) - (b.slot_order ?? 0))
         .map((slot) => {
-          const assignment = firstRelated(slot.event_assignments);
-          const dj = assignment?.djs?.name || assignment?.notes || "(OPENING TBD)";
-          const role = normalizeSlotRole(slot.role);
-          const needsTime = role !== "MC";
-          return {
-            id: String(slot.id),
+          const assignments = (Array.isArray(slot.event_assignments) ? slot.event_assignments : [slot.event_assignments].filter(Boolean)).map((assignment) => ({
             assignmentId: assignment?.id ? String(assignment.id) : null,
             djId: assignment?.djs?.id ? String(assignment.djs.id) : null,
             linkedUserId: assignment?.djs?.linked_user_id ? String(assignment.djs.linked_user_id) : "",
             assignmentStatus: assignment?.assignment_status || "Pending",
+            dj: assignment?.djs?.name || assignment?.notes || "(OPENING TBD)",
+            notes: assignment?.notes || "",
+            fee: assignment?.fee != null ? Number(assignment.fee) : null,
+          }));
+          const assignment = assignments[0] || null;
+          const commonNote =
+            assignments.length > 1 && assignments.every((item) => item.notes && item.notes === assignments[0].notes)
+              ? assignments[0].notes
+              : "";
+          const dj = commonNote || (assignments.length ? assignments.map((item) => item.dj).join(" / ") : "(OPENING TBD)");
+          const role = normalizeSlotRole(slot.role);
+          const needsTime = role !== "MC";
+          return {
+            id: String(slot.id),
+            assignmentId: assignment?.assignmentId || null,
+            djId: assignment?.djId || null,
+            linkedUserId: assignment?.linkedUserId || "",
+            assignmentStatus: aggregateAssignmentStatus(assignments),
+            assignments,
             dj,
             role,
             start: needsTime && slot.start_time ? timeForInput(slot.start_time) : "",
             end: needsTime && slot.end_time ? timeForInput(slot.end_time) : "",
             energy: slot.expected_energy ?? 3,
             warning: dj.toUpperCase().includes("TBD"),
-            fee: assignment?.fee != null ? Number(assignment.fee) : null,
+            fee: assignment?.fee ?? null,
           };
         })
     : [];
@@ -1208,6 +1260,7 @@ function mapSupabaseEvent(row) {
     slots,
     ic: parseIc(row.notes),
     mentionedUserIds: parseMentionUserIds(row.notes),
+    consoleFeeAmount: parseConsoleFeeAmount(row.notes),
     notes: stripDashboardNotes(row.notes),
   };
 }
@@ -2410,7 +2463,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                           {formatTimeRange(slot.start, slot.end, timeFormat)}
                         </span>
                       ) : null}
-                      {slot.linkedUserId || slot.assignmentStatus ? (
+                      {canEdit && (slot.linkedUserId || slot.assignmentStatus) ? (
                         <span className={`w-fit rounded-md border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] ${assignmentStatusClass(slot.assignmentStatus)}`}>
                           {assignmentStatusLabel(slot.assignmentStatus)}
                         </span>
@@ -4768,6 +4821,9 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
   const [saving, setSaving] = useState({});
   // Toast-style feedback
   const [saveMsg, setSaveMsg] = useState({});
+  const [consoleFeeEdits, setConsoleFeeEdits] = useState({});
+  const [editingConsoleFeeId, setEditingConsoleFeeId] = useState(null);
+  const [savingConsoleFeeId, setSavingConsoleFeeId] = useState(null);
 
   // Month cursor — default to current month
   const [monthCursor, setMonthCursor] = useState(() => {
@@ -4845,6 +4901,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
     [statusMap]
   );
 
+  const getConsolePayStatus = useCallback(
+    (eventId) => statusMap[`console:${eventId}`] ?? "pending",
+    [statusMap]
+  );
+
   const getFeeScope = useCallback(
     (assignmentId) => feeEditScopes[assignmentId] || "day",
     [feeEditScopes]
@@ -4901,16 +4962,18 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
 
   const cycleStatus = useCallback((assignmentId, current) => {
     const next = PAY_STATUS_CYCLE[(PAY_STATUS_CYCLE.indexOf(current) + 1) % PAY_STATUS_CYCLE.length];
+    const isConsolePayment = String(assignmentId).startsWith("console:");
+    const entityId = isConsolePayment ? String(assignmentId).replace(/^console:/, "") : assignmentId;
     setStatusMap((prev) => {
       const updated = { ...prev, [assignmentId]: next };
       localStorage.setItem("oa_djpay_status_v2", JSON.stringify(updated));
       return updated;
     });
     onLogActivity?.({
-      action: "dj_payment_status_updated",
-      entityType: "event_assignment",
-      entityId: assignmentId,
-      meta: { from: current, to: next },
+      action: isConsolePayment ? "console_payment_status_updated" : "dj_payment_status_updated",
+      entityType: isConsolePayment ? "event" : "event_assignment",
+      entityId,
+      meta: { from: current, to: next, paymentKey: assignmentId },
     });
   }, [onLogActivity]);
 
@@ -5013,21 +5076,76 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
     [feeEdits, getFeeScope, djProfiles, onRefresh, onToast, onLogActivity, ensureDjInDatabase]
   );
 
+  const saveConsoleFee = useCallback(
+    async (event, amountOverride) => {
+      const raw = amountOverride === null ? null : amountOverride !== undefined ? amountOverride : consoleFeeEdits[event.id];
+      const amount =
+        raw === null
+          ? null
+          : Number.parseFloat(String(raw ?? "").replace(/[^0-9.]/g, ""));
+      if (raw !== null && (!Number.isFinite(amount) || amount < 0)) return;
+
+      setSavingConsoleFeeId(event.id);
+      try {
+        if (!isSupabaseConfigured) throw new Error("Supabase is not configured.");
+        const notes = setDashboardNotes(event.notes, event.ic, event.mentionedUserIds, raw === null ? null : amount);
+        const { error } = await supabase.from("events").update({ notes }).eq("id", event.id);
+        if (error) throw error;
+
+        await onRefresh?.();
+        onLogActivity?.({
+          action: raw === null ? "console_fee_removed" : "console_fee_updated",
+          entityType: "event",
+          entityId: String(event.id),
+          message: raw === null ? `Console fee removed · ${event.name}` : `Console fee updated · ${event.name} · RM ${amount}`,
+          meta: { eventId: event.id, eventName: event.name, consoleFeeAmount: raw === null ? null : amount },
+        });
+        setConsoleFeeEdits((prev) => {
+          const next = { ...prev };
+          delete next[event.id];
+          return next;
+        });
+        setEditingConsoleFeeId(null);
+        setSaveMsg((p) => ({ ...p, [`console:${event.id}`]: "saved" }));
+        setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[`console:${event.id}`]; return n; }), 2000);
+      } catch (err) {
+        onToast?.(err?.message || "Console fee save failed", "error");
+        setSaveMsg((p) => ({ ...p, [`console:${event.id}`]: "error" }));
+        setTimeout(() => setSaveMsg((p) => { const n = { ...p }; delete n[`console:${event.id}`]; return n; }), 3000);
+      } finally {
+        setSavingConsoleFeeId(null);
+      }
+    },
+    [consoleFeeEdits, onRefresh, onToast, onLogActivity]
+  );
+
   // Filter slots by payment status
   const displayEvents = useMemo(() => {
     if (filterPayStatus === "ALL") return filteredEvents;
     return filteredEvents
       .map((e) => ({
         ...e,
-        slots: e.slots.filter((s) => getPayStatus(s) === filterPayStatus),
+        slots:
+          e.consoleFeeAmount != null
+            ? e.slots
+            : e.slots.filter((s) => getPayStatus(s) === filterPayStatus),
       }))
-      .filter((e) => e.slots.length > 0);
-  }, [filteredEvents, filterPayStatus, getPayStatus]);
+      .filter((e) => (e.consoleFeeAmount != null ? getConsolePayStatus(e.id) === filterPayStatus : e.slots.length > 0));
+  }, [filteredEvents, filterPayStatus, getPayStatus, getConsolePayStatus]);
 
   // Grand totals across displayed events
   const { totalFee, totalPaid, totalPending, totalInvoiced, missingFeeCount } = useMemo(() => {
     let totalFee = 0, totalPaid = 0, totalPending = 0, totalInvoiced = 0, missingFeeCount = 0;
     for (const ev of displayEvents) {
+      if (ev.consoleFeeAmount != null) {
+        const feeNum = Number(ev.consoleFeeAmount) || 0;
+        const st = getConsolePayStatus(ev.id);
+        totalFee += feeNum;
+        if (st === "paid") totalPaid += feeNum;
+        else if (st === "invoice_uploaded") totalInvoiced += feeNum;
+        else totalPending += feeNum;
+        continue;
+      }
       for (const slot of ev.slots) {
         const fee = getEffectiveFee(slot);
         const feeNum = fee !== "" && fee != null ? Number(fee) : 0;
@@ -5040,7 +5158,7 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
       }
     }
     return { totalFee, totalPaid, totalPending, totalInvoiced, missingFeeCount };
-  }, [displayEvents, getEffectiveFee, getPayStatus]);
+  }, [displayEvents, getEffectiveFee, getPayStatus, getConsolePayStatus]);
 
   const dateLabel = (d) => {
     if (!d) return "Unknown";
@@ -5170,13 +5288,19 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
       ) : (
         <div className="space-y-3">
           {displayEvents.map((ev) => {
-            const nightTotal = ev.slots.reduce((s, slot) => {
+            const hasConsoleFee = ev.consoleFeeAmount != null;
+            const perDjTotal = ev.slots.reduce((s, slot) => {
               const f = getEffectiveFee(slot);
               return s + (f !== "" && f != null ? Number(f) : 0);
             }, 0);
-            const allPaid = ev.slots.every((s) => getPayStatus(s) === "paid");
-            const hasPending = ev.slots.some((s) => getPayStatus(s) === "pending");
-            const nightMissingFee = ev.slots.some((s) => getEffectiveFee(s) === "" || getEffectiveFee(s) == null);
+            const nightTotal = hasConsoleFee ? Number(ev.consoleFeeAmount) || 0 : perDjTotal;
+            const consoleStatus = getConsolePayStatus(ev.id);
+            const allPaid = hasConsoleFee ? consoleStatus === "paid" : ev.slots.every((s) => getPayStatus(s) === "paid");
+            const hasPending = hasConsoleFee ? consoleStatus === "pending" : ev.slots.some((s) => getPayStatus(s) === "pending");
+            const nightMissingFee = !hasConsoleFee && ev.slots.some((s) => getEffectiveFee(s) === "" || getEffectiveFee(s) == null);
+            const isEditingConsoleFee = editingConsoleFeeId === ev.id;
+            const consoleMsg = saveMsg[`console:${ev.id}`];
+            const isSavingConsoleFee = savingConsoleFeeId === ev.id;
 
             return (
               <div key={ev.id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
@@ -5185,6 +5309,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-black text-white">{dateLabel(ev.date)}</div>
                     <div className="text-sm font-black text-white/50">{ev.name}</div>
+                    {hasConsoleFee ? (
+                      <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-cyan-100">
+                        Console fee
+                      </span>
+                    ) : null}
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
                         hasPending
@@ -5202,7 +5331,85 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
                       </span>
                     )}
                   </div>
-                  <div className="text-sm font-black text-white/60">{fmtRM(nightTotal)}</div>
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {isEditingConsoleFee ? (
+                      <>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-2 text-[10px] font-black text-white/30">RM</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="50"
+                            value={consoleFeeEdits[ev.id] ?? ""}
+                            onChange={(e) => setConsoleFeeEdits((p) => ({ ...p, [ev.id]: e.target.value }))}
+                            placeholder="console fee"
+                            className="h-8 w-28 rounded-lg border border-cyan-300/30 bg-black/20 pl-8 pr-2 text-xs font-black text-white outline-none transition focus:border-cyan-300/70"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => saveConsoleFee(ev)}
+                          disabled={isSavingConsoleFee}
+                          className="flex h-8 items-center gap-1 rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/30 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isSavingConsoleFee ? <RefreshCcw className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          {!isSavingConsoleFee && "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingConsoleFeeId(null);
+                            setConsoleFeeEdits((p) => {
+                              const next = { ...p };
+                              delete next[ev.id];
+                              return next;
+                            });
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                          title="Cancel console fee edit"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-black text-white/60">{fmtRM(nightTotal)}</div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingConsoleFeeId(ev.id);
+                            setConsoleFeeEdits((p) => ({ ...p, [ev.id]: hasConsoleFee ? String(ev.consoleFeeAmount) : String(perDjTotal || "") }));
+                          }}
+                          className="flex h-8 items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 text-[10px] font-black text-white/55 hover:bg-white/10 hover:text-white"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          {hasConsoleFee ? "Edit console" : "Console fee"}
+                        </button>
+                        {hasConsoleFee ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => saveConsoleFee(ev, null)}
+                              disabled={isSavingConsoleFee}
+                              className="h-8 rounded-lg border border-white/10 bg-white/5 px-2 text-[10px] font-black text-white/45 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Per DJ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => cycleStatus(`console:${ev.id}`, consoleStatus)}
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 ${djPayStatusClass(consoleStatus)}`}
+                              title={`${djPayStatusLabel(consoleStatus)} — click to cycle`}
+                            >
+                              {djPayStatusIcon(consoleStatus)}
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    )}
+                    {consoleMsg === "saved" && <span className="text-[10px] font-black text-emerald-400">Saved</span>}
+                    {consoleMsg === "error" && <span className="text-[10px] font-black text-rose-400">Error</span>}
+                  </div>
                 </div>
 
                 {/* DJ rows */}
@@ -5240,7 +5447,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
 
                         {/* Fee input */}
                         <div className="col-span-2 flex flex-wrap items-center gap-1.5 sm:col-span-1 sm:justify-end">
-                          {isEditingFee ? (
+                          {hasConsoleFee ? (
+                            <span className="rounded-lg border border-cyan-300/20 bg-cyan-400/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-100">
+                              Covered by console
+                            </span>
+                          ) : isEditingFee ? (
                             <>
                               <div className="relative flex items-center">
                                 <span className="absolute left-2 text-[10px] font-black text-white/30">RM</span>
@@ -5347,13 +5558,17 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
                         </div>
 
                         {/* Status cycle button */}
-                        <button
-                          onClick={() => cycleStatus(slot.assignmentId, payStatus)}
-                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 sm:h-7 sm:w-7 ${djPayStatusClass(payStatus)}`}
-                          title={`${djPayStatusLabel(payStatus)} — click to cycle`}
-                        >
-                          {djPayStatusIcon(payStatus)}
-                        </button>
+                        {hasConsoleFee ? (
+                          <div className="h-8 w-8 shrink-0" />
+                        ) : (
+                          <button
+                            onClick={() => cycleStatus(slot.assignmentId, payStatus)}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 sm:h-7 sm:w-7 ${djPayStatusClass(payStatus)}`}
+                            title={`${djPayStatusLabel(payStatus)} — click to cycle`}
+                          >
+                            {djPayStatusIcon(payStatus)}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -5883,7 +6098,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         genre_profile: event.genre,
         stage: event.stage,
         status: event.status,
-        notes: setDashboardNotes(event.notes, event.ic, event.mentionedUserIds),
+        notes: setDashboardNotes(event.notes, event.ic, event.mentionedUserIds, event.consoleFeeAmount),
       };
 
       const savedEvent = isSupabaseUuid(event.id)
@@ -5923,15 +6138,18 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           throw savedSlot.error;
         }
 
-        const djId = await findOrCreateDj(slot.dj);
-        const savedAssignment = await supabase.from("event_assignments").insert({
-          event_slot_id: savedSlot.data.id,
-          dj_id: djId,
-          assignment_status: event.status === "Confirmed" ? "Confirmed" : "Pending",
-          notes: djId ? null : slot.dj,
-        });
+        const lineup = parseDjLineup(slot.dj);
+        for (const participantName of lineup.participants) {
+          const djId = await findOrCreateDj(participantName);
+          const savedAssignment = await supabase.from("event_assignments").insert({
+            event_slot_id: savedSlot.data.id,
+            dj_id: djId,
+            assignment_status: event.status === "Confirmed" ? "Confirmed" : "Pending",
+            notes: lineup.participants.length > 1 || !djId ? lineup.displayName || slot.dj : null,
+          });
 
-        if (savedAssignment.error) throw savedAssignment.error;
+          if (savedAssignment.error) throw savedAssignment.error;
+        }
       }
     },
     [findOrCreateDj],
@@ -6124,9 +6342,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     for (const event of events) {
       if (event.date < todayISO || event.status !== "Confirmed") continue;
       for (const slot of event.slots || []) {
-        if (!slot.assignmentId || String(slot.linkedUserId || "") !== currentUserId) continue;
-        if (slot.assignmentStatus === "Accepted" || slot.assignmentStatus === "Rejected") continue;
-        rows.push({ event, slot });
+        for (const assignment of slot.assignments || []) {
+          if (!assignment.assignmentId || String(assignment.linkedUserId || "") !== currentUserId) continue;
+          if (assignment.assignmentStatus === "Accepted" || assignment.assignmentStatus === "Rejected") continue;
+          rows.push({ event, slot, assignment });
+        }
       }
     }
     return rows.sort((a, b) => {
@@ -6411,8 +6631,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [navigateView, todayISO]);
 
   const respondToBookingRequest = useCallback(
-    async (event, slot, nextStatus) => {
-      const assignmentId = slot?.assignmentId ? String(slot.assignmentId) : "";
+    async (event, slot, assignment, nextStatus) => {
+      const assignmentId = assignment?.assignmentId ? String(assignment.assignmentId) : "";
       if (!assignmentId) return;
       if (!isSupabaseConfigured) {
         showToast("Supabase is not configured.", "error");
@@ -6426,7 +6646,23 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             ? {
                 ...item,
                 slots: item.slots.map((itemSlot) =>
-                  String(itemSlot.assignmentId || "") === assignmentId ? { ...itemSlot, assignmentStatus: nextStatus } : itemSlot,
+                  itemSlot.id === slot.id
+                    ? {
+                        ...itemSlot,
+                        assignments: (itemSlot.assignments || []).map((itemAssignment) =>
+                          String(itemAssignment.assignmentId || "") === assignmentId
+                            ? { ...itemAssignment, assignmentStatus: nextStatus }
+                            : itemAssignment,
+                        ),
+                        assignmentStatus: aggregateAssignmentStatus(
+                          (itemSlot.assignments || []).map((itemAssignment) =>
+                            String(itemAssignment.assignmentId || "") === assignmentId
+                              ? { ...itemAssignment, assignmentStatus: nextStatus }
+                              : itemAssignment,
+                          ),
+                        ),
+                      }
+                    : itemSlot,
                 ),
               }
             : item,
@@ -6441,8 +6677,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           action: nextStatus === "Accepted" ? "dj_booking_accepted" : "dj_booking_rejected",
           entityType: "event_assignment",
           entityId: assignmentId,
-          message: `${nextStatus} · ${slot.dj} · ${event.name} · ${dayLabelFromISO(event.date)}`,
-          meta: { assignmentId, eventId: event.id, djName: slot.dj, date: event.date, status: nextStatus },
+          message: `${nextStatus} · ${assignment.dj} · ${event.name} · ${dayLabelFromISO(event.date)}`,
+          meta: { assignmentId, eventId: event.id, djName: assignment.dj, date: event.date, status: nextStatus },
         });
         await loadEvents();
       } catch (error) {
@@ -6624,7 +6860,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           if (!existing || !isSupabaseUuid(eventId)) return;
           setSyncError("");
           setSyncStatus("Saving PIC...");
-          const { error } = await supabase.from("events").update({ notes: setDashboardNotes(existing.notes, ic, existing.mentionedUserIds) }).eq("id", eventId);
+          const { error } = await supabase.from("events").update({ notes: setDashboardNotes(existing.notes, ic, existing.mentionedUserIds, existing.consoleFeeAmount) }).eq("id", eventId);
           if (error) throw error;
           setSyncStatus("PIC saved to Supabase");
           showToast("PIC saved to database");
@@ -6669,7 +6905,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           setSyncStatus("Saving status...");
           const { error } = await supabase
             .from("events")
-            .update({ status, notes: setDashboardNotes(updatedEvent.notes, updatedEvent.ic, updatedEvent.mentionedUserIds) })
+            .update({ status, notes: setDashboardNotes(updatedEvent.notes, updatedEvent.ic, updatedEvent.mentionedUserIds, updatedEvent.consoleFeeAmount) })
             .eq("id", event.id);
           if (error) {
             const message = error.message || "";
@@ -6680,11 +6916,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           }
           if (status === "Confirmed") {
             const linkedAssignmentIds = (event.slots || [])
-              .filter((slot) => slot.assignmentId && slot.linkedUserId)
-              .map((slot) => String(slot.assignmentId));
+              .flatMap((slot) => slot.assignments || [])
+              .filter((assignment) => assignment.assignmentId && assignment.linkedUserId)
+              .map((assignment) => String(assignment.assignmentId));
             const unlinkedAssignmentIds = (event.slots || [])
-              .filter((slot) => slot.assignmentId && !slot.linkedUserId)
-              .map((slot) => String(slot.assignmentId));
+              .flatMap((slot) => slot.assignments || [])
+              .filter((assignment) => assignment.assignmentId && !assignment.linkedUserId)
+              .map((assignment) => String(assignment.assignmentId));
 
             if (linkedAssignmentIds.length) {
               const assignmentUpdate = await supabase
@@ -6702,7 +6940,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             }
           }
           setSyncStatus("Status saved to Supabase");
-          if (status === "Confirmed" && event.slots.some((slot) => slot.linkedUserId)) {
+          if (status === "Confirmed" && event.slots.some((slot) => (slot.assignments || []).some((assignment) => assignment.linkedUserId))) {
             showToast("Night confirmed. Linked DJs were notified.");
           } else {
             showToast(status === "Confirmed" ? "Night confirmed" : "Status saved");
@@ -7252,18 +7490,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               {activeNotificationsTab === "bookings" ? (
                 bookingRequestCount ? (
                   <div className="max-h-[60svh] overflow-auto p-2">
-                    {bookingRequests.map(({ event, slot }) => (
+                    {bookingRequests.map(({ event, slot, assignment }) => (
                       <div
-                        key={`${event.id}-${slot.assignmentId}`}
+                        key={`${event.id}-${assignment.assignmentId}`}
                         className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="text-xs font-black text-emerald-100">{dayLabelFromISO(event.date)}</div>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${assignmentStatusClass(slot.assignmentStatus)}`}>
-                            {assignmentStatusLabel(slot.assignmentStatus)}
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${assignmentStatusClass(assignment.assignmentStatus)}`}>
+                            {assignmentStatusLabel(assignment.assignmentStatus)}
                           </span>
                         </div>
                         <div className="mt-1 text-sm font-black text-white">{event.name}</div>
+                        <div className="mt-0.5 text-xs font-black text-emerald-100">{assignment.dj}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/50">
                           <span>{slot.role}</span>
                           {slot.start && slot.end ? <span>{formatTimeRange(slot.start, slot.end, timeFormat)}</span> : null}
@@ -7272,14 +7511,14 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                         <div className="mt-3 grid grid-cols-2 gap-2">
                           <button
                             type="button"
-                            onClick={() => respondToBookingRequest(event, slot, "Accepted")}
+                            onClick={() => respondToBookingRequest(event, slot, assignment, "Accepted")}
                             className="rounded-xl bg-emerald-400 px-3 py-2 text-xs font-black text-black hover:bg-emerald-300"
                           >
                             Accept
                           </button>
                           <button
                             type="button"
-                            onClick={() => respondToBookingRequest(event, slot, "Rejected")}
+                            onClick={() => respondToBookingRequest(event, slot, assignment, "Rejected")}
                             className="rounded-xl border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-xs font-black text-rose-100 hover:bg-rose-400 hover:text-black"
                           >
                             Reject
