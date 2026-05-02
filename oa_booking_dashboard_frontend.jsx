@@ -705,11 +705,51 @@ const supabaseEventSelect = `
       notes,
       djs (
         id,
+        name,
+        linked_user_id
+      )
+    )
+  )
+`;
+
+const supabaseEventSelectLegacy = `
+  id,
+  event_name,
+  event_date,
+  day_name,
+  event_type,
+  genre_profile,
+  stage,
+  status,
+  notes,
+  event_slots (
+    id,
+    slot_order,
+    start_time,
+    end_time,
+    role,
+    expected_energy,
+    event_assignments (
+      id,
+      assignment_status,
+      fee,
+      notes,
+      djs (
+        id,
         name
       )
     )
   )
 `;
+
+async function runEventSelect(buildQuery) {
+  let result = await buildQuery(supabaseEventSelect);
+  const message = String(result.error?.message || "").toLowerCase();
+  if (result.error && message.includes("linked_user_id")) {
+    result = await buildQuery(supabaseEventSelectLegacy);
+  }
+  return result;
+}
 
 function timeForInput(time) {
   return String(time || "00:00").slice(0, 5);
@@ -1012,6 +1052,7 @@ function mapDjProfile(row) {
     stageName: row.stage_name || "",
     realName: row.real_name || "",
     email: row.email || "",
+    linkedUserId: row.linked_user_id || "",
     phone: row.phone || "",
     instagramHandle: row.instagram_handle || "",
     soundcloudUrl: row.soundcloud_url || "",
@@ -1097,6 +1138,19 @@ function formatDjFee(fee) {
   return `${amount} · ${formatFeeType(fee.feeType)}`;
 }
 
+function assignmentStatusLabel(status) {
+  if (status === "Accepted") return "Accepted";
+  if (status === "Rejected") return "Rejected";
+  if (status === "Confirmed") return "Auto Confirmed";
+  return "Awaiting DJ";
+}
+
+function assignmentStatusClass(status) {
+  if (status === "Accepted" || status === "Confirmed") return "border-emerald-300/30 bg-emerald-400/10 text-emerald-100";
+  if (status === "Rejected") return "border-rose-300/30 bg-rose-500/10 text-rose-100";
+  return "border-yellow-300/30 bg-yellow-400/10 text-yellow-100";
+}
+
 function mapSupabaseEvent(row) {
   const date = row.event_date;
   const dateObj = isoToDate(date);
@@ -1113,6 +1167,8 @@ function mapSupabaseEvent(row) {
             id: String(slot.id),
             assignmentId: assignment?.id ? String(assignment.id) : null,
             djId: assignment?.djs?.id ? String(assignment.djs.id) : null,
+            linkedUserId: assignment?.djs?.linked_user_id ? String(assignment.djs.linked_user_id) : "",
+            assignmentStatus: assignment?.assignment_status || "Pending",
             dj,
             role,
             start: needsTime && slot.start_time ? timeForInput(slot.start_time) : "",
@@ -2347,6 +2403,11 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                           {formatTimeRange(slot.start, slot.end, timeFormat)}
                         </span>
                       ) : null}
+                      {slot.linkedUserId || slot.assignmentStatus ? (
+                        <span className={`w-fit rounded-md border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] ${assignmentStatusClass(slot.assignmentStatus)}`}>
+                          {assignmentStatusLabel(slot.assignmentStatus)}
+                        </span>
+                      ) : null}
                     </span>
                   ))
                 ) : (
@@ -3303,7 +3364,7 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
   );
 }
 
-function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, onRefreshProfiles, onLogActivity }) {
+function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUsers = [], onToast, onRefreshProfiles, onLogActivity }) {
   const [query, setQuery] = useState("");
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
@@ -3381,6 +3442,7 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
     country: "",
     status: "Active",
     notes: "",
+    linkedUserId: "",
     genresText: "",
     standardFee: "",
   });
@@ -3403,6 +3465,7 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
       country: selectedProfile.country || "",
       status: selectedProfile.status || "Active",
       notes: selectedProfile.notes || "",
+      linkedUserId: selectedProfile.linkedUserId || "",
       genresText,
       standardFee,
     });
@@ -3440,6 +3503,7 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
       country: String(editForm.country || "").trim() || null,
       status: String(editForm.status || "Active").trim() || "Active",
       notes: String(editForm.notes || "").trim() || null,
+      linked_user_id: String(editForm.linkedUserId || "").trim() || null,
     };
 
     const genreTags = splitGenreTags(editForm.genresText).map((t) => t.trim()).filter(Boolean);
@@ -3653,8 +3717,9 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
                 <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Profile</div>
                 <div className="mt-3 space-y-3 text-sm">
                   {[
-                    ["Email", selectedProfile.email],
-                    ["Phone", selectedProfile.phone],
+                  ["Email", selectedProfile.email],
+                  ["Linked User", mentionUsers.find((user) => user.id === selectedProfile.linkedUserId)?.email || selectedProfile.linkedUserId],
+                  ["Phone", selectedProfile.phone],
                     ["Instagram", selectedProfile.instagramHandle],
                     ["City", [selectedProfile.homeCity, selectedProfile.country].filter(Boolean).join(", ")],
                   ].map(([label, value]) => (
@@ -3798,6 +3863,22 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, onToast, on
               </div>
 
               <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Linked Dashboard User</span>
+                <select
+                  value={editForm.linkedUserId}
+                  onChange={(e) => setEditForm((p) => ({ ...p, linkedUserId: e.target.value }))}
+                  className="mt-1 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm font-black text-white outline-none focus:border-purple-300/60"
+                >
+                  <option value="">Not linked</option>
+                  {mentionUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {displayNameForUser(user) || user.email} {user.role ? `(${user.role})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
                 <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Genres</span>
                 <input
                   value={editForm.genresText}
@@ -3934,13 +4015,15 @@ function LoginScreen() {
     if (!isSupabaseConfigured) return;
     setPublicLoading(true);
 
-    const { data, error: loadError } = await supabase
-      .from("events")
-      .select(supabaseEventSelect)
-      .gte("event_date", weekStartISO)
-      .lte("event_date", weekEndISO)
-      .order("event_date", { ascending: true })
-      .order("slot_order", { foreignTable: "event_slots", ascending: true });
+    const { data, error: loadError } = await runEventSelect((select) =>
+      supabase
+        .from("events")
+        .select(select)
+        .gte("event_date", weekStartISO)
+        .lte("event_date", weekEndISO)
+        .order("event_date", { ascending: true })
+        .order("slot_order", { foreignTable: "event_slots", ascending: true })
+    );
 
     setPublicLoading(false);
     if (loadError || !Array.isArray(data)) {
@@ -5690,11 +5773,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (!isSupabaseConfigured) return;
 
     const { data, error } = await withPending(() =>
-      supabase
-        .from("events")
-        .select(supabaseEventSelect)
-        .order("event_date", { ascending: true })
-        .order("slot_order", { foreignTable: "event_slots", ascending: true })
+      runEventSelect((select) =>
+        supabase
+          .from("events")
+          .select(select)
+          .order("event_date", { ascending: true })
+          .order("slot_order", { foreignTable: "event_slots", ascending: true })
+      )
     );
 
     if (error) {
@@ -5998,6 +6083,25 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [events, todayISO]);
 
   const pendingUpcomingCount = pendingUpcomingEvents.length;
+  const bookingRequests = useMemo(() => {
+    const currentUserId = currentUser?.id ? String(currentUser.id) : "";
+    if (!currentUserId) return [];
+    const rows = [];
+    for (const event of events) {
+      if (event.date < todayISO || event.status !== "Confirmed") continue;
+      for (const slot of event.slots || []) {
+        if (!slot.assignmentId || String(slot.linkedUserId || "") !== currentUserId) continue;
+        if (slot.assignmentStatus !== "Pending") continue;
+        rows.push({ event, slot });
+      }
+    }
+    return rows.sort((a, b) => {
+      const dateCompare = a.event.date.localeCompare(b.event.date);
+      if (dateCompare !== 0) return dateCompare;
+      return (a.event.name || "").localeCompare(b.event.name || "");
+    });
+  }, [currentUser?.id, events, todayISO]);
+  const bookingRequestCount = bookingRequests.length;
   const mentionedEvents = useMemo(() => {
     const currentUserId = currentUser?.id;
     return events
@@ -6025,7 +6129,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   }, [comments, currentMentionUser, currentUser?.id, eventsById, todayISO]);
   const mentionCount = mentionedEvents.length + mentionedComments.length;
-  const notificationBadgeCount = mentionCount + (canEdit ? pendingUpcomingCount : 0);
+  const notificationBadgeCount = mentionCount + bookingRequestCount + (canEdit ? pendingUpcomingCount : 0);
   const primaryNavCount =
     2 +
     (canAccessDjs ? 1 : 0) +
@@ -6272,6 +6376,49 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [navigateView, todayISO]);
 
+  const respondToBookingRequest = useCallback(
+    async (event, slot, nextStatus) => {
+      const assignmentId = slot?.assignmentId ? String(slot.assignmentId) : "";
+      if (!assignmentId) return;
+      if (!isSupabaseConfigured) {
+        showToast("Supabase is not configured.", "error");
+        return;
+      }
+
+      const previousEvents = events;
+      setEvents((prev) =>
+        prev.map((item) =>
+          item.id === event.id
+            ? {
+                ...item,
+                slots: item.slots.map((itemSlot) =>
+                  String(itemSlot.assignmentId || "") === assignmentId ? { ...itemSlot, assignmentStatus: nextStatus } : itemSlot,
+                ),
+              }
+            : item,
+        ),
+      );
+
+      try {
+        const { error } = await supabase.from("event_assignments").update({ assignment_status: nextStatus }).eq("id", assignmentId);
+        if (error) throw error;
+        showToast(nextStatus === "Accepted" ? "Booking accepted" : "Booking rejected");
+        logActivity({
+          action: nextStatus === "Accepted" ? "dj_booking_accepted" : "dj_booking_rejected",
+          entityType: "event_assignment",
+          entityId: assignmentId,
+          message: `${nextStatus} · ${slot.dj} · ${event.name} · ${dayLabelFromISO(event.date)}`,
+          meta: { assignmentId, eventId: event.id, djName: slot.dj, date: event.date, status: nextStatus },
+        });
+        await loadEvents();
+      } catch (error) {
+        setEvents(previousEvents);
+        showToast(error?.message || "Could not update booking", "error");
+      }
+    },
+    [events, loadEvents, logActivity, showToast],
+  );
+
   const jumpWeek = (direction) => {
     if (view !== "List") return;
     if (!weekKeys.length) return;
@@ -6497,8 +6644,35 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             }
             throw error;
           }
+          if (status === "Confirmed") {
+            const linkedAssignmentIds = (event.slots || [])
+              .filter((slot) => slot.assignmentId && slot.linkedUserId)
+              .map((slot) => String(slot.assignmentId));
+            const unlinkedAssignmentIds = (event.slots || [])
+              .filter((slot) => slot.assignmentId && !slot.linkedUserId)
+              .map((slot) => String(slot.assignmentId));
+
+            if (linkedAssignmentIds.length) {
+              const assignmentUpdate = await supabase
+                .from("event_assignments")
+                .update({ assignment_status: "Pending" })
+                .in("id", linkedAssignmentIds);
+              if (assignmentUpdate.error) throw assignmentUpdate.error;
+            }
+            if (unlinkedAssignmentIds.length) {
+              const assignmentUpdate = await supabase
+                .from("event_assignments")
+                .update({ assignment_status: "Confirmed" })
+                .in("id", unlinkedAssignmentIds);
+              if (assignmentUpdate.error) throw assignmentUpdate.error;
+            }
+          }
           setSyncStatus("Status saved to Supabase");
-          showToast(status === "Confirmed" ? "Night confirmed" : "Status saved");
+          if (status === "Confirmed" && event.slots.some((slot) => slot.linkedUserId)) {
+            showToast("Night confirmed. Linked DJs were notified.");
+          } else {
+            showToast(status === "Confirmed" ? "Night confirmed" : "Status saved");
+          }
           logActivity({
             action: "event_status_updated",
             entityType: "event",
@@ -6907,7 +7081,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 ref={notificationsButtonRef}
                 onClick={() => {
                   updateNotificationsPopoverPosition();
-                  setActiveNotificationsTab(mentionCount || !canEdit ? "mentions" : "pending");
+                  setActiveNotificationsTab(bookingRequestCount ? "bookings" : mentionCount || !canEdit ? "mentions" : "pending");
                   setNotificationsOpen(true);
                 }}
                 className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-yellow-300/25 bg-yellow-400/10 text-xs font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
@@ -7004,7 +7178,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <div className="min-w-0">
                   <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Notification Center</div>
                   <div className="mt-0.5 truncate text-sm font-black text-white/85">
-                    {canEdit ? `Mentions · ${mentionCount} for you · ${pendingUpcomingCount} pending` : `Staff Mentions · ${mentionCount} for you`}
+                    {canEdit
+                      ? `Bookings · ${bookingRequestCount} · Mentions · ${mentionCount} · ${pendingUpcomingCount} pending`
+                      : `Bookings · ${bookingRequestCount} · Mentions · ${mentionCount}`}
                   </div>
                 </div>
                 <button
@@ -7016,7 +7192,13 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 </button>
               </div>
 
-              <div className={`grid gap-1 border-b border-white/10 bg-white/[0.02] p-2 ${canEdit ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className={`grid gap-1 border-b border-white/10 bg-white/[0.02] p-2 ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
+                <button
+                  onClick={() => setActiveNotificationsTab("bookings")}
+                  className={`rounded-xl px-3 py-2 text-xs font-black ${activeNotificationsTab === "bookings" ? "bg-emerald-400 text-black" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
+                >
+                  Bookings {bookingRequestCount ? <span className={activeNotificationsTab === "bookings" ? "text-black/50" : "text-white/25"}>{bookingRequestCount}</span> : null}
+                </button>
                 <button
                   onClick={() => setActiveNotificationsTab("mentions")}
                   className={`rounded-xl px-3 py-2 text-xs font-black ${activeNotificationsTab === "mentions" ? "bg-cyan-400 text-black" : "text-white/45 hover:bg-white/5 hover:text-white"}`}
@@ -7033,7 +7215,49 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 ) : null}
               </div>
 
-              {activeNotificationsTab === "mentions" ? (
+              {activeNotificationsTab === "bookings" ? (
+                bookingRequestCount ? (
+                  <div className="max-h-[60svh] overflow-auto p-2">
+                    {bookingRequests.map(({ event, slot }) => (
+                      <div
+                        key={`${event.id}-${slot.assignmentId}`}
+                        className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-black text-emerald-100">{dayLabelFromISO(event.date)}</div>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${assignmentStatusClass(slot.assignmentStatus)}`}>
+                            {assignmentStatusLabel(slot.assignmentStatus)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-sm font-black text-white">{event.name}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/50">
+                          <span>{slot.role}</span>
+                          {slot.start && slot.end ? <span>{formatTimeRange(slot.start, slot.end, timeFormat)}</span> : null}
+                          <span>{event.stage}</span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => respondToBookingRequest(event, slot, "Accepted")}
+                            className="rounded-xl bg-emerald-400 px-3 py-2 text-xs font-black text-black hover:bg-emerald-300"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => respondToBookingRequest(event, slot, "Rejected")}
+                            className="rounded-xl border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-xs font-black text-rose-100 hover:bg-rose-400 hover:text-black"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm font-bold text-white/45">No booking requests for you.</div>
+                )
+              ) : activeNotificationsTab === "mentions" ? (
                 mentionCount ? (
                   <div className="max-h-[60svh] overflow-auto p-2">
                     {mentionedEvents.map((event) => (
@@ -7275,6 +7499,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               loading={djProfilesLoading}
               error={djProfilesError}
               canEdit={canEdit}
+              mentionUsers={mentionUsers}
               onToast={showToast}
               onRefreshProfiles={loadDjProfiles}
               onLogActivity={logActivity}

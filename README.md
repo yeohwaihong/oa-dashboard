@@ -9,4 +9,6 @@ Run `supabase/seed_dj_profiles_2025_from_pdf.sql` after that to seed DJ names an
 
 Run `supabase/seed_dj_fee_estimates_from_finance_sheets.sql` to add rough DJ fee estimates inferred from the finance sheets.
 
+Run `supabase/dj_user_booking_approvals.sql` to link DJ profiles to dashboard users and let linked DJs accept or reject confirmed-night booking requests.
+
 For local anonymous writes, run `supabase/dev_dashboard_policies.sql` after the DJ database SQL. For realtime updates, rerun `supabase/realtime_setup.sql`.

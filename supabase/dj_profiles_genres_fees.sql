@@ -16,6 +16,7 @@ alter table public.djs
 add column if not exists stage_name text,
 add column if not exists real_name text,
 add column if not exists email text,
+add column if not exists linked_user_id uuid references auth.users(id) on delete set null,
 add column if not exists phone text,
 add column if not exists instagram_handle text,
 add column if not exists soundcloud_url text,
@@ -36,6 +37,9 @@ check (status in ('Active', 'Inactive', 'Do Not Book'));
 
 create index if not exists djs_name_lower_idx
 on public.djs (lower(name));
+
+create index if not exists djs_linked_user_id_idx
+on public.djs (linked_user_id);
 
 create table if not exists public.genres (
   id uuid primary key default gen_random_uuid(),
@@ -154,7 +158,8 @@ select
     '[]'::jsonb
   ) as active_fees,
   d.created_at,
-  d.updated_at
+  d.updated_at,
+  d.linked_user_id
 from public.djs d
 left join public.dj_genres dg on dg.dj_id = d.id
 left join public.genres g on g.id = dg.genre_id
