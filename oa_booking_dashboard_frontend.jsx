@@ -35,6 +35,7 @@ import {
   Receipt,
   CircleDot,
   Edit2,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -3074,6 +3075,10 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
   const [activeScenarioId, setActiveScenarioId] = useState(null);
   const [artistFx, setArtistFx] = useState({ currency: inputs.artistCostCurrency || "USD", rateToMyr: 0, fetchedAt: 0, loading: false, error: "" });
+  const [ticketApplied, setTicketApplied] = useState(false);
+
+  // Reset applied state whenever a new ticket event is linked
+  useEffect(() => { setTicketApplied(false); }, [linkedTickets?.ticketEventId]);
 
   const migrateFinanceInputs = useCallback((raw) => {
     const base = { ...financeDefaultInputs, ...(raw || {}) };
@@ -3513,19 +3518,27 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
                       Total: RM {linkedTickets.total.toLocaleString("en-MY", { maximumFractionDigits: 0 })} · {linkedTickets.tiers.length} tier{linkedTickets.tiers.length !== 1 ? "s" : ""}
                     </div>
                   </div>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => {
-                        const doorTiers = linkedTickets.tiers.filter((t) => (t.name||"").toLowerCase().includes("door"));
-                        const onlineTiers = linkedTickets.tiers.filter((t) => !(t.name||"").toLowerCase().includes("door"));
-                        const doorRev = doorTiers.reduce((s,t) => s + (t.sold||0)*(t.price||0), 0);
-                        const onlineRev = onlineTiers.reduce((s,t) => s + (t.sold||0)*(t.price||0), 0);
-                        setInputs((prev) => ({ ...prev, onlineTicketSales: onlineRev, doorSales: doorRev }));
-                      }}
-                      className="rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2.5 py-1.5 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/30"
-                    >
-                      Apply
-                    </button>
+                  <div className="flex items-center gap-1.5">
+                    {ticketApplied ? (
+                      <div className="flex items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1.5">
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-[10px] font-black text-emerald-300">Applied</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const doorTiers = linkedTickets.tiers.filter((t) => (t.name||"").toLowerCase().includes("door"));
+                          const onlineTiers = linkedTickets.tiers.filter((t) => !(t.name||"").toLowerCase().includes("door"));
+                          const doorRev = doorTiers.reduce((s,t) => s + (t.sold||0)*(t.price||0), 0);
+                          const onlineRev = onlineTiers.reduce((s,t) => s + (t.sold||0)*(t.price||0), 0);
+                          setInputs((prev) => ({ ...prev, onlineTicketSales: onlineRev, doorSales: doorRev }));
+                          setTicketApplied(true);
+                        }}
+                        className="rounded-lg border border-cyan-300/40 bg-cyan-400/20 px-2.5 py-1.5 text-[10px] font-black text-cyan-100 hover:bg-cyan-400/30"
+                      >
+                        Apply to P&L
+                      </button>
+                    )}
                     <button
                       onClick={onUnlinkTickets}
                       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-black text-white/40 hover:text-white"
