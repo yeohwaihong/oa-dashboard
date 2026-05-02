@@ -267,6 +267,7 @@ function eventMatchesStatusFilter(event, activeFilter) {
 
 const financeDefaultInputs = {
   eventName: "New Finance Event",
+  eventDate: "",
   includeSuggestedFixedCosts: false,
   hasPartnerSplit: false,
   artistCostCurrency: "EUR",
@@ -3411,6 +3412,11 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/60">Financial Math</div>
             <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{inputs.eventName}</h1>
+            {inputs.eventDate && (
+              <div className="mt-0.5 text-xs font-bold text-white/40">
+                {new Date(inputs.eventDate + "T00:00:00").toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}
+              </div>
+            )}
             {activeScenarioId ? <div className="mt-1 text-sm font-bold text-white/35">Saved finance event loaded. Edit inputs, then save to update it.</div> : null}
           </div>
           <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
@@ -3506,6 +3512,15 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
                 value={inputs.eventName}
                 onChange={(e) => setInput("eventName", e.target.value)}
                 className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+              />
+            </label>
+            <label>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Event Date</span>
+              <input
+                type="date"
+                value={inputs.eventDate || ""}
+                onChange={(e) => setInput("eventDate", e.target.value)}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60 [color-scheme:dark]"
               />
             </label>
             <div className="grid gap-2 sm:grid-cols-[1fr_1fr] lg:grid-cols-1">
@@ -3851,6 +3866,7 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
     + "@media print{body{padding:16px}.chip{background:#f9f9f9}}"
     + "</style></head><body>"
     + "<h1>" + (inputs.eventName || "Event P&L") + "</h1>"
+    + (inputs.eventDate ? "<div class=\"meta\" style=\"font-size:13px;font-weight:700;color:#444;margin-bottom:2px\">" + new Date(inputs.eventDate + "T00:00:00").toLocaleDateString("en-MY", {weekday:"long",day:"numeric",month:"long",year:"numeric"}) + "</div>" : "")
     + "<div class=\"meta\">Generated " + new Date().toLocaleDateString("en-MY", {weekday:"long",day:"numeric",month:"long",year:"numeric"})
       + (hasPartnerSplit ? " · Partner: " + partnerName : "") + "</div>"
     + "<div class=\"chips\">"
