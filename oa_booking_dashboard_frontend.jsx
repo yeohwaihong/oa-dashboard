@@ -3069,7 +3069,7 @@ function saveTicketEvents(events) {
 function newTierId() { return `t_${Date.now()}_${Math.random().toString(36).slice(2,6)}`; }
 function newEventId() { return `ev_${Date.now()}_${Math.random().toString(36).slice(2,6)}`; }
 
-function FinanceMathPage({ linkedTickets, onUnlinkTickets }) {
+function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) {
   const [inputs, setInputs] = useState(financeDefaultInputs);
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
   const [activeScenarioId, setActiveScenarioId] = useState(null);
@@ -3123,6 +3123,7 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets }) {
   const persistScenarios = (next) => {
     setSavedScenarios(next);
     writeSavedFinanceScenarios(next);
+    if (onScenariosChange) onScenariosChange(next);
   };
 
   const setInput = (key, value) => {
@@ -3402,7 +3403,7 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets }) {
             <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{inputs.eventName}</h1>
             {activeScenarioId ? <div className="mt-1 text-sm font-bold text-white/35">Saved finance event loaded. Edit inputs, then save to update it.</div> : null}
           </div>
-          <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+          <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <Button
               onClick={saveScenario}
               className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-400 px-2 text-[11px] font-black text-black hover:bg-purple-300 sm:gap-2 sm:px-4 sm:text-xs"
@@ -3423,6 +3424,13 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets }) {
             >
               <RefreshCcw className="h-4 w-4" />
               New
+            </Button>
+            <Button
+              onClick={() => exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency })}
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/55 hover:bg-white/10 hover:text-white sm:gap-2 sm:px-4 sm:text-xs"
+            >
+              <Receipt className="h-4 w-4" />
+              PDF
             </Button>
           </div>
         </div>
@@ -3745,24 +3753,90 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
   );
 }
 
+// ─── PDF export helper ───────────────────────────────────────────────────────
+function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency }) {
+  const rm = (n) => `RM ${Number(n||0).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const pct = (n) => `${(Number(n||0)*100).toFixed(1)}%`;
+  const partnerName = inputs.partnerName || "Partner";
+
+  const rowsHtml = (rows) => rows.map(([label, total, oa, partner]) => `
+    <tr>
+      <td>${label}</td>
+      <td class="num">${rm(total)}</td>
+      <td class="num oa">${rm(oa)}</td>
+      ${hasPartnerSplit ? `<td class="num partner">${rm(partner)}</td>` : ""}
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<title>P&L — ${inputs.eventName || "Event"}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px;max-width:900px;margin:auto}
+  h1{font-size:22px;font-weight:900;margin-bottom:4px}
+  .meta{color:#555;font-size:11px;margin-bottom:24px}
+  .chips{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+  .chip{background:#f4f4f8;border-radius:8px;padding:10px 16px}
+  .chip .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700}
+  .chip .val{font-size:16px;font-weight:900;margin-top:2px}
+  .green{color:#16a34a} .red{color:#dc2626} .blue{color:#2563eb} .purple{color:#7c3aed}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;padding:6px 0;border-bottom:2px solid #e5e5e5}
+  th.num{text-align:right}
+  td{padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.oa{color:#7c3aed;font-weight:700}
+  td.partner{color:#0891b2;font-weight:700}
+  tfoot td{font-weight:900;font-size:13px;padding-top:8px;border-top:2px solid #111;border-bottom:none}
+  .section-title{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.18em;color:#888;margin:20px 0 8px}
+  .footer{margin-top:32px;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:12px}
+  @media print{body{padding:16px}.chip{background:#f9f9f9}}
+</style></head><body>
+<h1>${inputs.eventName || "Event P&L"}</h1>
+<div class="meta">Generated ${new Date().toLocaleDateString("en-MY", {weekday:"long",day:"numeric",month:"long",year:"numeric"})}${inputs.venueName ? " · " + inputs.venueName : ""}${hasPartnerSplit ? " · Partner: " + partnerName : ""}</div>
+<div class="chips">
+  <div class="chip"><div class="lbl">O&A Nett</div><div class="val ${oaNett>=0?"green":"red"}">${rm(oaNett)}</div></div>
+  <div class="chip"><div class="lbl">O&A ROI</div><div class="val ${oaRoi>=0?"green":"red"}">${pct(oaRoi)}</div></div>
+  ${hasPartnerSplit ? `<div class="chip"><div class="lbl">${partnerName} Nett</div><div class="val ${partnerNett>=0?"blue":"red"}">${rm(partnerNett)}</div></div><div class="chip"><div class="lbl">${partnerName} ROI</div><div class="val ${partnerRoi>=0?"blue":"red"}">${pct(partnerRoi)}</div></div>` : ""}
+</div>
+<div class="section-title">Income</div>
+<table><thead><tr><th>Item</th><th class="num">Total</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
+<tbody>${rowsHtml(incomeRows)}</tbody>
+<tfoot><tr><td>Total Income</td><td></td><td class="num oa">${rm(oaIncome)}</td>${hasPartnerSplit?`<td class="num partner">${rm(partnerIncome)}</td>`:""}</tr></tfoot></table>
+<div class="section-title">Costs</div>
+<table><thead><tr><th>Item</th><th class="num">Total</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
+<tbody>${rowsHtml(costRows)}</tbody>
+<tfoot><tr><td>Total Cost</td><td></td><td class="num oa">${rm(oaCost)}</td>${hasPartnerSplit?`<td class="num partner">${rm(partnerCost)}</td>`:""}</tr></tfoot></table>
+<div class="section-title">Summary</div>
+<table><thead><tr><th>Item</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
+<tbody>
+  <tr><td>Nett Profit</td><td class="num ${oaNett>=0?"green":"red"}">${rm(oaNett)}</td>${hasPartnerSplit?`<td class="num ${partnerNett>=0?"blue":"red"}">${rm(partnerNett)}</td>`:""}</tr>
+  <tr><td>ROI</td><td class="num ${oaRoi>=0?"green":"red"}">${pct(oaRoi)}</td>${hasPartnerSplit?`<td class="num ${partnerRoi>=0?"blue":"red"}">${pct(partnerRoi)}</td>`:""}</tr>
+</tbody></table>
+<div class="footer">O&A Dashboard · Financial Math · Confidential</div>
+<script>window.onload=()=>{ window.print(); }<\/script>
+</body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) { alert("Please allow popups to export PDF."); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 // ─── Ticket Sales Forecast Page ──────────────────────────────────────────────
-function TicketSalesPage({ onLinkToFinance }) {
+function TicketSalesPage({ linkedScenarioId, savedScenarios, onLinkEventToScenario }) {
   const [events, setEvents] = useState(loadTicketEvents);
-  const [monthCursor, setMonthCursor] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
   const [showTemplates, setShowTemplates] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [linkPickerId, setLinkPickerId] = useState(null); // ticket event id waiting for scenario pick
 
   const persist = (next) => { setEvents(next); saveTicketEvents(next); };
 
   const addEvent = (template) => {
     const id = newEventId();
     const now = new Date();
-    const dateStr = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth()+1).padStart(2,"0")}-01`;
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
     const tiers = (template.tiers || []).map((t) => ({ ...t, id: newTierId() }));
-    const ev = { id, event: "New Event", date: dateStr, capacity: 850, tiers };
+    const ev = { id, event: "New Event", date: dateStr, capacity: 850, tiers, linkedScenarioId: null };
     const next = [...events, ev].sort((a,b)=>a.date.localeCompare(b.date));
     persist(next);
     setEditingId(id);
@@ -3770,8 +3844,11 @@ function TicketSalesPage({ onLinkToFinance }) {
   };
 
   const updateEvent = (id, patch) => persist(events.map((e) => e.id === id ? { ...e, ...patch } : e));
-  const deleteEvent = (id) => { if (!window.confirm("Delete this event?")) return; persist(events.filter((e) => e.id !== id)); if (editingId === id) setEditingId(null); };
-
+  const deleteEvent = (id) => {
+    if (!window.confirm("Delete this event?")) return;
+    persist(events.filter((e) => e.id !== id));
+    if (editingId === id) setEditingId(null);
+  };
   const updateTier = (evId, tierId, patch) =>
     updateEvent(evId, { tiers: events.find((e)=>e.id===evId).tiers.map((t) => t.id===tierId ? {...t,...patch} : t) });
   const addTier = (evId) =>
@@ -3779,30 +3856,43 @@ function TicketSalesPage({ onLinkToFinance }) {
   const deleteTier = (evId, tierId) =>
     updateEvent(evId, { tiers: events.find((e)=>e.id===evId).tiers.filter((t) => t.id !== tierId) });
 
-  const fmtRM = (n) => n == null ? "—" : `RM ${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-  const monthLabel = (d) => d.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
-  const prevMonth = () => setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth()-1, 1));
-  const nextMonth = () => setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth()+1, 1));
-
-  const monthStart = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth()+1).padStart(2,"0")}-01`;
-  const monthEnd = (() => {
-    const last = new Date(monthCursor.getFullYear(), monthCursor.getMonth()+1, 0);
-    return `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,"0")}-${String(last.getDate()).padStart(2,"0")}`;
-  })();
-
-  const monthEvents = useMemo(
-    () => events.filter((e) => e.date >= monthStart && e.date <= monthEnd).sort((a,b)=>a.date.localeCompare(b.date)),
-    [events, monthStart, monthEnd]
-  );
-
-  const monthStats = useMemo(() => {
-    let ticketRev = 0, totalSold = 0, totalCapacity = 0;
-    for (const ev of monthEvents) {
-      for (const t of ev.tiers) { ticketRev += (t.sold||0)*(t.price||0); totalSold += (t.sold||0); }
-      totalCapacity += Number(ev.capacity)||0;
+  const linkToScenario = (ticketEvId, scenarioId) => {
+    updateEvent(ticketEvId, { linkedScenarioId: scenarioId });
+    const ticketEv = events.find((e) => e.id === ticketEvId);
+    if (onLinkEventToScenario && ticketEv) {
+      onLinkEventToScenario(scenarioId, { eventName: ticketEv.event, tiers: ticketEv.tiers, total: ticketEv.tiers.reduce((s,t)=>s+(t.sold||0)*(t.price||0),0), ticketEventId: ticketEvId });
     }
-    return { ticketRev, totalSold, totalCapacity };
-  }, [monthEvents]);
+    setLinkPickerId(null);
+  };
+  const unlinkScenario = (ticketEvId) => updateEvent(ticketEvId, { linkedScenarioId: null });
+
+  const fmtRM = (n) => n == null ? "—" : `RM ${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  // Group all events by month
+  const grouped = useMemo(() => {
+    const sorted = [...events].sort((a,b) => a.date.localeCompare(b.date));
+    const groups = [];
+    let curMonth = null, curGroup = null;
+    for (const ev of sorted) {
+      const mo = ev.date.slice(0,7); // "YYYY-MM"
+      if (mo !== curMonth) {
+        const dt = new Date(ev.date + "T00:00:00");
+        curMonth = mo;
+        curGroup = { month: dt.toLocaleDateString("en-MY", { month: "long", year: "numeric" }), events: [] };
+        groups.push(curGroup);
+      }
+      curGroup.events.push(ev);
+    }
+    return groups;
+  }, [events]);
+
+  const overallStats = useMemo(() => {
+    let ticketRev = 0, totalSold = 0;
+    for (const ev of events) {
+      for (const t of ev.tiers) { ticketRev += (t.sold||0)*(t.price||0); totalSold += (t.sold||0); }
+    }
+    return { ticketRev, totalSold, eventCount: events.length };
+  }, [events]);
 
   const dateLabel = (d) => {
     const dt = new Date(d + "T00:00:00");
@@ -3828,25 +3918,12 @@ function TicketSalesPage({ onLinkToFinance }) {
           <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Finance · Ticket Forecast</div>
           <h2 className="mt-0.5 text-xl font-black text-white">Ticket Sales</h2>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Month navigator */}
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/20 px-1 py-1">
-            <button onClick={prevMonth} className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="min-w-[130px] text-center text-xs font-black text-white">{monthLabel(monthCursor)}</span>
-            <button onClick={nextMonth} className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          {/* Add event */}
-          <button
-            onClick={() => setShowTemplates(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-purple-300/40 bg-purple-400/15 px-3 text-xs font-black text-purple-100 transition hover:bg-purple-400/25"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Event
-          </button>
-        </div>
+        <button
+          onClick={() => setShowTemplates(true)}
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-purple-300/40 bg-purple-400/15 px-3 text-xs font-black text-purple-100 transition hover:bg-purple-400/25"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add Event
+        </button>
       </div>
 
       {/* Template picker modal */}
@@ -3859,11 +3936,8 @@ function TicketSalesPage({ onLinkToFinance }) {
             </div>
             <div className="space-y-2">
               {TICKET_TEMPLATES.map((tmpl) => (
-                <button
-                  key={tmpl.id}
-                  onClick={() => addEvent(tmpl)}
-                  className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-purple-300/40 hover:bg-purple-400/10"
-                >
+                <button key={tmpl.id} onClick={() => addEvent(tmpl)}
+                  className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-purple-300/40 hover:bg-purple-400/10">
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-black text-white">{tmpl.label}</div>
                     <div className="mt-0.5 text-[10px] font-bold text-white/40">{tmpl.desc}</div>
@@ -3885,13 +3959,43 @@ function TicketSalesPage({ onLinkToFinance }) {
         </div>
       )}
 
-      {/* Month stats */}
-      {monthEvents.length > 0 && (
+      {/* Scenario link picker modal */}
+      {linkPickerId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setLinkPickerId(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#15141f] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-sm font-black text-white">Link to P&L Event</div>
+              <button onClick={() => setLinkPickerId(null)} className="text-white/30 hover:text-white"><X className="h-4 w-4" /></button>
+            </div>
+            {(!savedScenarios || savedScenarios.length === 0) ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/40 text-center">
+                No saved P&L events yet. Save a scenario in the P&L Calculator first.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedScenarios.map((sc) => (
+                  <button key={sc.id} onClick={() => linkToScenario(linkPickerId, sc.id)}
+                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-cyan-300/40 hover:bg-cyan-400/10">
+                    <div>
+                      <div className="text-xs font-black text-white">{sc.name}</div>
+                      <div className="mt-0.5 text-[10px] text-white/40">{new Date(sc.updatedAt||sc.createdAt).toLocaleDateString("en-MY",{day:"numeric",month:"short",year:"numeric"})}</div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-white/20" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Overall stats */}
+      {events.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: "Ticket Revenue", val: fmtRM(monthStats.ticketRev), color: "text-purple-200" },
-            { label: "Tickets Sold", val: monthStats.totalSold.toLocaleString(), color: "text-cyan-300" },
-            { label: "Capacity", val: monthStats.totalCapacity.toLocaleString(), color: "text-white/60" },
+            { label: "Events", val: overallStats.eventCount.toString(), color: "text-white" },
+            { label: "Ticket Revenue", val: fmtRM(overallStats.ticketRev), color: "text-purple-200" },
+            { label: "Tickets Sold", val: overallStats.totalSold.toLocaleString(), color: "text-cyan-300" },
           ].map(({ label, val, color }) => (
             <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{label}</div>
@@ -3901,194 +4005,175 @@ function TicketSalesPage({ onLinkToFinance }) {
         </div>
       )}
 
-      {/* Event cards */}
-      {monthEvents.length === 0 ? (
+      {/* All events grouped by month */}
+      {events.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.01] px-4 py-12 text-center">
-          <div className="text-sm font-black text-white/30">No events in {monthLabel(monthCursor)}</div>
+          <div className="text-sm font-black text-white/30">No ticket events yet</div>
           <button onClick={() => setShowTemplates(true)} className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-purple-300/30 bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200 hover:bg-purple-400/20">
             <Plus className="h-3.5 w-3.5" /> Add first event
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {monthEvents.map((ev) => {
-            const isEditing = editingId === ev.id;
-            const tierTotal = ev.tiers.reduce((s,t) => s + (t.sold||0)*(t.price||0), 0);
-            const totalSold = ev.tiers.reduce((s,t) => s + (t.sold||0), 0);
-            const cap = Number(ev.capacity)||0;
-            const occupancy = cap > 0 ? Math.round((totalSold/cap)*100) : 0;
-
-            return (
-              <div key={ev.id} className={`overflow-hidden rounded-2xl border bg-white/[0.02] transition ${isEditing ? "border-purple-300/30" : "border-white/10"}`}>
-                {/* Event header */}
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/10 bg-white/[0.02] px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          value={ev.event}
-                          onChange={(e) => updateEvent(ev.id, { event: e.target.value })}
-                          placeholder="Event name"
-                          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm font-black text-white outline-none focus:border-purple-300/50"
-                        />
-                        <input
-                          type="date"
-                          value={ev.date}
-                          onChange={(e) => updateEvent(ev.id, { date: e.target.value })}
-                          className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-black text-white outline-none focus:border-purple-300/50"
-                        />
-                        <input
-                          type="number"
-                          value={ev.capacity}
-                          onChange={(e) => updateEvent(ev.id, { capacity: Number(e.target.value) })}
-                          placeholder="Capacity"
-                          className="w-24 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-black text-white outline-none focus:border-purple-300/50"
-                        />
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="text-sm font-black text-white">{ev.event || "Untitled"}</div>
-                        <div className="mt-0.5 text-[10px] font-bold text-white/40">{dateLabel(ev.date)} · Cap {cap.toLocaleString()}</div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Occupancy */}
-                    {!isEditing && (
-                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                        occupancy >= 80 ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300"
-                        : occupancy >= 50 ? "border-yellow-300/30 bg-yellow-400/10 text-yellow-300"
-                        : "border-rose-300/30 bg-rose-400/10 text-rose-300"
-                      }`}>
-                        {occupancy}% · {totalSold}/{cap}
-                      </span>
-                    )}
-                    {/* Link to P&L */}
-                    {!isEditing && onLinkToFinance && (
-                      <button
-                        onClick={() => onLinkToFinance({ eventName: ev.event, tiers: ev.tiers, total: tierTotal })}
-                        title="Use in P&L calculator"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-300/30 bg-cyan-400/10 text-cyan-300 transition hover:bg-cyan-400/20"
-                      >
-                        <Banknote className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {/* Edit toggle */}
-                    <button
-                      onClick={() => setEditingId(isEditing ? null : ev.id)}
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
-                        isEditing ? "border-purple-300/40 bg-purple-400/20 text-purple-200" : "border-white/10 bg-white/5 text-white/40 hover:text-white"
-                      }`}
-                    >
-                      {isEditing ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Edit2 className="h-3.5 w-3.5" />}
-                    </button>
-                    {/* Delete */}
-                    <button
-                      onClick={() => deleteEvent(ev.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/30 transition hover:border-rose-300/40 hover:bg-rose-400/10 hover:text-rose-300"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+        <div className="space-y-6">
+          {grouped.map((group) => (
+            <div key={group.month}>
+              {/* Month header */}
+              <div className="mb-3 flex items-center gap-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">{group.month}</div>
+                <div className="flex-1 border-t border-white/10" />
+                <div className="text-[10px] font-black text-white/20">
+                  {fmtRM(group.events.reduce((s,ev)=>s+ev.tiers.reduce((ss,t)=>ss+(t.sold||0)*(t.price||0),0),0))}
                 </div>
-
-                {/* Tier table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[360px] text-xs">
-                    <thead>
-                      <tr className="border-b border-white/5">
-                        <th className="py-2 pl-4 pr-2 text-left text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Tier</th>
-                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Sold</th>
-                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Price (RM)</th>
-                        <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Revenue</th>
-                        <th className="py-2 pl-2 pr-4 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ev.tiers.map((tier, idx) => {
-                        const rev = (tier.sold||0)*(tier.price||0);
-                        const share = tierTotal > 0 ? Math.round((rev/tierTotal)*100) : 0;
-                        return (
-                          <tr key={tier.id} className={`border-b border-white/5 ${idx%2===0?"":"bg-white/[0.015]"}`}>
-                            <td className="py-2 pl-4 pr-2">
-                              {isEditing ? (
-                                <input
-                                  value={tier.name}
-                                  onChange={(e) => updateTier(ev.id, tier.id, { name: e.target.value })}
-                                  className="w-full rounded border border-white/10 bg-black/20 px-1.5 py-1 text-xs font-black text-white outline-none focus:border-purple-300/40"
-                                />
-                              ) : (
-                                <span className={`font-black ${tierColor(tier.name)}`}>{tier.name}</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number" min="0"
-                                  value={tier.sold}
-                                  onChange={(e) => updateTier(ev.id, tier.id, { sold: Number(e.target.value) })}
-                                  className="w-16 rounded border border-white/10 bg-black/20 px-1.5 py-1 text-right text-xs font-black text-white outline-none focus:border-purple-300/40"
-                                />
-                              ) : (
-                                <span className="font-black text-white/70">{tier.sold}</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-right">
-                              {isEditing ? (
-                                <input
-                                  type="number" min="0"
-                                  value={tier.price}
-                                  onChange={(e) => updateTier(ev.id, tier.id, { price: Number(e.target.value) })}
-                                  className="w-20 rounded border border-white/10 bg-black/20 px-1.5 py-1 text-right text-xs font-black text-white outline-none focus:border-purple-300/40"
-                                />
-                              ) : (
-                                <span className="font-black text-white/50">{tier.price != null ? `RM ${tier.price}` : "—"}</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-right font-black text-white">{fmtRM(rev)}</td>
-                            <td className="py-2 pl-2 pr-4 text-right">
-                              {isEditing ? (
-                                <button onClick={() => deleteTier(ev.id, tier.id)} className="flex h-6 w-6 items-center justify-center rounded text-white/20 hover:text-rose-400 ml-auto">
-                                  <X className="h-3 w-3" />
-                                </button>
-                              ) : (
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <div className="hidden h-1.5 w-10 overflow-hidden rounded-full bg-white/10 sm:block">
-                                    <div className="h-full rounded-full bg-purple-400/60" style={{ width: `${share}%` }} />
-                                  </div>
-                                  <span className="text-[10px] font-black text-white/40">{share}%</span>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {/* Total row */}
-                      <tr className="bg-white/[0.03]">
-                        <td className="py-2.5 pl-4 pr-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/40">Total</td>
-                        <td className="px-2 py-2.5 text-right text-[10px] font-black text-white/60">{totalSold}</td>
-                        <td className="px-2 py-2.5" />
-                        <td className="px-2 py-2.5 text-right font-black text-purple-200">{fmtRM(tierTotal)}</td>
-                        <td className="py-2.5 pl-2 pr-4 text-right text-[10px] font-black text-white/40">100%</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Edit mode: add tier */}
-                {isEditing && (
-                  <div className="border-t border-white/5 px-4 py-2">
-                    <button
-                      onClick={() => addTier(ev.id)}
-                      className="flex items-center gap-1.5 text-[10px] font-black text-white/30 transition hover:text-purple-300"
-                    >
-                      <Plus className="h-3 w-3" /> Add Tier
-                    </button>
-                  </div>
-                )}
               </div>
-            );
-          })}
+              <div className="space-y-3">
+                {group.events.map((ev) => {
+                  const isEditing = editingId === ev.id;
+                  const tierTotal = ev.tiers.reduce((s,t) => s+(t.sold||0)*(t.price||0), 0);
+                  const totalSold = ev.tiers.reduce((s,t) => s+(t.sold||0), 0);
+                  const cap = Number(ev.capacity)||0;
+                  const occupancy = cap > 0 ? Math.round((totalSold/cap)*100) : 0;
+                  const linkedScenario = ev.linkedScenarioId ? (savedScenarios||[]).find((sc)=>sc.id===ev.linkedScenarioId) : null;
+
+                  return (
+                    <div key={ev.id} className={`overflow-hidden rounded-2xl border bg-white/[0.02] transition ${isEditing ? "border-purple-300/30" : "border-white/10"}`}>
+                      {/* Event header */}
+                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/10 bg-white/[0.02] px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          {isEditing ? (
+                            <div className="flex flex-wrap gap-2">
+                              <input value={ev.event} onChange={(e) => updateEvent(ev.id, { event: e.target.value })} placeholder="Event name"
+                                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm font-black text-white outline-none focus:border-purple-300/50" />
+                              <input type="date" value={ev.date} onChange={(e) => updateEvent(ev.id, { date: e.target.value })}
+                                className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-black text-white outline-none focus:border-purple-300/50" />
+                              <input type="number" value={ev.capacity} onChange={(e) => updateEvent(ev.id, { capacity: Number(e.target.value) })} placeholder="Capacity"
+                                className="w-24 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-black text-white outline-none focus:border-purple-300/50" />
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="text-sm font-black text-white">{ev.event || "Untitled"}</div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                <span className="text-[10px] font-bold text-white/40">{dateLabel(ev.date)} · Cap {cap.toLocaleString()}</span>
+                                {linkedScenario && (
+                                  <span className="flex items-center gap-1 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black text-cyan-300">
+                                    <Banknote className="h-2.5 w-2.5" /> {linkedScenario.name}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {!isEditing && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                              occupancy >= 80 ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300"
+                              : occupancy >= 50 ? "border-yellow-300/30 bg-yellow-400/10 text-yellow-300"
+                              : "border-rose-300/30 bg-rose-400/10 text-rose-300"
+                            }`}>{occupancy}% · {totalSold}/{cap}</span>
+                          )}
+                          {/* Link/unlink to P&L scenario */}
+                          {!isEditing && (
+                            ev.linkedScenarioId ? (
+                              <button onClick={() => unlinkScenario(ev.id)} title="Unlink from P&L"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-300/40 bg-cyan-400/20 text-cyan-300 transition hover:bg-rose-400/20 hover:text-rose-300 hover:border-rose-300/40">
+                                <Banknote className="h-3.5 w-3.5" />
+                              </button>
+                            ) : (
+                              <button onClick={() => setLinkPickerId(ev.id)} title="Link to P&L event"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/30 transition hover:border-cyan-300/40 hover:bg-cyan-400/10 hover:text-cyan-300">
+                                <Banknote className="h-3.5 w-3.5" />
+                              </button>
+                            )
+                          )}
+                          {/* Edit toggle */}
+                          <button onClick={() => setEditingId(isEditing ? null : ev.id)}
+                            className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${isEditing ? "border-purple-300/40 bg-purple-400/20 text-purple-200" : "border-white/10 bg-white/5 text-white/40 hover:text-white"}`}>
+                            {isEditing ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Edit2 className="h-3.5 w-3.5" />}
+                          </button>
+                          {/* Delete */}
+                          <button onClick={() => deleteEvent(ev.id)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/30 transition hover:border-rose-300/40 hover:bg-rose-400/10 hover:text-rose-300">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Tier table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[360px] text-xs">
+                          <thead>
+                            <tr className="border-b border-white/5">
+                              <th className="py-2 pl-4 pr-2 text-left text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Tier</th>
+                              <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Sold</th>
+                              <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Price (RM)</th>
+                              <th className="px-2 py-2 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">Revenue</th>
+                              <th className="py-2 pl-2 pr-4 text-right text-[9px] font-black uppercase tracking-[0.15em] text-white/25">%</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ev.tiers.map((tier, idx) => {
+                              const rev = (tier.sold||0)*(tier.price||0);
+                              const share = tierTotal > 0 ? Math.round((rev/tierTotal)*100) : 0;
+                              return (
+                                <tr key={tier.id} className={`border-b border-white/5 ${idx%2===0?"":"bg-white/[0.015]"}`}>
+                                  <td className="py-2 pl-4 pr-2">
+                                    {isEditing ? (
+                                      <input value={tier.name} onChange={(e) => updateTier(ev.id, tier.id, { name: e.target.value })}
+                                        className="w-full rounded border border-white/10 bg-black/20 px-1.5 py-1 text-xs font-black text-white outline-none focus:border-purple-300/40" />
+                                    ) : <span className={`font-black ${tierColor(tier.name)}`}>{tier.name}</span>}
+                                  </td>
+                                  <td className="px-2 py-2 text-right">
+                                    {isEditing ? (
+                                      <input type="number" min="0" value={tier.sold} onChange={(e) => updateTier(ev.id, tier.id, { sold: Number(e.target.value) })}
+                                        className="w-16 rounded border border-white/10 bg-black/20 px-1.5 py-1 text-right text-xs font-black text-white outline-none focus:border-purple-300/40" />
+                                    ) : <span className="font-black text-white/70">{tier.sold}</span>}
+                                  </td>
+                                  <td className="px-2 py-2 text-right">
+                                    {isEditing ? (
+                                      <input type="number" min="0" value={tier.price} onChange={(e) => updateTier(ev.id, tier.id, { price: Number(e.target.value) })}
+                                        className="w-20 rounded border border-white/10 bg-black/20 px-1.5 py-1 text-right text-xs font-black text-white outline-none focus:border-purple-300/40" />
+                                    ) : <span className="font-black text-white/50">{tier.price != null ? `RM ${tier.price}` : "—"}</span>}
+                                  </td>
+                                  <td className="px-2 py-2 text-right font-black text-white">{fmtRM(rev)}</td>
+                                  <td className="py-2 pl-2 pr-4 text-right">
+                                    {isEditing ? (
+                                      <button onClick={() => deleteTier(ev.id, tier.id)} className="flex h-6 w-6 items-center justify-center rounded text-white/20 hover:text-rose-400 ml-auto">
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    ) : (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <div className="hidden h-1.5 w-10 overflow-hidden rounded-full bg-white/10 sm:block">
+                                          <div className="h-full rounded-full bg-purple-400/60" style={{ width: `${share}%` }} />
+                                        </div>
+                                        <span className="text-[10px] font-black text-white/40">{share}%</span>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="bg-white/[0.03]">
+                              <td className="py-2.5 pl-4 pr-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/40">Total</td>
+                              <td className="px-2 py-2.5 text-right text-[10px] font-black text-white/60">{totalSold}</td>
+                              <td className="px-2 py-2.5" />
+                              <td className="px-2 py-2.5 text-right font-black text-purple-200">{fmtRM(tierTotal)}</td>
+                              <td className="py-2.5 pl-2 pr-4 text-right text-[10px] font-black text-white/40">100%</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      {isEditing && (
+                        <div className="border-t border-white/5 px-4 py-2">
+                          <button onClick={() => addTier(ev.id)} className="flex items-center gap-1.5 text-[10px] font-black text-white/30 transition hover:text-purple-300">
+                            <Plus className="h-3 w-3" /> Add Tier
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </section>
@@ -4099,37 +4184,34 @@ function TicketSalesPage({ onLinkToFinance }) {
 function FinancePage() {
   const [tab, setTab] = useState("pl");
   const [linkedTickets, setLinkedTickets] = useState(null);
+  // savedScenarios are read from localStorage in FinanceMathPage, but we need them here for the picker
+  const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
 
-  const handleLinkToFinance = ({ eventName, tiers, total }) => {
-    setLinkedTickets({ eventName, tiers, total });
+  const handleLinkEventToScenario = (scenarioId, ticketData) => {
+    // Update the scenario's linkedTicketEventId
+    const scenarios = readSavedFinanceScenarios();
+    const updated = scenarios.map((sc) => sc.id === scenarioId ? { ...sc, linkedTicketEventId: ticketData.ticketEventId } : sc);
+    writeSavedFinanceScenarios(updated);
+    setSavedScenarios(updated);
+    setLinkedTickets({ ...ticketData, scenarioId });
     setTab("pl");
   };
   const handleUnlink = () => setLinkedTickets(null);
 
   return (
     <div className="space-y-4">
-      {/* Tab switcher */}
       <div className="flex gap-1">
         {[["pl", "P&L Calculator"], ["tickets", "Ticket Sales"]].map(([val, label]) => (
-          <button
-            key={val}
-            onClick={() => setTab(val)}
-            className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
-              tab === val
-                ? "border-purple-300/50 bg-purple-400/20 text-purple-100"
-                : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
-            }`}
-          >
+          <button key={val} onClick={() => setTab(val)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black transition ${tab === val ? "border-purple-300/50 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"}`}>
             {label}
-            {val === "tickets" && linkedTickets && (
-              <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400" />
-            )}
+            {val === "tickets" && linkedTickets && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400" />}
           </button>
         ))}
       </div>
       {tab === "pl"
-        ? <FinanceMathPage linkedTickets={linkedTickets} onUnlinkTickets={handleUnlink} />
-        : <TicketSalesPage onLinkToFinance={handleLinkToFinance} />}
+        ? <FinanceMathPage linkedTickets={linkedTickets} onUnlinkTickets={handleUnlink} onScenariosChange={setSavedScenarios} />
+        : <TicketSalesPage savedScenarios={savedScenarios} onLinkEventToScenario={handleLinkEventToScenario} />}
     </div>
   );
 }
