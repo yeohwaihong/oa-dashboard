@@ -3071,13 +3071,101 @@ function saveTicketEvents(events) {
 function newTierId() { return `t_${Date.now()}_${Math.random().toString(36).slice(2,6)}`; }
 function newEventId() { return `ev_${Date.now()}_${Math.random().toString(36).slice(2,6)}`; }
 
-function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) {
+function FinanceMathPage({ onScenariosChange }) {
   const [inputs, setInputs] = useState(financeDefaultInputs);
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
   const [activeScenarioId, setActiveScenarioId] = useState(null);
   const [artistFx, setArtistFx] = useState({ currency: inputs.artistCostCurrency || "USD", rateToMyr: 0, fetchedAt: 0, loading: false, error: "" });
+  const [linkedTickets, setLinkedTickets] = useState(null);
 
-  // Auto-apply ticket revenues into P&L inputs whenever a new event is linked
+  const loadFinanceScenarios = useCallback(async () => {
+    if (!isSupabaseConfigured) return readSavedFinanceScenarios();
+    const { data, error } = await supabase
+      .from("finance_scenarios")
+      .select("id, name, partner_name, inputs, created_at, updated_at")
+      .order("updated_at", { ascending: false });
+    if (error) throw error;
+    const rows = Array.isArray(data) ? data : [];
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name || "Untitled Finance Event"),
+      partnerName: String(row.partner_name || "Partner"),
+      inputs: row.inputs && typeof row.inputs === "object" ? row.inputs : {},
+      createdAt: row.created_at || new Date().toISOString(),
+      updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    }));
+  }, []);
+
+  const refreshFinanceScenarios = useCallback(async () => {
+    try {
+      const next = await loadFinanceScenarios();
+      setSavedScenarios(next);
+      writeSavedFinanceScenarios(next);
+      if (onScenariosChange) onScenariosChange(next);
+    } catch {
+      const next = readSavedFinanceScenarios();
+      setSavedScenarios(next);
+      if (onScenariosChange) onScenariosChange(next);
+    }
+  }, [loadFinanceScenarios, onScenariosChange]);
+
+  useEffect(() => {
+    refreshFinanceScenarios();
+  }, [refreshFinanceScenarios]);
+
+  const loadLinkedTicketsForScenario = useCallback(async (scenarioId) => {
+    if (!scenarioId) return null;
+    if (!isSupabaseConfigured) {
+      const ticketEvents = loadTicketEvents();
+      const match = ticketEvents.find((ev) => ev?.linkedScenarioId && String(ev.linkedScenarioId) === String(scenarioId));
+      if (!match) return null;
+      const tiers = Array.isArray(match.tiers) ? match.tiers : [];
+      const total = tiers.reduce((sum, tier) => sum + toAmount(tier?.sold) * toAmount(tier?.price), 0);
+      return { ticketEventId: match.id, eventName: match.event, tiers, total };
+    }
+
+    const { data, error } = await supabase
+      .from("ticket_forecast_events")
+      .select("id, event_name, tiers")
+      .eq("linked_finance_scenario_id", scenarioId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : null;
+    if (!row?.id) return null;
+    const tiers = Array.isArray(row.tiers) ? row.tiers : [];
+    const total = tiers.reduce((sum, tier) => sum + toAmount(tier?.sold) * toAmount(tier?.price), 0);
+    return { ticketEventId: String(row.id), eventName: String(row.event_name || ""), tiers, total };
+  }, []);
+
+  const unlinkTickets = useCallback(async () => {
+    if (!linkedTickets?.ticketEventId) return;
+    const ticketEventId = String(linkedTickets.ticketEventId);
+    setLinkedTickets(null);
+    if (!isSupabaseConfigured) {
+      const ticketEvents = loadTicketEvents();
+      const next = ticketEvents.map((ev) => (String(ev.id) === ticketEventId ? { ...ev, linkedScenarioId: null } : ev));
+      saveTicketEvents(next);
+      return;
+    }
+    await supabase.from("ticket_forecast_events").update({ linked_finance_scenario_id: null, updated_at: new Date().toISOString() }).eq("id", ticketEventId);
+  }, [linkedTickets?.ticketEventId]);
+
+  useEffect(() => {
+    if (!activeScenarioId) {
+      setLinkedTickets(null);
+      return;
+    }
+    (async () => {
+      try {
+        const next = await loadLinkedTicketsForScenario(activeScenarioId);
+        setLinkedTickets(next);
+      } catch {
+        setLinkedTickets(null);
+      }
+    })();
+  }, [activeScenarioId, loadLinkedTicketsForScenario]);
+
   useEffect(() => {
     if (!linkedTickets || !linkedTickets.tiers) return;
     const doorTiers = linkedTickets.tiers.filter((t) => (t.name || "").toLowerCase().includes("door"));
@@ -3164,7 +3252,7 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
   const saveScenario = () => {
     const now = new Date().toISOString();
     if (activeScenarioId) {
-      const next = savedScenarios.map((scenario) =>
+      const nextScenarios = savedScenarios.map((scenario) =>
         scenario.id === activeScenarioId
           ? {
               ...scenario,
@@ -3175,19 +3263,65 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
             }
           : scenario,
       );
-      persistScenarios(next);
+      persistScenarios(nextScenarios);
+      if (isSupabaseConfigured) {
+        (async () => {
+          await supabase
+            .from("finance_scenarios")
+            .upsert(
+              nextScenarios
+                .filter((scenario) => scenario.id === activeScenarioId)
+                .map((scenario) => ({
+                  id: scenario.id,
+                  name: scenario.name,
+                  partner_name: scenario.partnerName,
+                  inputs: scenario.inputs,
+                  updated_at: scenario.updatedAt,
+                })),
+            );
+          refreshFinanceScenarios();
+        })();
+      }
       return;
     }
 
     const scenario = createFinanceScenario(inputs);
-    persistScenarios([scenario, ...savedScenarios]);
+    const nextScenarios = [scenario, ...savedScenarios];
+    persistScenarios(nextScenarios);
     setActiveScenarioId(scenario.id);
+    if (isSupabaseConfigured) {
+      (async () => {
+        await supabase.from("finance_scenarios").upsert({
+          id: scenario.id,
+          name: scenario.name,
+          partner_name: scenario.partnerName,
+          inputs: scenario.inputs,
+          created_at: scenario.createdAt,
+          updated_at: scenario.updatedAt,
+        });
+        refreshFinanceScenarios();
+      })();
+    }
   };
 
   const saveAsNewScenario = () => {
     const scenario = createFinanceScenario(inputs);
-    persistScenarios([scenario, ...savedScenarios]);
+    const nextScenarios = [scenario, ...savedScenarios];
+    persistScenarios(nextScenarios);
     setActiveScenarioId(scenario.id);
+    if (isSupabaseConfigured) {
+      (async () => {
+        await supabase.from("finance_scenarios").upsert({
+          id: scenario.id,
+          name: scenario.name,
+          partner_name: scenario.partnerName,
+          inputs: scenario.inputs,
+          created_at: scenario.createdAt,
+          updated_at: scenario.updatedAt,
+        });
+        refreshFinanceScenarios();
+      })();
+    }
   };
 
   const loadScenario = (scenario) => {
@@ -3207,6 +3341,12 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
     const next = savedScenarios.filter((item) => item.id !== scenarioId);
     persistScenarios(next);
     if (activeScenarioId === scenarioId) startNewScenario();
+    if (isSupabaseConfigured) {
+      (async () => {
+        await supabase.from("finance_scenarios").delete().eq("id", scenarioId);
+        refreshFinanceScenarios();
+      })();
+    }
   };
 
   useEffect(() => {
@@ -3545,7 +3685,7 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
                       <span className="text-[10px] font-black text-emerald-300">Linked</span>
                     </div>
                     <button
-                      onClick={onUnlinkTickets}
+                      onClick={unlinkTickets}
                       className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-black text-white/40 hover:text-white"
                     >
                       <X className="h-3 w-3" />
@@ -3897,13 +4037,65 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
 }
 
 // ─── Ticket Sales Forecast Page ──────────────────────────────────────────────
-function TicketSalesPage({ linkedScenarioId, savedScenarios, onLinkEventToScenario }) {
-  const [events, setEvents] = useState(loadTicketEvents);
+function TicketSalesPage({ savedScenarios }) {
+  const [events, setEvents] = useState(() => (isSupabaseConfigured ? [] : loadTicketEvents()));
   const [showTemplates, setShowTemplates] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [linkPickerId, setLinkPickerId] = useState(null); // ticket event id waiting for scenario pick
-
   const persist = (next) => { setEvents(next); saveTicketEvents(next); };
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("ticket_forecast_events")
+        .select("id, event_name, event_date, capacity, tiers, linked_finance_scenario_id, updated_at")
+        .order("event_date", { ascending: true })
+        .order("updated_at", { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        setEvents(loadTicketEvents());
+        return;
+      }
+      const rows = Array.isArray(data) ? data : [];
+      const mapped = rows.map((row) => ({
+        id: String(row.id),
+        event: String(row.event_name || ""),
+        date: String(row.event_date || ""),
+        capacity: Number(row.capacity) || 0,
+        tiers: Array.isArray(row.tiers)
+          ? row.tiers.map((tier) => ({
+              id: String(tier?.id || newTierId()),
+              name: String(tier?.name || ""),
+              price: toAmount(tier?.price),
+              sold: toAmount(tier?.sold),
+            }))
+          : [],
+        linkedScenarioId: row.linked_finance_scenario_id ? String(row.linked_finance_scenario_id) : null,
+      }));
+      setEvents(mapped.length ? mapped : loadTicketEvents());
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return undefined;
+    const handle = window.setTimeout(async () => {
+      const payload = events.map((ev) => ({
+        id: ev.id,
+        event_name: ev.event,
+        event_date: ev.date,
+        capacity: Number(ev.capacity) || 0,
+        tiers: Array.isArray(ev.tiers) ? ev.tiers : [],
+        linked_finance_scenario_id: ev.linkedScenarioId || null,
+        updated_at: new Date().toISOString(),
+      }));
+      if (!payload.length) return;
+      await supabase.from("ticket_forecast_events").upsert(payload);
+    }, 700);
+    return () => window.clearTimeout(handle);
+  }, [events]);
 
   const addEvent = (template) => {
     const id = newEventId();
@@ -3922,6 +4114,9 @@ function TicketSalesPage({ linkedScenarioId, savedScenarios, onLinkEventToScenar
     if (!window.confirm("Delete this event?")) return;
     persist(events.filter((e) => e.id !== id));
     if (editingId === id) setEditingId(null);
+    if (isSupabaseConfigured) {
+      supabase.from("ticket_forecast_events").delete().eq("id", id);
+    }
   };
   const updateTier = (evId, tierId, patch) =>
     updateEvent(evId, { tiers: events.find((e)=>e.id===evId).tiers.map((t) => t.id===tierId ? {...t,...patch} : t) });
@@ -3932,10 +4127,6 @@ function TicketSalesPage({ linkedScenarioId, savedScenarios, onLinkEventToScenar
 
   const linkToScenario = (ticketEvId, scenarioId) => {
     updateEvent(ticketEvId, { linkedScenarioId: scenarioId });
-    const ticketEv = events.find((e) => e.id === ticketEvId);
-    if (onLinkEventToScenario && ticketEv) {
-      onLinkEventToScenario(scenarioId, { eventName: ticketEv.event, tiers: ticketEv.tiers, total: ticketEv.tiers.reduce((s,t)=>s+(t.sold||0)*(t.price||0),0), ticketEventId: ticketEvId });
-    }
     setLinkPickerId(null);
   };
   const unlinkScenario = (ticketEvId) => updateEvent(ticketEvId, { linkedScenarioId: null });
@@ -4257,20 +4448,7 @@ function TicketSalesPage({ linkedScenarioId, savedScenarios, onLinkEventToScenar
 // ─── Finance Page (P&L Calculator + Ticket Sales tabs) ───────────────────────
 function FinancePage() {
   const [tab, setTab] = useState("pl");
-  const [linkedTickets, setLinkedTickets] = useState(null);
-  // savedScenarios are read from localStorage in FinanceMathPage, but we need them here for the picker
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
-
-  const handleLinkEventToScenario = (scenarioId, ticketData) => {
-    // Update the scenario's linkedTicketEventId
-    const scenarios = readSavedFinanceScenarios();
-    const updated = scenarios.map((sc) => sc.id === scenarioId ? { ...sc, linkedTicketEventId: ticketData.ticketEventId } : sc);
-    writeSavedFinanceScenarios(updated);
-    setSavedScenarios(updated);
-    setLinkedTickets({ ...ticketData, scenarioId });
-    setTab("pl");
-  };
-  const handleUnlink = () => setLinkedTickets(null);
 
   return (
     <div className="space-y-4">
@@ -4279,13 +4457,12 @@ function FinancePage() {
           <button key={val} onClick={() => setTab(val)}
             className={`rounded-lg border px-3 py-2 text-xs font-black transition ${tab === val ? "border-purple-300/50 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"}`}>
             {label}
-            {val === "tickets" && linkedTickets && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400" />}
           </button>
         ))}
       </div>
       {tab === "pl"
-        ? <FinanceMathPage linkedTickets={linkedTickets} onUnlinkTickets={handleUnlink} onScenariosChange={setSavedScenarios} />
-        : <TicketSalesPage savedScenarios={savedScenarios} onLinkEventToScenario={handleLinkEventToScenario} />}
+        ? <FinanceMathPage onScenariosChange={setSavedScenarios} />
+        : <TicketSalesPage savedScenarios={savedScenarios} />}
     </div>
   );
 }
