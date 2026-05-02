@@ -3446,7 +3446,7 @@ function FinanceMathPage({ onScenariosChange }) {
           [`SST (${inputs.sstRate}%)`, sst, 0, 0],
         ]
       : []),
-    ["Online Ticket & Door Sales", onlineTicketSales, onlineTicketOa, onlineTicketSales - onlineTicketOa],
+    ["Online Ticket Sales", onlineTicketSales, onlineTicketOa, onlineTicketSales - onlineTicketOa],
     ["Door Sales", doorSales, doorOa, doorSales - doorOa],
     ["Sponsorship", sponsorship, sponsorshipOa, sponsorship - sponsorshipOa],
     [`Bar Split (${inputs.barSplitPartnerRate}%)`, barSplitPartner, 0, barSplitPartner],
