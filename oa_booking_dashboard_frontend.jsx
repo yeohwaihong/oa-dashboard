@@ -267,8 +267,7 @@ const financeDefaultInputs = {
   eventName: "New Finance Event",
   includeSuggestedFixedCosts: false,
   hasPartnerSplit: false,
-  currencyCode: "MYR",
-  exchangeRateToMyr: 1,
+  artistCostCurrency: "EUR",
   partnerName: "",
   barSales: 0,
   serviceRate: 0,
@@ -346,12 +345,29 @@ function percent(value) {
 }
 
 function toAmount(value) {
-  const next = Number.parseFloat(value);
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value ?? "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+  if (!cleaned) return 0;
+  const next = Number.parseFloat(cleaned);
   return Number.isFinite(next) ? next : 0;
 }
 
 function formatInputNumber(value) {
-  return toAmount(value).toFixed(2);
+  const next = toAmount(value);
+  return new Intl.NumberFormat("en-MY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(next) ? next : 0);
+}
+
+function formatInputNumberForEdit(value) {
+  const next = toAmount(value);
+  if (!Number.isFinite(next) || next === 0) return "0";
+  const fixed = next.toFixed(2);
+  return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
 function getStatusColor(status) {
@@ -3003,6 +3019,52 @@ function FinanceMathPage() {
   const [inputs, setInputs] = useState(financeDefaultInputs);
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
   const [activeScenarioId, setActiveScenarioId] = useState(null);
+  const [artistFx, setArtistFx] = useState({ currency: inputs.artistCostCurrency || "USD", rateToMyr: 0, fetchedAt: 0, loading: false, error: "" });
+
+  const migrateFinanceInputs = useCallback((raw) => {
+    const base = { ...financeDefaultInputs, ...(raw || {}) };
+    const legacyCurrency = String(raw?.currencyCode || "").toUpperCase();
+    const legacyRate = Math.max(toAmount(raw?.exchangeRateToMyr), 0);
+
+    const monetaryKeys = [
+      "barSales",
+      "onlineTicketSales",
+      "doorSales",
+      "sponsorship",
+      "ambassadorCommission",
+      "utilities",
+      "manpower",
+      "puspal",
+      "hotel",
+      "rider",
+      "supportingDj",
+      "mc",
+      "marketing",
+      "tshirt",
+      "otherCost",
+    ];
+
+    const shouldConvertLegacy = legacyCurrency && legacyCurrency !== "MYR" && legacyRate > 0;
+    const next = { ...base };
+
+    if (shouldConvertLegacy) {
+      for (const key of monetaryKeys) {
+        next[key] = toAmount(base[key]) * legacyRate;
+      }
+    }
+
+    const allowedArtistCurrencies = new Set(["USD", "EUR", "AUD"]);
+    if (allowedArtistCurrencies.has(String(base.artistCostCurrency || "").toUpperCase())) {
+      next.artistCostCurrency = String(base.artistCostCurrency || "").toUpperCase();
+    } else if (allowedArtistCurrencies.has(legacyCurrency)) {
+      next.artistCostCurrency = legacyCurrency;
+    } else {
+      next.artistCostCurrency = financeDefaultInputs.artistCostCurrency;
+    }
+
+    next.artistCost = toAmount(base.artistCost);
+    return next;
+  }, []);
 
   const persistScenarios = (next) => {
     setSavedScenarios(next);
@@ -3017,14 +3079,13 @@ function FinanceMathPage() {
   };
 
   const setSuggestedFixedCosts = (enabled) => {
-    const currentFx = inputs.currencyCode === "MYR" ? 1 : Math.max(toAmount(inputs.exchangeRateToMyr), 0.0001);
     setInputs((prev) => ({
       ...prev,
       includeSuggestedFixedCosts: enabled,
       ...(enabled
         ? {
             ...financeSuggestedFixedCosts,
-            utilities: financeSuggestedFixedCosts.utilities / currentFx,
+            utilities: financeSuggestedFixedCosts.utilities,
           }
         : {
             serviceRate: 0,
@@ -3065,7 +3126,7 @@ function FinanceMathPage() {
   };
 
   const loadScenario = (scenario) => {
-    setInputs({ ...financeDefaultInputs, ...scenario.inputs });
+    setInputs(migrateFinanceInputs(scenario.inputs));
     setActiveScenarioId(scenario.id);
   };
 
@@ -3083,29 +3144,86 @@ function FinanceMathPage() {
     if (activeScenarioId === scenarioId) startNewScenario();
   };
 
+  useEffect(() => {
+    setInputs((prev) => migrateFinanceInputs(prev));
+  }, [migrateFinanceInputs]);
+
   const hasPartnerSplit = Boolean(inputs.hasPartnerSplit);
   const includeSuggestedFixedCosts = Boolean(inputs.includeSuggestedFixedCosts);
-  const inputCurrency = inputs.currencyCode || "MYR";
-  const exchangeRateToMyr = inputCurrency === "MYR" ? 1 : Math.max(toAmount(inputs.exchangeRateToMyr), 0);
-  const toMyr = (value) => toAmount(value) * exchangeRateToMyr;
   const share = (value) => Math.max(0, Math.min(100, toAmount(value))) / 100;
   const splitShare = (value) => (hasPartnerSplit ? share(value) : 1);
-  const barSales = toMyr(inputs.barSales);
-  const onlineTicketSales = toMyr(inputs.onlineTicketSales);
-  const doorSales = toMyr(inputs.doorSales);
-  const sponsorship = toMyr(inputs.sponsorship);
-  const ambassadorCommission = toMyr(inputs.ambassadorCommission);
-  const utilities = includeSuggestedFixedCosts ? toMyr(inputs.utilities) : 0;
-  const manpower = toMyr(inputs.manpower);
-  const artistCost = toMyr(inputs.artistCost);
-  const puspal = toMyr(inputs.puspal);
-  const hotel = toMyr(inputs.hotel);
-  const rider = toMyr(inputs.rider);
-  const supportingDj = toMyr(inputs.supportingDj);
-  const mc = toMyr(inputs.mc);
-  const marketing = toMyr(inputs.marketing);
-  const merchandise = toMyr(inputs.tshirt);
-  const otherCost = toMyr(inputs.otherCost);
+  const barSales = toAmount(inputs.barSales);
+  const onlineTicketSales = toAmount(inputs.onlineTicketSales);
+  const doorSales = toAmount(inputs.doorSales);
+  const sponsorship = toAmount(inputs.sponsorship);
+  const ambassadorCommission = toAmount(inputs.ambassadorCommission);
+  const utilities = includeSuggestedFixedCosts ? toAmount(inputs.utilities) : 0;
+  const manpower = toAmount(inputs.manpower);
+  const puspal = toAmount(inputs.puspal);
+  const hotel = toAmount(inputs.hotel);
+  const rider = toAmount(inputs.rider);
+  const supportingDj = toAmount(inputs.supportingDj);
+  const mc = toAmount(inputs.mc);
+  const marketing = toAmount(inputs.marketing);
+  const merchandise = toAmount(inputs.tshirt);
+  const otherCost = toAmount(inputs.otherCost);
+
+  const artistCostCurrency = String(inputs.artistCostCurrency || "USD").toUpperCase();
+  const artistCostRaw = toAmount(inputs.artistCost);
+  const artistCostRateToMyr = artistCostCurrency === "MYR" ? 1 : Math.max(toAmount(artistFx.rateToMyr), 0);
+  const artistCost = artistCostRaw * artistCostRateToMyr;
+
+  useEffect(() => {
+    const currency = String(inputs.artistCostCurrency || "USD").toUpperCase();
+    const key = `oa_dashboard_fx_${currency}_MYR_v1`;
+    const now = Date.now();
+    const maxAgeMs = 6 * 60 * 60 * 1000;
+    let cached = null;
+    try {
+      cached = JSON.parse(window.localStorage.getItem(key) || "null");
+    } catch {
+      cached = null;
+    }
+
+    const cachedRate = cached?.rateToMyr != null ? Number(cached.rateToMyr) : 0;
+    const cachedAt = cached?.fetchedAt != null ? Number(cached.fetchedAt) : 0;
+    const cacheValid = currency !== "MYR" && cachedRate > 0 && cachedAt > 0 && now - cachedAt < maxAgeMs;
+
+    if (currency === "MYR") {
+      setArtistFx({ currency, rateToMyr: 1, fetchedAt: now, loading: false, error: "" });
+      return undefined;
+    }
+
+    if (cacheValid) {
+      setArtistFx((prev) => ({ ...prev, currency, rateToMyr: cachedRate, fetchedAt: cachedAt, loading: false, error: "" }));
+    } else {
+      setArtistFx((prev) => ({ ...prev, currency, rateToMyr: cachedRate > 0 ? cachedRate : prev.rateToMyr, fetchedAt: cachedAt || prev.fetchedAt, loading: true, error: "" }));
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(currency)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`FX request failed (${response.status})`);
+        const data = await response.json();
+        const rate = Number(data?.rates?.MYR);
+        if (!Number.isFinite(rate) || rate <= 0) throw new Error("FX response missing MYR rate");
+        const fetchedAt = Date.now();
+        window.localStorage.setItem(key, JSON.stringify({ rateToMyr: rate, fetchedAt }));
+        setArtistFx({ currency, rateToMyr: rate, fetchedAt, loading: false, error: "" });
+      } catch (error) {
+        const message = error?.name === "AbortError" ? "" : String(error?.message || "Could not load FX");
+        setArtistFx((prev) => ({
+          ...prev,
+          currency,
+          loading: false,
+          error: message,
+        }));
+      }
+    })();
+
+    return () => controller.abort();
+  }, [inputs.artistCostCurrency]);
   const serviceCharge = includeSuggestedFixedCosts ? barSales * share(inputs.serviceRate) : 0;
   const sst = includeSuggestedFixedCosts ? barSales * share(inputs.sstRate) : 0;
   const barSplitPartner = hasPartnerSplit ? barSales * share(inputs.barSplitPartnerRate) : 0;
@@ -3179,7 +3297,6 @@ function FinanceMathPage() {
     ["ambassadorCommission", "Ambassador Commission"],
     ...(includeSuggestedFixedCosts ? [["utilities", "Utilities"]] : []),
     ["manpower", "Man Power"],
-    ["artistCost", "International Artist Cost"],
     ...(hasPartnerSplit ? [["artistOaShare", "Artist Cost O&A %"]] : []),
     ["puspal", "Puspal"],
     ["hotel", "Hotel"],
@@ -3322,39 +3439,38 @@ function FinanceMathPage() {
               />
             </label>
             <div className="grid gap-2 sm:grid-cols-[1fr_1fr] lg:grid-cols-1">
-              <label>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Input Currency</span>
-                <select
-                  value={inputCurrency}
-                  onChange={(e) => {
-                    const nextCurrency = e.target.value;
-                    setInputs((prev) => ({
-                      ...prev,
-                      currencyCode: nextCurrency,
-                      exchangeRateToMyr: nextCurrency === "MYR" ? 1 : prev.exchangeRateToMyr || 1,
-                    }));
-                  }}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
-                >
-                  <option value="MYR">MYR / RM</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="SGD">SGD</option>
-                  <option value="GBP">GBP</option>
-                  <option value="AUD">AUD</option>
-                </select>
-              </label>
-              <label>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Rate to RM</span>
-                <DecimalInput
-                  value={inputs.exchangeRateToMyr}
-                  onChange={(value) => setInput("exchangeRateToMyr", value)}
-                  disabled={inputCurrency === "MYR"}
-                />
-              </label>
+              <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 px-3 py-2 text-xs font-bold text-purple-100/80">
+                All amounts are in RM (MYR). Only International Artist Cost can be entered in USD/EUR/AUD and auto converts to RM using the latest online FX rate.
+              </div>
             </div>
-            <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 px-3 py-2 text-xs font-bold text-purple-100/80">
-              Enter amounts in {inputCurrency}. Totals convert to RM at {currency(exchangeRateToMyr, "MYR")} per 1 {inputCurrency}.
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">International Artist Cost</div>
+                  <div className="mt-1 text-xs font-bold text-white/45">
+                    {artistFx.loading ? "Loading latest FX..." : artistFx.error ? `FX issue: ${artistFx.error}` : artistFx.rateToMyr ? `1 ${artistCostCurrency} = ${currency(artistCostRateToMyr, "MYR")} (MYR)` : "FX not loaded yet"}
+                  </div>
+                </div>
+                <div className="text-xs font-black text-white/70">{currency(artistCost)} MYR</div>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[120px_1fr]">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">Currency</span>
+                  <select
+                    value={artistCostCurrency}
+                    onChange={(e) => setInput("artistCostCurrency", e.target.value)}
+                    className="mt-1 h-[42px] w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="AUD">AUD</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">Amount</span>
+                  <DecimalInput value={inputs.artistCost} onChange={(value) => setInput("artistCost", value)} />
+                </label>
+              </div>
             </div>
             <label>
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">Partner</span>
@@ -3471,7 +3587,7 @@ function DecimalInput({ value, onChange, disabled = false }) {
       value={displayValue}
       disabled={disabled}
       onFocus={(event) => {
-        setDraft(formatInputNumber(value));
+        setDraft(formatInputNumberForEdit(value));
         event.currentTarget.select();
       }}
       onChange={(event) => {
