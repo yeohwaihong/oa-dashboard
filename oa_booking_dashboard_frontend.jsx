@@ -3425,7 +3425,7 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
               New
             </Button>
             <Button
-              onClick={() => exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency })}
+              onClick={() => exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency, linkedTickets })}
               className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2 text-[11px] font-black text-white/55 hover:bg-white/10 hover:text-white sm:gap-2 sm:px-4 sm:text-xs"
             >
               <Receipt className="h-4 w-4" />
@@ -3765,7 +3765,7 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
 }
 
 // ─── PDF export helper ───────────────────────────────────────────────────────
-function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency }) {
+function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency, linkedTickets }) {
   const rm = (n) => `RM ${Number(n||0).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const pct = (n) => `${(Number(n||0)*100).toFixed(1)}%`;
   const partnerName = inputs.partnerName || "Partner";
@@ -3817,6 +3817,21 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
 <table><thead><tr><th>Item</th>${hasPartnerSplit?`<th class="num">Total</th><th class="num">O&A</th><th class="num">${partnerName}</th>`:`<th class="num">Amount</th>`}</tr></thead>
 <tbody>${rowsHtml(costRows)}</tbody>
 <tfoot><tr><td>Total Cost</td>${hasPartnerSplit?`<td></td><td class="num oa">${rm(oaCost)}</td><td class="num partner">${rm(partnerCost)}</td>`:`<td class="num oa">${rm(oaCost)}</td>`}</tr></tfoot></table>
+${linkedTickets && linkedTickets.tiers && linkedTickets.tiers.length > 0 ? `
+<div class="section-title">Ticket Sales — ${linkedTickets.eventName || "Linked Event"}</div>
+<table>
+  <thead><tr><th>Tier</th><th class="num">Sold</th><th class="num">Price (RM)</th><th class="num">Revenue</th><th class="num">Share</th></tr></thead>
+  <tbody>
+    ${linkedTickets.tiers.map((t) => {
+      const rev = (t.sold||0)*(t.price||0);
+      const share = linkedTickets.total > 0 ? Math.round((rev/linkedTickets.total)*100) : 0;
+      return `<tr><td>${t.name}</td><td class="num">${t.sold}</td><td class="num">${t.price != null ? `RM ${t.price}` : "—"}</td><td class="num">${rm(rev)}</td><td class="num">${share}%</td></tr>`;
+    }).join("")}
+  </tbody>
+  <tfoot>
+    <tr><td><strong>Total Ticket Revenue</strong></td><td class="num">${linkedTickets.tiers.reduce((s,t)=>s+(t.sold||0),0)}</td><td></td><td class="num oa">${rm(linkedTickets.total)}</td><td class="num">100%</td></tr>
+  </tfoot>
+</table>` : ""}
 <div class="section-title">Summary</div>
 <table><thead><tr><th>Item</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
 <tbody>
