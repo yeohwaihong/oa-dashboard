@@ -479,6 +479,49 @@ function parseDjLineup(value) {
   };
 }
 
+function normalizeLineupConnector(value) {
+  const raw = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (raw === "B2B" || raw === "B3B" || raw === "F2F") return raw;
+  return "";
+}
+
+function lineupParticipantCount(connector) {
+  if (connector === "B3B") return 3;
+  if (connector === "B2B" || connector === "F2F") return 2;
+  return 1;
+}
+
+function normalizeLineupParticipants(participants, desiredCount = 1) {
+  const list = Array.isArray(participants) ? participants.map((name) => String(name || "").trim()) : [];
+  const next = list.slice(0, Math.max(1, desiredCount));
+  while (next.length < Math.max(1, desiredCount)) next.push("");
+  return next;
+}
+
+function buildLineupDisplayName({ connector, participants }) {
+  const normalizedConnector = normalizeLineupConnector(connector);
+  const cleaned = (Array.isArray(participants) ? participants : [])
+    .map(canonicalDjName)
+    .filter(Boolean);
+  if (!cleaned.length) return "";
+  if (!normalizedConnector || cleaned.length < 2) return cleaned[0];
+  const unique = Array.from(new Set(cleaned));
+  if (unique.length < 2) return unique[0];
+  return unique.join(` ${normalizedConnector} `);
+}
+
+function slotLineupForSave(slot) {
+  const parsed = parseDjLineup(slot?.dj);
+  const connector = normalizeLineupConnector(slot?.djConnector || parsed.connector);
+  const sourceParticipants =
+    Array.isArray(slot?.djParticipants) && slot.djParticipants.length ? slot.djParticipants : parsed.participants;
+  const participants = Array.from(new Set(sourceParticipants.map(canonicalDjName).filter(Boolean)));
+  const displayName = buildLineupDisplayName({ connector, participants }) || parsed.displayName;
+  return { displayName, connector, participants };
+}
+
 function aggregateAssignmentStatus(assignments) {
   const statuses = (assignments || []).map((assignment) => assignment.assignmentStatus).filter(Boolean);
   if (!statuses.length) return "Pending";
@@ -1218,7 +1261,22 @@ function mapSupabaseEvent(row) {
             assignments.length > 1 && assignments.every((item) => item.notes && item.notes === assignments[0].notes)
               ? assignments[0].notes
               : "";
-          const dj = commonNote || (assignments.length ? assignments.map((item) => item.dj).join(" / ") : "(OPENING TBD)");
+          const parsedNote = commonNote ? parseDjLineup(commonNote) : null;
+          const assignmentNames = assignments
+            .filter((item) => item.djId && item.dj && !item.dj.toUpperCase().includes("TBD"))
+            .map((item) => canonicalDjName(item.dj))
+            .filter(Boolean);
+          const uniqueAssignmentNames = Array.from(new Set(assignmentNames));
+          const inferredConnector = parsedNote?.connector || (uniqueAssignmentNames.length === 3 ? "B3B" : uniqueAssignmentNames.length === 2 ? "B2B" : "");
+          const djConnector = normalizeLineupConnector(inferredConnector);
+          const djParticipants = uniqueAssignmentNames.length ? uniqueAssignmentNames : parsedNote?.participants || [];
+          const dj =
+            commonNote ||
+            (djParticipants.length > 1 && djConnector
+              ? buildLineupDisplayName({ connector: djConnector, participants: djParticipants })
+              : assignments.length
+                ? assignments.map((item) => item.dj).join(" / ")
+                : "(OPENING TBD)");
           const role = normalizeSlotRole(slot.role);
           const needsTime = role !== "MC";
           return {
@@ -1229,6 +1287,8 @@ function mapSupabaseEvent(row) {
             assignmentStatus: aggregateAssignmentStatus(assignments),
             assignments,
             dj,
+            djConnector,
+            djParticipants,
             role,
             start: needsTime && slot.start_time ? timeForInput(slot.start_time) : "",
             end: needsTime && slot.end_time ? timeForInput(slot.end_time) : "",
@@ -1729,7 +1789,25 @@ function AddEventDayModal({
     setDays((prev) =>
       prev.map((d) => {
         if (d.isoDate !== isoDate) return d;
-        const slots = d.slots.map((s, i) => (i === idx ? { ...s, ...patch } : s));
+        const slots = d.slots.map((s, i) => {
+          if (i !== idx) return s;
+          const next = { ...s, ...patch };
+          if (Object.prototype.hasOwnProperty.call(patch, "dj")) {
+            const lineup = parseDjLineup(next.dj);
+            return { ...next, dj: lineup.displayName, djConnector: lineup.connector, djParticipants: lineup.participants };
+          }
+          if (
+            Object.prototype.hasOwnProperty.call(patch, "djConnector") ||
+            Object.prototype.hasOwnProperty.call(patch, "djParticipants")
+          ) {
+            const connector = normalizeLineupConnector(next.djConnector);
+            const desiredCount = lineupParticipantCount(connector);
+            const participants = normalizeLineupParticipants(next.djParticipants, desiredCount);
+            const dj = buildLineupDisplayName({ connector, participants });
+            return { ...next, djConnector: connector, djParticipants: participants, dj };
+          }
+          return next;
+        });
         return { ...d, slots };
       }),
     );
@@ -2126,7 +2204,17 @@ function AddEventDayModal({
 
                     {day.slots.length ? (
                       <div className="mt-2 space-y-2">
-                        {day.slots.map((slot, idx) => (
+                        {day.slots.map((slot, idx) => {
+                          const parsed = parseDjLineup(slot.dj);
+                          const connector = normalizeLineupConnector(slot.djConnector || parsed.connector);
+                          const desiredCount = lineupParticipantCount(connector);
+                          const participants = normalizeLineupParticipants(
+                            Array.isArray(slot.djParticipants) && slot.djParticipants.length ? slot.djParticipants : parsed.participants,
+                            desiredCount,
+                          );
+                          const typeValue = connector || "";
+
+                          return (
                           <div
                             key={`${day.isoDate}-${idx}`}
                             className={`grid grid-cols-2 items-center gap-2 rounded-xl border bg-black/20 p-2 sm:grid-cols-[minmax(180px,1fr)_110px_110px_120px_40px_40px] ${
@@ -2134,13 +2222,43 @@ function AddEventDayModal({
                             }`}
                           >
                             <div className="col-span-2 sm:col-span-1">
-                              <input
-                                list={djListId}
-                                value={slot.dj}
-                                onChange={(e) => updateSlot(day.isoDate, idx, { dj: e.target.value })}
-                                placeholder="Select DJ"
-                                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/85 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
-                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <select
+                                  value={typeValue}
+                                  onChange={(e) => updateSlot(day.isoDate, idx, { djConnector: e.target.value, djParticipants: participants })}
+                                  className="h-9 rounded-lg border border-white/10 bg-white/5 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/70 outline-none focus:border-purple-300/60"
+                                >
+                                  <option value="">Solo</option>
+                                  <option value="B2B">B2B</option>
+                                  <option value="B3B">B3B</option>
+                                  <option value="F2F">F2F</option>
+                                </select>
+                                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">
+                                  {buildLineupDisplayName({ connector, participants }) || "DJ"}
+                                </div>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                {participants.map((name, participantIndex) => (
+                                  <React.Fragment key={`${day.isoDate}-${idx}-p-${participantIndex}`}>
+                                    {participantIndex > 0 ? (
+                                      <span className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black text-white/45">
+                                        {connector || "WITH"}
+                                      </span>
+                                    ) : null}
+                                    <input
+                                      list={djListId}
+                                      value={name}
+                                      onChange={(e) => {
+                                        const next = participants.slice();
+                                        next[participantIndex] = e.target.value;
+                                        updateSlot(day.isoDate, idx, { djConnector: connector, djParticipants: next });
+                                      }}
+                                      placeholder={participantIndex === 0 ? "Select DJ" : `DJ ${participantIndex + 1}`}
+                                      className="min-w-[140px] flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/85 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
+                                    />
+                                  </React.Fragment>
+                                ))}
+                              </div>
                               <datalist id={djListId}>
                                 {djOptions.map((dj) => (
                                   <option key={dj} value={dj} />
@@ -2227,7 +2345,8 @@ function AddEventDayModal({
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs font-bold text-white/35">
@@ -6138,7 +6257,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           throw savedSlot.error;
         }
 
-        const lineup = parseDjLineup(slot.dj);
+        const lineup = slotLineupForSave(slot);
         for (const participantName of lineup.participants) {
           const djId = await findOrCreateDj(participantName);
           const savedAssignment = await supabase.from("event_assignments").insert({
@@ -6757,10 +6876,23 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
       const dateObj = isoToDate(d.isoDate);
       const { day, dayNo, month } = formatEventDatePieces(dateObj);
       const slots = d.slots
-        .map((s) => ({ ...s, dj: canonicalDjName(s.dj) }))
+        .map((s) => {
+          const parsed = parseDjLineup(s.dj);
+          const connector = normalizeLineupConnector(s.djConnector || parsed.connector);
+          const desiredCount = lineupParticipantCount(connector);
+          const participantsSource =
+            Array.isArray(s.djParticipants) && s.djParticipants.length ? s.djParticipants : parsed.participants;
+          const participants = normalizeLineupParticipants(participantsSource, desiredCount)
+            .map(canonicalDjName)
+            .filter(Boolean);
+          const dj = buildLineupDisplayName({ connector, participants }) || canonicalDjName(s.dj);
+          return { ...s, dj, djConnector: connector, djParticipants: participants };
+        })
         .filter((s) => s.dj.length && slotHasValidTime(s))
         .map((s) => ({
           dj: s.dj,
+          djConnector: s.djConnector,
+          djParticipants: s.djParticipants,
           role: s.role,
           start: slotNeedsTime(s) ? s.start : "",
           end: slotNeedsTime(s) ? s.end : "",
