@@ -3766,80 +3766,110 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
 
 // ─── PDF export helper ───────────────────────────────────────────────────────
 function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, oaRoi, partnerIncome, partnerCost, partnerNett, partnerRoi, hasPartnerSplit, artistCost, artistCostCurrency, linkedTickets }) {
-  const rm = (n) => `RM ${Number(n||0).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const pct = (n) => `${(Number(n||0)*100).toFixed(1)}%`;
+  const rm = (n) => "RM " + Number(n||0).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = (n) => (Number(n||0)*100).toFixed(1) + "%";
   const partnerName = inputs.partnerName || "Partner";
 
-  const rowsHtml = (rows) => rows.map(([label, total, oa, partner]) => `
-    <tr>
-      <td>${label}</td>
-      ${hasPartnerSplit
-        ? `<td class="num">${rm(total)}</td><td class="num oa">${rm(oa)}</td><td class="num partner">${rm(partner)}</td>`
-        : `<td class="num oa">${rm(oa)}</td>`}
-    </tr>`).join("");
+  // Pre-build row HTML for income/cost tables
+  const rowsHtml = (rows) => rows.map(function(r) {
+    var label = r[0], total = r[1], oa = r[2], partner = r[3];
+    if (hasPartnerSplit) {
+      return "<tr><td>" + label + "</td><td class=\"num\">" + rm(total) + "</td><td class=\"num oa\">" + rm(oa) + "</td><td class=\"num partner\">" + rm(partner) + "</td></tr>";
+    }
+    return "<tr><td>" + label + "</td><td class=\"num oa\">" + rm(oa) + "</td></tr>";
+  }).join("");
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>P&L — ${inputs.eventName || "Event"}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px;max-width:900px;margin:auto}
-  h1{font-size:22px;font-weight:900;margin-bottom:4px}
-  .meta{color:#555;font-size:11px;margin-bottom:24px}
-  .chips{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
-  .chip{background:#f4f4f8;border-radius:8px;padding:10px 16px}
-  .chip .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700}
-  .chip .val{font-size:16px;font-weight:900;margin-top:2px}
-  .green{color:#16a34a} .red{color:#dc2626} .blue{color:#2563eb} .purple{color:#7c3aed}
-  table{width:100%;border-collapse:collapse;margin-bottom:20px}
-  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;padding:6px 0;border-bottom:2px solid #e5e5e5}
-  th.num{text-align:right}
-  td{padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
-  td.num{text-align:right;font-variant-numeric:tabular-nums}
-  td.oa{color:#7c3aed;font-weight:700}
-  td.partner{color:#0891b2;font-weight:700}
-  tfoot td{font-weight:900;font-size:13px;padding-top:8px;border-top:2px solid #111;border-bottom:none}
-  .section-title{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.18em;color:#888;margin:20px 0 8px}
-  .footer{margin-top:32px;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:12px}
-  @media print{body{padding:16px}.chip{background:#f9f9f9}}
-</style></head><body>
-<h1>${inputs.eventName || "Event P&L"}</h1>
-<div class="meta">Generated ${new Date().toLocaleDateString("en-MY", {weekday:"long",day:"numeric",month:"long",year:"numeric"})}${inputs.venueName ? " · " + inputs.venueName : ""}${hasPartnerSplit ? " · Partner: " + partnerName : ""}</div>
-<div class="chips">
-  <div class="chip"><div class="lbl">O&A Nett</div><div class="val ${oaNett>=0?"green":"red"}">${rm(oaNett)}</div></div>
-  <div class="chip"><div class="lbl">O&A ROI</div><div class="val ${oaRoi>=0?"green":"red"}">${pct(oaRoi)}</div></div>
-  ${hasPartnerSplit ? `<div class="chip"><div class="lbl">${partnerName} Nett</div><div class="val ${partnerNett>=0?"blue":"red"}">${rm(partnerNett)}</div></div><div class="chip"><div class="lbl">${partnerName} ROI</div><div class="val ${partnerRoi>=0?"blue":"red"}">${pct(partnerRoi)}</div></div>` : ""}
-</div>
-<div class="section-title">Income</div>
-<table><thead><tr><th>Item</th>${hasPartnerSplit?`<th class="num">Total</th><th class="num">O&A</th><th class="num">${partnerName}</th>`:`<th class="num">Amount</th>`}</tr></thead>
-<tbody>${rowsHtml(incomeRows)}</tbody>
-<tfoot><tr><td>Total Income</td>${hasPartnerSplit?`<td></td><td class="num oa">${rm(oaIncome)}</td><td class="num partner">${rm(partnerIncome)}</td>`:`<td class="num oa">${rm(oaIncome)}</td>`}</tr></tfoot></table>
-<div class="section-title">Costs</div>
-<table><thead><tr><th>Item</th>${hasPartnerSplit?`<th class="num">Total</th><th class="num">O&A</th><th class="num">${partnerName}</th>`:`<th class="num">Amount</th>`}</tr></thead>
-<tbody>${rowsHtml(costRows)}</tbody>
-<tfoot><tr><td>Total Cost</td>${hasPartnerSplit?`<td></td><td class="num oa">${rm(oaCost)}</td><td class="num partner">${rm(partnerCost)}</td>`:`<td class="num oa">${rm(oaCost)}</td>`}</tr></tfoot></table>
-${linkedTickets && linkedTickets.tiers && linkedTickets.tiers.length > 0 ? `
-<div class="section-title">Ticket Sales — ${linkedTickets.eventName || "Linked Event"}</div>
-<table>
-  <thead><tr><th>Tier</th><th class="num">Sold</th><th class="num">Price (RM)</th><th class="num">Revenue</th><th class="num">Share</th></tr></thead>
-  <tbody>
-    ${linkedTickets.tiers.map((t) => {
-      const rev = (t.sold||0)*(t.price||0);
-      const share = linkedTickets.total > 0 ? Math.round((rev/linkedTickets.total)*100) : 0;
-      return `<tr><td>${t.name}</td><td class="num">${t.sold}</td><td class="num">${t.price != null ? `RM ${t.price}` : "—"}</td><td class="num">${rm(rev)}</td><td class="num">${share}%</td></tr>`;
-    }).join("")}
-  </tbody>
-  <tfoot>
-    <tr><td><strong>Total Ticket Revenue</strong></td><td class="num">${linkedTickets.tiers.reduce((s,t)=>s+(t.sold||0),0)}</td><td></td><td class="num oa">${rm(linkedTickets.total)}</td><td class="num">100%</td></tr>
-  </tfoot>
-</table>` : ""}
-<div class="section-title">Summary</div>
-<table><thead><tr><th>Item</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
-<tbody>
-  <tr><td>Nett Profit</td><td class="num ${oaNett>=0?"green":"red"}">${rm(oaNett)}</td>${hasPartnerSplit?`<td class="num ${partnerNett>=0?"blue":"red"}">${rm(partnerNett)}</td>`:""}</tr>
-  <tr><td>ROI</td><td class="num ${oaRoi>=0?"green":"red"}">${pct(oaRoi)}</td>${hasPartnerSplit?`<td class="num ${partnerRoi>=0?"blue":"red"}">${pct(partnerRoi)}</td>`:""}</tr>
-</tbody></table>
-<div class="footer">O&A Dashboard · Financial Math · Confidential</div>
-<script>window.onload=()=>{ window.print(); }<\/script>
+  // Pre-build ticket section HTML
+  var ticketHtml = "";
+  if (linkedTickets && linkedTickets.tiers && linkedTickets.tiers.length > 0) {
+    var tiers = linkedTickets.tiers;
+    var ticketTotal = linkedTickets.total || 0;
+    var totalSold = 0;
+    var tierRows = "";
+    for (var i = 0; i < tiers.length; i++) {
+      var t = tiers[i];
+      var rev = (t.sold || 0) * (t.price || 0);
+      var share = ticketTotal > 0 ? Math.round((rev / ticketTotal) * 100) : 0;
+      totalSold += (t.sold || 0);
+      var priceCell = t.price != null ? "RM " + t.price : "—";
+      tierRows += "<tr><td>" + (t.name || "") + "</td><td class=\"num\">" + (t.sold || 0) + "</td><td class=\"num\">" + priceCell + "</td><td class=\"num\">" + rm(rev) + "</td><td class=\"num\">" + share + "%</td></tr>";
+    }
+    ticketHtml = "<div class=\"section-title\">Ticket Sales — " + (linkedTickets.eventName || "Linked Event") + "</div>"
+      + "<table><thead><tr><th>Tier</th><th class=\"num\">Sold</th><th class=\"num\">Price (RM)</th><th class=\"num\">Revenue</th><th class=\"num\">Share</th></tr></thead>"
+      + "<tbody>" + tierRows + "</tbody>"
+      + "<tfoot><tr><td><strong>Total Ticket Revenue</strong></td><td class=\"num\">" + totalSold + "</td><td></td><td class=\"num oa\">" + rm(ticketTotal) + "</td><td class=\"num\">100%</td></tr></tfoot>"
+      + "</table>";
+  }
+
+  // Partner chips
+  var partnerChips = hasPartnerSplit
+    ? "<div class=\"chip\"><div class=\"lbl\">" + partnerName + " Nett</div><div class=\"val " + (partnerNett>=0?"blue":"red") + "\">" + rm(partnerNett) + "</div></div>"
+      + "<div class=\"chip\"><div class=\"lbl\">" + partnerName + " ROI</div><div class=\"val " + (partnerRoi>=0?"blue":"red") + "\">" + pct(partnerRoi) + "</div></div>"
+    : "";
+
+  var incomeHeader = hasPartnerSplit
+    ? "<th class=\"num\">Total</th><th class=\"num\">O&amp;A</th><th class=\"num\">" + partnerName + "</th>"
+    : "<th class=\"num\">Amount</th>";
+  var incomeFoot = hasPartnerSplit
+    ? "<td></td><td class=\"num oa\">" + rm(oaIncome) + "</td><td class=\"num partner\">" + rm(partnerIncome) + "</td>"
+    : "<td class=\"num oa\">" + rm(oaIncome) + "</td>";
+  var costFoot = hasPartnerSplit
+    ? "<td></td><td class=\"num oa\">" + rm(oaCost) + "</td><td class=\"num partner\">" + rm(partnerCost) + "</td>"
+    : "<td class=\"num oa\">" + rm(oaCost) + "</td>";
+  var partnerSummaryHeader = hasPartnerSplit ? "<th class=\"num\">" + partnerName + "</th>" : "";
+  var partnerSummaryRows = hasPartnerSplit
+    ? "<td class=\"num " + (partnerNett>=0?"blue":"red") + "\">" + rm(partnerNett) + "</td>"
+      + "</tr><tr><td>ROI</td><td class=\"num " + (oaRoi>=0?"green":"red") + "\">" + pct(oaRoi) + "</td>"
+      + "<td class=\"num " + (partnerRoi>=0?"blue":"red") + "\">" + pct(partnerRoi) + "</td>"
+    : "</tr><tr><td>ROI</td><td class=\"num " + (oaRoi>=0?"green":"red") + "\">" + pct(oaRoi) + "</td>";
+
+  var html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>"
+    + "<title>P&L — " + (inputs.eventName || "Event") + "</title>"
+    + "<style>"
+    + "*{margin:0;padding:0;box-sizing:border-box}"
+    + "body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px;max-width:900px;margin:auto}"
+    + "h1{font-size:22px;font-weight:900;margin-bottom:4px}"
+    + ".meta{color:#555;font-size:11px;margin-bottom:24px}"
+    + ".chips{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}"
+    + ".chip{background:#f4f4f8;border-radius:8px;padding:10px 16px}"
+    + ".chip .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700}"
+    + ".chip .val{font-size:16px;font-weight:900;margin-top:2px}"
+    + ".green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.purple{color:#7c3aed}"
+    + "table{width:100%;border-collapse:collapse;margin-bottom:20px}"
+    + "th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#888;padding:6px 0;border-bottom:2px solid #e5e5e5}"
+    + "th.num{text-align:right}"
+    + "td{padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px}"
+    + "td.num{text-align:right;font-variant-numeric:tabular-nums}"
+    + "td.oa{color:#7c3aed;font-weight:700}"
+    + "td.partner{color:#0891b2;font-weight:700}"
+    + "tfoot td{font-weight:900;font-size:13px;padding-top:8px;border-top:2px solid #111;border-bottom:none}"
+    + ".section-title{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.18em;color:#888;margin:20px 0 8px}"
+    + ".footer{margin-top:32px;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:12px}"
+    + "@media print{body{padding:16px}.chip{background:#f9f9f9}}"
+    + "</style></head><body>"
+    + "<h1>" + (inputs.eventName || "Event P&L") + "</h1>"
+    + "<div class=\"meta\">Generated " + new Date().toLocaleDateString("en-MY", {weekday:"long",day:"numeric",month:"long",year:"numeric"})
+      + (hasPartnerSplit ? " · Partner: " + partnerName : "") + "</div>"
+    + "<div class=\"chips\">"
+    + "<div class=\"chip\"><div class=\"lbl\">O&amp;A Nett</div><div class=\"val " + (oaNett>=0?"green":"red") + "\">" + rm(oaNett) + "</div></div>"
+    + "<div class=\"chip\"><div class=\"lbl\">O&amp;A ROI</div><div class=\"val " + (oaRoi>=0?"green":"red") + "\">" + pct(oaRoi) + "</div></div>"
+    + partnerChips
+    + "</div>"
+    + "<div class=\"section-title\">Income</div>"
+    + "<table><thead><tr><th>Item</th>" + incomeHeader + "</tr></thead>"
+    + "<tbody>" + rowsHtml(incomeRows) + "</tbody>"
+    + "<tfoot><tr><td>Total Income</td>" + incomeFoot + "</tr></tfoot></table>"
+    + "<div class=\"section-title\">Costs</div>"
+    + "<table><thead><tr><th>Item</th>" + incomeHeader + "</tr></thead>"
+    + "<tbody>" + rowsHtml(costRows) + "</tbody>"
+    + "<tfoot><tr><td>Total Cost</td>" + costFoot + "</tr></tfoot></table>"
+    + ticketHtml
+    + "<div class=\"section-title\">Summary</div>"
+    + "<table><thead><tr><th>Item</th><th class=\"num\">O&amp;A</th>" + partnerSummaryHeader + "</tr></thead>"
+    + "<tbody><tr><td>Nett Profit</td><td class=\"num " + (oaNett>=0?"green":"red") + "\">" + rm(oaNett) + "</td>" + partnerSummaryRows + "</tr></tbody></table>"
+    + "<div class=\"footer\">O&amp;A Dashboard · Financial Math · Confidential</div>"
+    + "<script>window.onload=function(){ window.print(); };<\/script>"
+    + "</body></html>";
 </body></html>`;
 
   const w = window.open("", "_blank", "width=900,height=700");
