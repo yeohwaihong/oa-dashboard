@@ -3889,7 +3889,6 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
     + "<div class=\"footer\">O&amp;A Dashboard · Financial Math · Confidential</div>"
     + "<script>window.onload=function(){ window.print(); };<\/script>"
     + "</body></html>";
-</body></html>`;
 
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) { alert("Please allow popups to export PDF."); return; }
