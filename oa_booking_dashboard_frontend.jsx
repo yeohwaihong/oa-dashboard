@@ -4054,8 +4054,8 @@ function LoginScreen() {
   const weekLabel = `${dayLabelFromISO(weekStartISO)} - ${dayLabelFromISO(weekEndISO)}`;
 
   return (
-    <div className="min-h-screen bg-[#080711] text-white">
-      <div className="mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8">
+    <div className="min-h-[100svh] bg-[#080711] text-white">
+      <div className="mx-auto flex min-h-[100svh] max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between gap-3">
           <div className="text-3xl font-black tracking-tight">
             O<span className="text-purple-300">&</span>A
@@ -6702,7 +6702,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [activeFilter, calendarFilteredEvents, search, view]);
 
   return (
-    <div className={`oa-theme-${theme} min-h-screen ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-5 xl:p-6`}>
+    <div className={`oa-theme-${theme} min-h-[100svh] ${isLightTheme ? "bg-[#f6f3fb] text-[#171321]" : "bg-[#080711] text-white"} sm:p-4 lg:p-5 xl:p-6`}>
       {showSlowLoading ? (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="fixed left-1/2 top-3 z-[90] -translate-x-1/2">
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-2 text-xs font-black text-white/80 backdrop-blur">
@@ -6769,7 +6769,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           .oa-modal-panel textarea { min-height: 4.5rem; }
         }
       `}</style>
-      <div className={`mx-auto min-h-screen max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
+      <div className={`mx-auto min-h-[100svh] max-w-[1320px] overflow-hidden border-white/10 ${isLightTheme ? "bg-white" : "bg-[#0d0c17]"} shadow-2xl shadow-black/20 sm:min-h-0 sm:rounded-3xl sm:border`}>
         <header className="flex flex-col gap-3 border-b border-white/10 px-3 py-3 sm:px-4 sm:py-4 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-6 xl:px-8">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center md:flex-1">
             <div className="mr-1 shrink-0 text-xl font-black leading-none tracking-tight sm:text-2xl md:mr-2 md:text-3xl">O<span className="text-purple-300">&</span>A</div>
@@ -7494,7 +7494,7 @@ export default function OABookingDashboard() {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
+      <div className="flex min-h-[100svh] items-center justify-center bg-[#080711] p-4 text-white">
         <div className="rounded-3xl border border-white/10 bg-[#0d0c17] px-6 py-5 text-sm font-black text-white/55">Checking login...</div>
       </div>
     );
@@ -7504,7 +7504,7 @@ export default function OABookingDashboard() {
 
   if (!userRole) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080711] p-4 text-white">
+      <div className="flex min-h-[100svh] items-center justify-center bg-[#080711] p-4 text-white">
         <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0d0c17] p-6 shadow-2xl shadow-black/50">
           <div className="text-3xl font-black tracking-tight">
             O<span className="text-purple-300">&</span>A
