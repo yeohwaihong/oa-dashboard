@@ -3365,9 +3365,15 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
     rows.map(([label, amount, oa, partner]) => (
       <tr key={label} className="border-b border-white/5 last:border-0">
         <td className="py-2 pr-3 text-white/70">{label}</td>
-        <td className="py-2 text-right font-black text-white/55">{currency(amount)}</td>
-        <td className="py-2 text-right font-black text-purple-100">{currency(oa)}</td>
-        {hasPartnerSplit ? <td className="py-2 text-right font-black text-cyan-100">{currency(partner)}</td> : null}
+        {hasPartnerSplit ? (
+          <>
+            <td className="py-2 text-right font-black text-white/55">{currency(amount)}</td>
+            <td className="py-2 text-right font-black text-purple-100">{currency(oa)}</td>
+            <td className="py-2 text-right font-black text-cyan-100">{currency(partner)}</td>
+          </>
+        ) : (
+          <td className="py-2 text-right font-black text-purple-100">{currency(oa)}</td>
+        )}
       </tr>
     ));
 
@@ -3375,22 +3381,15 @@ function FinanceMathPage({ linkedTickets, onUnlinkTickets, onScenariosChange }) 
     rows.map(([label, amount, oa, partner]) => (
       <div key={label} className="rounded-xl border border-white/10 bg-black/20 p-3">
         <div className="text-xs font-black text-white/80">{label}</div>
-        <div className={`mt-2 grid gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-white/30 ${hasPartnerSplit ? "grid-cols-3" : "grid-cols-2"}`}>
-          <div>
-            Amount
-            <div className="mt-0.5 text-sm tracking-normal text-white/55">{currency(amount)}</div>
+        {hasPartnerSplit ? (
+          <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-white/30">
+            <div>Amount<div className="mt-0.5 text-sm tracking-normal text-white/55">{currency(amount)}</div></div>
+            <div>O&A<div className="mt-0.5 text-sm tracking-normal text-purple-100">{currency(oa)}</div></div>
+            <div>{inputs.partnerName || "Partner"}<div className="mt-0.5 text-sm tracking-normal text-cyan-100">{currency(partner)}</div></div>
           </div>
-          <div>
-            O&A
-            <div className="mt-0.5 text-sm tracking-normal text-purple-100">{currency(oa)}</div>
-          </div>
-          {hasPartnerSplit ? (
-            <div>
-              {inputs.partnerName || "Partner"}
-              <div className="mt-0.5 text-sm tracking-normal text-cyan-100">{currency(partner)}</div>
-            </div>
-          ) : null}
-        </div>
+        ) : (
+          <div className="mt-1.5 text-sm font-black text-purple-100">{currency(oa)}</div>
+        )}
       </div>
     ));
 
@@ -3710,7 +3709,7 @@ function FinanceMobileSection({ title, rows, totalLabel, oaTotal, partnerTotal, 
       <div className="mt-3 grid gap-2">{rows}</div>
       <div className={`mt-3 grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 ${hasPartnerSplit ? "grid-cols-2" : ""}`}>
         <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{totalLabel} O&A</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/30">{hasPartnerSplit ? `${totalLabel} O&A` : totalLabel}</div>
           <div className="mt-1 text-base font-black text-purple-100">{currency(oaTotal)}</div>
         </div>
         {hasPartnerSplit ? (
@@ -3729,22 +3728,34 @@ function FinanceTable({ title, rows, totalLabel, oaTotal, partnerTotal, partnerN
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#12111f]">
       <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.24em] text-white/30">{title}</div>
       <div className="overflow-x-auto px-4 py-3">
-        <table className={`w-full text-sm ${hasPartnerSplit ? "min-w-[560px]" : "min-w-[420px]"}`}>
+        <table className={`w-full text-sm ${hasPartnerSplit ? "min-w-[560px]" : "min-w-[280px]"}`}>
           <thead className="text-[10px] uppercase tracking-[0.18em] text-white/30">
             <tr>
               <th className="pb-2 text-left">Item</th>
-              <th className="pb-2 text-right">Amount</th>
-              <th className="pb-2 text-right">O&A</th>
-              {hasPartnerSplit ? <th className="pb-2 text-right">{partnerName || "Partner"}</th> : null}
+              {hasPartnerSplit ? (
+                <>
+                  <th className="pb-2 text-right">Total</th>
+                  <th className="pb-2 text-right">O&A</th>
+                  <th className="pb-2 text-right">{partnerName || "Partner"}</th>
+                </>
+              ) : (
+                <th className="pb-2 text-right">Amount</th>
+              )}
             </tr>
           </thead>
           <tbody>{rows}</tbody>
           <tfoot>
             <tr className="border-t border-white/10 text-base">
               <td className="pt-3 font-black text-white">{totalLabel}</td>
-              <td />
-              <td className="pt-3 text-right font-black text-purple-100">{currency(oaTotal)}</td>
-              {hasPartnerSplit ? <td className="pt-3 text-right font-black text-cyan-100">{currency(partnerTotal)}</td> : null}
+              {hasPartnerSplit ? (
+                <>
+                  <td />
+                  <td className="pt-3 text-right font-black text-purple-100">{currency(oaTotal)}</td>
+                  <td className="pt-3 text-right font-black text-cyan-100">{currency(partnerTotal)}</td>
+                </>
+              ) : (
+                <td className="pt-3 text-right font-black text-purple-100">{currency(oaTotal)}</td>
+              )}
             </tr>
           </tfoot>
         </table>
@@ -3762,9 +3773,9 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
   const rowsHtml = (rows) => rows.map(([label, total, oa, partner]) => `
     <tr>
       <td>${label}</td>
-      <td class="num">${rm(total)}</td>
-      <td class="num oa">${rm(oa)}</td>
-      ${hasPartnerSplit ? `<td class="num partner">${rm(partner)}</td>` : ""}
+      ${hasPartnerSplit
+        ? `<td class="num">${rm(total)}</td><td class="num oa">${rm(oa)}</td><td class="num partner">${rm(partner)}</td>`
+        : `<td class="num oa">${rm(oa)}</td>`}
     </tr>`).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
@@ -3799,13 +3810,13 @@ function exportPnlPdf({ inputs, incomeRows, costRows, oaIncome, oaCost, oaNett, 
   ${hasPartnerSplit ? `<div class="chip"><div class="lbl">${partnerName} Nett</div><div class="val ${partnerNett>=0?"blue":"red"}">${rm(partnerNett)}</div></div><div class="chip"><div class="lbl">${partnerName} ROI</div><div class="val ${partnerRoi>=0?"blue":"red"}">${pct(partnerRoi)}</div></div>` : ""}
 </div>
 <div class="section-title">Income</div>
-<table><thead><tr><th>Item</th><th class="num">Total</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
+<table><thead><tr><th>Item</th>${hasPartnerSplit?`<th class="num">Total</th><th class="num">O&A</th><th class="num">${partnerName}</th>`:`<th class="num">Amount</th>`}</tr></thead>
 <tbody>${rowsHtml(incomeRows)}</tbody>
-<tfoot><tr><td>Total Income</td><td></td><td class="num oa">${rm(oaIncome)}</td>${hasPartnerSplit?`<td class="num partner">${rm(partnerIncome)}</td>`:""}</tr></tfoot></table>
+<tfoot><tr><td>Total Income</td>${hasPartnerSplit?`<td></td><td class="num oa">${rm(oaIncome)}</td><td class="num partner">${rm(partnerIncome)}</td>`:`<td class="num oa">${rm(oaIncome)}</td>`}</tr></tfoot></table>
 <div class="section-title">Costs</div>
-<table><thead><tr><th>Item</th><th class="num">Total</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
+<table><thead><tr><th>Item</th>${hasPartnerSplit?`<th class="num">Total</th><th class="num">O&A</th><th class="num">${partnerName}</th>`:`<th class="num">Amount</th>`}</tr></thead>
 <tbody>${rowsHtml(costRows)}</tbody>
-<tfoot><tr><td>Total Cost</td><td></td><td class="num oa">${rm(oaCost)}</td>${hasPartnerSplit?`<td class="num partner">${rm(partnerCost)}</td>`:""}</tr></tfoot></table>
+<tfoot><tr><td>Total Cost</td>${hasPartnerSplit?`<td></td><td class="num oa">${rm(oaCost)}</td><td class="num partner">${rm(partnerCost)}</td>`:`<td class="num oa">${rm(oaCost)}</td>`}</tr></tfoot></table>
 <div class="section-title">Summary</div>
 <table><thead><tr><th>Item</th><th class="num">O&A</th>${hasPartnerSplit?`<th class="num">${partnerName}</th>`:""}</tr></thead>
 <tbody>
