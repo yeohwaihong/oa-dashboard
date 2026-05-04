@@ -6662,9 +6662,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       const year = isoToDate(date).getFullYear();
       if (year !== summaryYear) continue;
       const key = salesMonthKeyFromISO(date);
-      const current = map.get(key) || { key, year, firstDate: date, nights: 0, sales: 0, nett: 0, best: null };
+      const current = map.get(key) || { key, year, firstDate: date, nights: 0, sales: 0, income: 0, cost: 0, nett: 0, best: null };
       current.nights += 1;
       current.sales += Number(link.total) || 0;
+      current.income += Number(link.pl?.incomeTotal) || 0;
+      current.cost += Number(link.pl?.costTotal) || 0;
       current.nett += Number(link.pl?.nett) || 0;
       if (date < current.firstDate) current.firstDate = date;
       if (!current.best || (Number(link.total) || 0) > current.best.sales) {
@@ -6683,9 +6685,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       const date = row.date;
       if (!date) continue;
       const year = isoToDate(date).getFullYear();
-      const current = map.get(year) || { year, firstDate: date, nights: 0, sales: 0, nett: 0, best: null };
+      const current = map.get(year) || { year, firstDate: date, nights: 0, sales: 0, income: 0, cost: 0, nett: 0, best: null };
       current.nights += 1;
       current.sales += Number(link.total) || 0;
+      current.income += Number(link.pl?.incomeTotal) || 0;
+      current.cost += Number(link.pl?.costTotal) || 0;
       current.nett += Number(link.pl?.nett) || 0;
       if (date < current.firstDate) current.firstDate = date;
       if (!current.best || (Number(link.total) || 0) > current.best.sales) {
@@ -6696,6 +6700,47 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     return Array.from(map.values())
       .sort((a, b) => a.year - b.year);
   }, [salesFilteredLinks]);
+
+  const selectedYearTotals = useMemo(() => {
+    return salesFilteredLinks.reduce(
+      (acc, link) => {
+        const date = link.row?.date;
+        if (!date) return acc;
+        if (isoToDate(date).getFullYear() !== summaryYear) return acc;
+        return {
+          nights: acc.nights + 1,
+          sales: acc.sales + (Number(link.total) || 0),
+          income: acc.income + (Number(link.pl?.incomeTotal) || 0),
+          cost: acc.cost + (Number(link.pl?.costTotal) || 0),
+          nett: acc.nett + (Number(link.pl?.nett) || 0),
+        };
+      },
+      { nights: 0, sales: 0, income: 0, cost: 0, nett: 0 },
+    );
+  }, [salesFilteredLinks, summaryYear]);
+
+  const bestMonthInYear = useMemo(() => {
+    if (!monthlySummaryRows.length) return null;
+    return monthlySummaryRows.reduce((best, row) => (!best || row.sales > best.sales ? row : best), null);
+  }, [monthlySummaryRows]);
+
+  const allTimeTotals = useMemo(() => {
+    return salesFilteredLinks.reduce(
+      (acc, link) => ({
+        nights: acc.nights + 1,
+        sales: acc.sales + (Number(link.total) || 0),
+        income: acc.income + (Number(link.pl?.incomeTotal) || 0),
+        cost: acc.cost + (Number(link.pl?.costTotal) || 0),
+        nett: acc.nett + (Number(link.pl?.nett) || 0),
+      }),
+      { nights: 0, sales: 0, income: 0, cost: 0, nett: 0 },
+    );
+  }, [salesFilteredLinks]);
+
+  const bestYearAllTime = useMemo(() => {
+    if (!yearlySummaryRows.length) return null;
+    return yearlySummaryRows.reduce((best, row) => (!best || row.sales > best.sales ? row : best), null);
+  }, [yearlySummaryRows]);
 
   async function handleDelete(id) {
     if (!window.confirm("Delete this night? This cannot be undone.")) return;
@@ -7067,8 +7112,56 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       )}
 
       {!loading && !error && view === "monthly" && (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-          <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Monthly Sales — {summaryYear}</div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-purple-400/20 bg-purple-400/[0.06] px-6 py-5">
+            <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-purple-300/60">
+              {summaryYear} — Year Summary
+            </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Gross Sales</div>
+                <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(selectedYearTotals.sales)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Income</div>
+                <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(selectedYearTotals.income)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Cost</div>
+                <div className="mt-1 text-lg font-black text-red-300">{salesFmtRMFull(selectedYearTotals.cost)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Net Profit</div>
+                <div className={`mt-1 text-lg font-black ${selectedYearTotals.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                  {salesFmtRMFull(selectedYearTotals.nett)}
+                  {selectedYearTotals.cost > 0 && (
+                    <span className="ml-2 text-xs font-bold text-white/35">
+                      {salesFmtPct(selectedYearTotals.nett / selectedYearTotals.cost)} ROI
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Nights</div>
+                <div className="mt-1 text-lg font-black text-white">{selectedYearTotals.nights}</div>
+                <div className="mt-1 text-xs font-bold text-white/35">
+                  {salesFmtRMFull(selectedYearTotals.nights ? selectedYearTotals.sales / selectedYearTotals.nights : 0)} avg/night
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Best Month</div>
+                <div className="mt-1 text-sm font-black text-white">
+                  {bestMonthInYear ? salesMonthLabelFromKey(bestMonthInYear.key) : "—"}
+                </div>
+                <div className="mt-1 text-xs font-bold text-white/35">
+                  {bestMonthInYear ? salesFmtRMFull(bestMonthInYear.sales) : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+            <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Monthly Sales — {summaryYear}</div>
           <div className="overflow-auto">
             <table className="w-full min-w-[860px] text-xs">
               <thead>
@@ -7118,12 +7211,61 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
               </tbody>
             </table>
           </div>
+          </div>
         </div>
       )}
 
       {!loading && !error && view === "yearly" && (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-          <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Yearly Sales</div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-purple-400/20 bg-purple-400/[0.06] px-6 py-5">
+            <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-purple-300/60">
+              All Time — Summary
+            </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Gross Sales</div>
+                <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(allTimeTotals.sales)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Income</div>
+                <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(allTimeTotals.income)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Cost</div>
+                <div className="mt-1 text-lg font-black text-red-300">{salesFmtRMFull(allTimeTotals.cost)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Net Profit</div>
+                <div className={`mt-1 text-lg font-black ${allTimeTotals.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                  {salesFmtRMFull(allTimeTotals.nett)}
+                  {allTimeTotals.cost > 0 && (
+                    <span className="ml-2 text-xs font-bold text-white/35">
+                      {salesFmtPct(allTimeTotals.nett / allTimeTotals.cost)} ROI
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Nights</div>
+                <div className="mt-1 text-lg font-black text-white">{allTimeTotals.nights}</div>
+                <div className="mt-1 text-xs font-bold text-white/35">
+                  {salesFmtRMFull(allTimeTotals.nights ? allTimeTotals.sales / allTimeTotals.nights : 0)} avg/night
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Best Year</div>
+                <div className="mt-1 text-sm font-black text-white">
+                  {bestYearAllTime ? bestYearAllTime.year : "—"}
+                </div>
+                <div className="mt-1 text-xs font-bold text-white/35">
+                  {bestYearAllTime ? salesFmtRMFull(bestYearAllTime.sales) : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+            <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Yearly Sales</div>
           <div className="overflow-auto">
             <table className="w-full min-w-[860px] text-xs">
               <thead>
@@ -7171,6 +7313,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                 ) : null}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       )}
@@ -11928,38 +12071,38 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
         ) : null}
 
-        {!routeEventId && view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
-        <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-4 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
-          <Stat number={stats.total} label="Events" />
-          <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
-          <Stat number={stats.unconfirmed} label="Pending" tone="text-yellow-300" />
-          <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
-        </section>
+        {!routeEventId && (view === "List" || view === "Calendar") ? (
+          <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-4 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
+            <Stat number={stats.total} label="Events" />
+            <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
+            <Stat number={stats.unconfirmed} label="Pending" tone="text-yellow-300" />
+            <Stat number={stats.needAttention} label="Need Attention" tone="text-purple-300" />
+          </section>
         ) : null}
 
-        {!routeEventId && view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
-        <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
-          {view === "List" ? (
-          <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
-            {[
-              { key: "Upcoming", label: "Upcoming", count: upcomingCount },
-              { key: "Past", label: "Past Events", count: pastCount },
-            ].map((item) => {
-              const active = dateScope === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setDateScope(item.key)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[11px] font-black transition md:rounded-full md:px-4 md:text-sm ${
-                    active ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
-                  }`}
-                >
-                  {item.label} <span className={active ? "text-black/50" : "text-white/25"}>{item.count}</span>
-                </button>
-              );
-            })}
-          </div>
-          ) : null}
+        {!routeEventId && (view === "List" || view === "Calendar") ? (
+          <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
+            {view === "List" ? (
+              <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
+                {[
+                  { key: "Upcoming", label: "Upcoming", count: upcomingCount },
+                  { key: "Past", label: "Past Events", count: pastCount },
+                ].map((item) => {
+                  const active = dateScope === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => setDateScope(item.key)}
+                      className={`shrink-0 rounded-xl px-3 py-2 text-[11px] font-black transition md:rounded-full md:px-4 md:text-sm ${
+                        active ? "bg-white text-black" : "text-white/45 hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      {item.label} <span className={active ? "text-black/50" : "text-white/25"}>{item.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 
           <div className="grid w-full grid-cols-2 gap-1.5 min-[420px]:grid-cols-4 md:flex md:w-auto md:flex-wrap md:justify-start md:px-0">
             {filterItems.map((item) => {
@@ -12048,7 +12191,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               />
             </div>
           </div>
-        </section>
+          </section>
         ) : null}
 
         <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
