@@ -16,3 +16,9 @@ Run `supabase/allow_dj_role.sql` to enable the read-only `dj` user role used by 
 Run `supabase/merge_duplicate_djs_uppercase.sql` if DJ profile names have duplicates with different casing; it merges related assignments, genres, and fees into one uppercase DJ row.
 
 For local anonymous writes, run `supabase/dev_dashboard_policies.sql` after the DJ database SQL. For realtime updates, rerun `supabase/realtime_setup.sql`.
+
+## Weekly Sales (Finance page)
+
+Run `supabase/weekly_sales_schema.sql` to create the `weekly_sales` table with RLS policies (admin + superadmin only).
+
+Run `supabase/seed_weekly_sales_apr_may_2026.sql` after that to seed all April 2026 nightly data and blank May 2026 placeholder rows.

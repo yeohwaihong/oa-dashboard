@@ -37,6 +37,7 @@ import {
   Edit2,
   Check,
   Link2,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -213,6 +214,7 @@ const dashboardViewRoutes = {
   Activity: "/activity",
   Finance: "/finance",
   DJPayments: "/payments",
+  Sales: "/sales",
 };
 
 const routeDashboardViews = Object.fromEntries(Object.entries(dashboardViewRoutes).map(([view, path]) => [path, view]));
@@ -4514,6 +4516,660 @@ function TicketSalesPage({ savedScenarios }) {
   );
 }
 
+// ─── Weekly Sales Page ────────────────────────────────────────────────────────
+
+const SALES_MONTHS = ["APRIL 2026", "MAY 2026"];
+
+function calcNightPL(row) {
+  const barSales = (row.pos_total || 0) + (row.ticketmelon_total || 0);
+  const serviceCharge = barSales * 0.10;
+  const sst = barSales * 0.08;
+  const onlineTicket = row.online_ticket || 0;
+  const walkinTicket = row.walkin_ticket || 0;
+  const sponsorship = row.sponsorship || 0;
+  const incomeTotal = barSales + onlineTicket + walkinTicket + sponsorship;
+
+  const bottleCost = row.bottle_cost_override != null ? +row.bottle_cost_override : barSales * 0.40;
+  const ambassadorComm = row.ambassador_commission || 0;
+  const utilities = row.utilities ?? 1500;
+  const manPower = row.man_power ?? 9500;
+  const intlArtist = row.intl_artist_cost || 0;
+  const puspal = row.puspal || 0;
+  const hotel = row.hotel || 0;
+  const rider = row.rider || 0;
+  const localDj = row.local_dj ?? 2000;
+  const barSplit = row.bar_split || 0;
+  const misc = row.misc || 0;
+  const costTotal = bottleCost + ambassadorComm + utilities + manPower + intlArtist + puspal + hotel + rider + localDj + barSplit + misc;
+
+  const nett = incomeTotal - costTotal;
+  const roiPct = costTotal > 0 ? nett / costTotal : 0;
+
+  return { barSales, serviceCharge, sst, onlineTicket, walkinTicket, sponsorship, incomeTotal, bottleCost, ambassadorComm, utilities, manPower, intlArtist, puspal, hotel, rider, localDj, barSplit, misc, costTotal, nett, roiPct };
+}
+
+function salesFmtRM(val) {
+  if (val == null || isNaN(+val)) return "—";
+  const n = Number(val);
+  if (n === 0) return "—";
+  return "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function salesFmtRMFull(val) {
+  if (val == null || isNaN(+val)) return "RM 0.00";
+  return "RM " + Number(val).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function salesFmtPct(val) {
+  return (Number(val) * 100).toFixed(1) + "%";
+}
+
+function salesFmtDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short" });
+}
+
+function PLBreakdownTable({ rows }) {
+  const nights = rows.map((row) => ({ date: row.date, pl: calcNightPL(row) }));
+
+  const plRows = [
+    { section: "Income", label: "Bar Sales",            key: "barSales",        dim: false },
+    { section: null,     label: "Service Charge (10%)", key: "serviceCharge",   dim: true  },
+    { section: null,     label: "SST (8%)",             key: "sst",             dim: true  },
+    { section: null,     label: "Online Ticket",        key: "onlineTicket",    dim: true  },
+    { section: null,     label: "Walk-in Ticket",       key: "walkinTicket",    dim: true  },
+    { section: null,     label: "Sponsorship",          key: "sponsorship",     dim: true  },
+    { section: null,     label: "TOTAL",                key: "incomeTotal",     bold: true, isTotal: true },
+    { section: "Cost",   label: "Bottle Cost (40%)",    key: "bottleCost",      dim: false },
+    { section: null,     label: "Ambassador Comm.",     key: "ambassadorComm",  dim: true  },
+    { section: null,     label: "Utilities",            key: "utilities",       dim: true  },
+    { section: null,     label: "Man Power",            key: "manPower",        dim: true  },
+    { section: null,     label: "Intl Artist Cost",     key: "intlArtist",      dim: true  },
+    { section: null,     label: "Puspal",               key: "puspal",          dim: true  },
+    { section: null,     label: "Hotel",                key: "hotel",           dim: true  },
+    { section: null,     label: "Rider",                key: "rider",           dim: true  },
+    { section: null,     label: "Local DJ",             key: "localDj",         dim: true  },
+    { section: null,     label: "Bar Split",            key: "barSplit",        dim: true  },
+    { section: null,     label: "Misc",                 key: "misc",            dim: true  },
+    { section: null,     label: "TOTAL",                key: "costTotal",       bold: true, isTotal: true },
+    { section: "ROI",    label: "Nett",                 key: "nett",            bold: true, isROI: true  },
+    { section: null,     label: "ROI %",                key: "roiPct",          bold: false, isPct: true  },
+  ];
+
+  return (
+    <div className="overflow-x-auto px-4 pb-4 pt-3">
+      <table className="w-full min-w-[540px] text-xs">
+        <thead>
+          <tr className="border-b border-white/10">
+            <th className="w-20 pb-2 text-left text-[9px] font-black uppercase tracking-wider text-purple-300/50">Section</th>
+            <th className="pb-2 text-left text-[9px] font-black uppercase tracking-wider text-white/30">Item</th>
+            {nights.map((n) => (
+              <th key={n.date} className="pb-2 text-right text-[9px] font-black uppercase tracking-wider text-white/30">
+                {salesFmtDate(n.date)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {plRows.map((r, i) => (
+            <tr key={i} className={`border-b border-white/[0.04] ${r.isTotal ? "bg-white/[0.035]" : ""}`}>
+              <td className="py-1.5 pr-2 text-[9px] font-black uppercase tracking-wider text-purple-300/50">{r.section || ""}</td>
+              <td className={`py-1.5 pr-4 ${r.bold ? "font-black text-white/80" : "font-bold text-white/40"}`}>{r.label}</td>
+              {nights.map((n) => {
+                const raw = n.pl[r.key];
+                const isNegROI = r.isROI && raw < 0;
+                const isPosROI = r.isROI && raw >= 0;
+                return (
+                  <td
+                    key={n.date}
+                    className={`py-1.5 text-right font-bold tabular-nums ${
+                      r.isROI
+                        ? raw >= 0
+                          ? "font-black text-emerald-300"
+                          : "font-black text-red-300"
+                        : r.isPct
+                        ? raw >= 0
+                          ? "text-emerald-300"
+                          : "text-red-300"
+                        : r.dim
+                        ? "text-white/30"
+                        : "text-white/65"
+                    }`}
+                  >
+                    {r.isPct ? salesFmtPct(raw) : raw === 0 ? "—" : salesFmtRMFull(raw)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EditNightModal({ row, monthYear, onSave, onDelete, onClose }) {
+  const isNew = !!row._new;
+  const [form, setForm] = useState({
+    date:                 row.date || "",
+    event_name:           row.event_name || "",
+    pax:                  row.pax || "",
+    table_bookings:       row.table_bookings ?? 0,
+    door_sales:           row.door_sales ?? 0,
+    cover_charge:         row.cover_charge ?? 0,
+    pos_total:            row.pos_total ?? 0,
+    ticketmelon_total:    row.ticketmelon_total ?? 0,
+    weekly_target:        row.weekly_target ?? 15000,
+    week_number:          row.week_number ?? 1,
+    utilities:            row.utilities ?? 1500,
+    man_power:            row.man_power ?? 9500,
+    local_dj:             row.local_dj ?? 2000,
+    ambassador_commission: row.ambassador_commission ?? 0,
+    intl_artist_cost:     row.intl_artist_cost ?? 0,
+    puspal:               row.puspal ?? 0,
+    hotel:                row.hotel ?? 0,
+    rider:                row.rider ?? 0,
+    bar_split:            row.bar_split ?? 0,
+    misc:                 row.misc ?? 0,
+    online_ticket:        row.online_ticket ?? 0,
+    walkin_ticket:        row.walkin_ticket ?? 0,
+    sponsorship:          row.sponsorship ?? 0,
+    bottle_cost_override: row.bottle_cost_override != null ? row.bottle_cost_override : "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setNum   = (k, v) => setForm((f) => ({ ...f, [k]: v === "" ? 0 : +v }));
+
+  const preview = calcNightPL({
+    ...form,
+    pos_total:            +form.pos_total   || 0,
+    ticketmelon_total:    +form.ticketmelon_total || 0,
+    bottle_cost_override: form.bottle_cost_override !== "" ? +form.bottle_cost_override : null,
+  });
+
+  async function handleSave() {
+    if (!form.date) return;
+    setSaving(true);
+    const payload = {
+      ...form,
+      bottle_cost_override: form.bottle_cost_override !== "" ? +form.bottle_cost_override : null,
+      month_year: monthYear,
+    };
+    await onSave(payload);
+    setSaving(false);
+  }
+
+  const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white placeholder-white/20 focus:border-purple-400/50 focus:outline-none";
+  const labelCls = "mb-1 block text-[10px] font-black uppercase tracking-wider text-white/35";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-4 sm:items-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-[#0d0c17] shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div>
+            <div className="text-sm font-black text-white">{isNew ? "Add Night" : "Edit Night"}</div>
+            {!isNew && <div className="text-xs font-bold text-white/35">{row.event_name}</div>}
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* Body */}
+        <div className="max-h-[68vh] space-y-5 overflow-y-auto p-6">
+          {/* Basics */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div>
+              <label className={labelCls}>Date</label>
+              <input type="date" value={form.date} onChange={(e) => setField("date", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Week #</label>
+              <input type="number" value={form.week_number} onChange={(e) => setNum("week_number", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>PAX</label>
+              <input type="text" value={form.pax} onChange={(e) => setField("pax", e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Event Name</label>
+            <input type="text" value={form.event_name} onChange={(e) => setField("event_name", e.target.value)} className={inputCls} />
+          </div>
+
+          {/* Sales */}
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-purple-300/60">Sales</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                ["Table Bookings",  "table_bookings"],
+                ["Door Sales",      "door_sales"],
+                ["Cover Charge",    "cover_charge"],
+                ["POS Total",       "pos_total"],
+                ["TicketMelon",     "ticketmelon_total"],
+                ["Weekly Target",   "weekly_target"],
+              ].map(([label, key]) => (
+                <div key={key}>
+                  <label className={labelCls}>{label}</label>
+                  <input type="number" step="0.01" value={form[key]} onChange={(e) => setNum(key, e.target.value)} className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Income extras */}
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-purple-300/60">Income Extras</div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                ["Online Ticket",  "online_ticket"],
+                ["Walk-in Ticket", "walkin_ticket"],
+                ["Sponsorship",    "sponsorship"],
+              ].map(([label, key]) => (
+                <div key={key}>
+                  <label className={labelCls}>{label}</label>
+                  <input type="number" step="0.01" value={form[key]} onChange={(e) => setNum(key, e.target.value)} className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Costs */}
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-purple-300/60">Costs</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div>
+                <label className={labelCls}>Bottle Cost (blank = 40% auto)</label>
+                <input
+                  type="number" step="0.01"
+                  value={form.bottle_cost_override}
+                  onChange={(e) => setField("bottle_cost_override", e.target.value)}
+                  placeholder="Auto (40%)"
+                  className={inputCls}
+                />
+              </div>
+              {[
+                ["Utilities",            "utilities"],
+                ["Man Power",            "man_power"],
+                ["Local DJ",             "local_dj"],
+                ["Ambassador Comm.",     "ambassador_commission"],
+                ["Intl Artist Cost",     "intl_artist_cost"],
+                ["Puspal",               "puspal"],
+                ["Hotel",                "hotel"],
+                ["Rider",                "rider"],
+                ["Bar Split",            "bar_split"],
+                ["Misc",                 "misc"],
+              ].map(([label, key]) => (
+                <div key={key}>
+                  <label className={labelCls}>{label}</label>
+                  <input type="number" step="0.01" value={form[key]} onChange={(e) => setNum(key, e.target.value)} className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live P&L preview */}
+          <div className="rounded-xl border border-purple-400/15 bg-purple-400/5 p-4">
+            <div className="mb-2.5 text-[10px] font-black uppercase tracking-wider text-purple-300/60">P&amp;L Preview</div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <div className="text-[9px] text-white/30">Income</div>
+                <div className="font-black text-white">{salesFmtRMFull(preview.incomeTotal)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-white/30">Cost</div>
+                <div className="font-black text-red-300">{salesFmtRMFull(preview.costTotal)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-white/30">Nett</div>
+                <div className={`font-black ${preview.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(preview.nett)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-white/30">ROI %</div>
+                <div className={`font-black ${preview.roiPct >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtPct(preview.roiPct)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-white/10 px-6 py-4">
+          <div>
+            {onDelete && (
+              <button onClick={onDelete} className="text-xs font-black text-red-400 hover:text-red-300">
+                Delete Night
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-black text-white/50 hover:text-white">
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !form.date}
+              className="rounded-xl bg-purple-400 px-4 py-2 text-xs font-black text-black hover:bg-purple-300 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : isNew ? "Add Night" : "Save"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WeeklySalesPage({ userRole, onToast }) {
+  const [month, setMonth]         = useState("APRIL 2026");
+  const [data, setData]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState("");
+  const [editRow, setEditRow]     = useState(null);
+  const [expandedPL, setExpandedPL] = useState({});
+  const canEdit = userRole === "admin" || userRole === "superadmin";
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      setError("Supabase is not configured.");
+      return;
+    }
+    const { data: rows, error: err } = await supabase
+      .from("weekly_sales")
+      .select("*")
+      .eq("month_year", month)
+      .order("date", { ascending: true });
+    if (err) { setError(err.message); setLoading(false); return; }
+    setData(rows || []);
+    setLoading(false);
+  }, [month]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const weeks = useMemo(() => {
+    const map = {};
+    for (const row of data) {
+      const k = row.week_number;
+      if (!map[k]) map[k] = [];
+      map[k].push(row);
+    }
+    return Object.entries(map)
+      .sort(([a], [b]) => +a - +b)
+      .map(([k, rows]) => ({ weekNum: +k, rows }));
+  }, [data]);
+
+  const monthTotals = useMemo(() => {
+    return data.reduce(
+      (acc, row) => {
+        const pl = calcNightPL(row);
+        return {
+          sales:  acc.sales  + ((row.pos_total || 0) + (row.ticketmelon_total || 0)),
+          income: acc.income + pl.incomeTotal,
+          cost:   acc.cost   + pl.costTotal,
+          nett:   acc.nett   + pl.nett,
+        };
+      },
+      { sales: 0, income: 0, cost: 0, nett: 0 }
+    );
+  }, [data]);
+
+  async function handleDelete(id) {
+    if (!window.confirm("Delete this night? This cannot be undone.")) return;
+    const { error: err } = await supabase.from("weekly_sales").delete().eq("id", id);
+    if (err) { onToast(err.message, "error"); return; }
+    onToast("Night deleted", "success");
+    setEditRow(null);
+    load();
+  }
+
+  async function handleSave(values) {
+    if (editRow._new) {
+      const { error: err } = await supabase.from("weekly_sales").insert(values);
+      if (err) { onToast(err.message, "error"); return; }
+      onToast("Night added", "success");
+    } else {
+      const { error: err } = await supabase
+        .from("weekly_sales")
+        .update({ ...values, updated_at: new Date().toISOString() })
+        .eq("id", editRow.id);
+      if (err) { onToast(err.message, "error"); return; }
+      onToast("Saved", "success");
+    }
+    setEditRow(null);
+    load();
+  }
+
+  const nextWeekNum = weeks.length ? weeks[weeks.length - 1].weekNum + 1 : 1;
+
+  return (
+    <div className="space-y-5 px-1 py-2">
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-purple-300" />
+          <h1 className="text-lg font-black text-white">Weekly Sales</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Month tabs */}
+          <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
+            {SALES_MONTHS.map((m) => (
+              <button
+                key={m}
+                onClick={() => setMonth(m)}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition ${
+                  month === m ? "bg-purple-400 text-black" : "text-white/40 hover:text-white"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={load}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/40 hover:text-white"
+            title="Refresh"
+          >
+            <RefreshCcw className="h-3.5 w-3.5" />
+          </button>
+          {canEdit && (
+            <button
+              onClick={() => setEditRow({ _new: true, week_number: nextWeekNum })}
+              className="flex h-8 items-center gap-1.5 rounded-xl border border-purple-300/25 bg-purple-400/10 px-3 text-xs font-black text-purple-100 hover:bg-purple-400/20"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Night
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── States ── */}
+      {loading && (
+        <div className="py-16 text-center text-sm font-black text-white/25">Loading…</div>
+      )}
+      {!loading && error && (
+        <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-bold text-red-300">{error}</div>
+      )}
+      {!loading && !error && weeks.length === 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] py-16 text-center">
+          <div className="text-sm font-black text-white/30">No data for {month}</div>
+          {canEdit && (
+            <button
+              onClick={() => setEditRow({ _new: true, week_number: 1 })}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-purple-300/25 bg-purple-400/10 px-4 py-2 text-xs font-black text-purple-100 hover:bg-purple-400/20"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add First Night
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Week blocks ── */}
+      {!loading && !error && weeks.map(({ weekNum, rows }) => {
+        const weekSalesTotal = rows.reduce((s, r) => s + (r.pos_total || 0) + (r.ticketmelon_total || 0), 0);
+        const weekPLTotal    = rows.reduce((acc, r) => { const pl = calcNightPL(r); return { nett: acc.nett + pl.nett, cost: acc.cost + pl.costTotal }; }, { nett: 0, cost: 0 });
+        const isPLOpen       = !!expandedPL[weekNum];
+        const weekDate       = rows[0]?.date;
+
+        return (
+          <div key={weekNum} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+            {/* Week header */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/25">Week {weekNum}</div>
+                <div className="mt-0.5 text-[11px] font-black text-white/60">
+                  {weekDate ? new Date(weekDate + "T00:00:00").toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" }) : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25">Week Sales</div>
+                  <div className="text-sm font-black text-white">{salesFmtRMFull(weekSalesTotal)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25">Week Nett</div>
+                  <div className={`text-sm font-black ${weekPLTotal.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                    {salesFmtRMFull(weekPLTotal.nett)}
+                  </div>
+                </div>
+                {canEdit && (
+                  <button
+                    onClick={() => setEditRow({ _new: true, week_number: weekNum })}
+                    className="flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 text-[10px] font-black text-white/40 hover:text-white"
+                    title="Add night to this week"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setExpandedPL((p) => ({ ...p, [weekNum]: !p[weekNum] }))}
+                  className={`flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black transition ${
+                    isPLOpen
+                      ? "border-purple-300/30 bg-purple-400/20 text-purple-200"
+                      : "border-white/10 bg-white/5 text-white/40 hover:text-white"
+                  }`}
+                >
+                  <Receipt className="h-3 w-3" /> P&amp;L
+                </button>
+              </div>
+            </div>
+
+            {/* Sales table */}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-xs">
+                <thead>
+                  <tr className="border-b border-white/5">
+                    {["Date","Event","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
+                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 1 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
+                    ))}
+                    {canEdit && <th className="px-3 py-2.5" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const total     = (row.pos_total || 0) + (row.ticketmelon_total || 0);
+                    const hitTarget = total >= (row.weekly_target || 0);
+                    return (
+                      <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.015]">
+                        <td className="pl-4 pr-3 py-2.5 font-bold text-white/60">{salesFmtDate(row.date)}</td>
+                        <td className="px-3 py-2.5 font-bold text-white/85">{row.event_name}</td>
+                        <td className="px-3 py-2.5 text-right text-white/50">{row.pax || "—"}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.table_bookings)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.door_sales)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.cover_charge)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-bold text-white/75">{salesFmtRMFull(row.pos_total)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.ticketmelon_total)}</td>
+                        <td className={`px-3 py-2.5 text-right tabular-nums font-black ${hitTarget ? "text-emerald-300" : "text-amber-200"}`}>{salesFmtRMFull(total)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-white/30">{salesFmtRMFull(row.weekly_target)}</td>
+                        {canEdit && (
+                          <td className="px-3 py-2.5">
+                            <button
+                              onClick={() => setEditRow(row)}
+                              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black text-white/40 hover:text-white"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-white/[0.03]">
+                    <td colSpan={8} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
+                    <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-black ${weekSalesTotal > 0 ? "text-white" : "text-white/30"}`}>{salesFmtRMFull(weekSalesTotal)}</td>
+                    <td className="px-3 py-2.5" />
+                    {canEdit && <td />}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* P&L breakdown */}
+            {isPLOpen && (
+              <div className="border-t border-white/10">
+                <div className="px-4 pt-3 text-[10px] font-black uppercase tracking-wider text-purple-300/60">Profit &amp; Loss Breakdown</div>
+                <PLBreakdownTable rows={rows} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* ── Monthly summary ── */}
+      {!loading && !error && weeks.length > 0 && (
+        <div className="rounded-2xl border border-purple-400/20 bg-purple-400/[0.06] px-6 py-5">
+          <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-purple-300/60">
+            {month} — Monthly Summary
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Gross Sales</div>
+              <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(monthTotals.sales)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Income</div>
+              <div className="mt-1 text-lg font-black text-white">{salesFmtRMFull(monthTotals.income)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total Cost</div>
+              <div className="mt-1 text-lg font-black text-red-300">{salesFmtRMFull(monthTotals.cost)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Net Profit</div>
+              <div className={`mt-1 text-lg font-black ${monthTotals.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                {salesFmtRMFull(monthTotals.nett)}
+                {monthTotals.cost > 0 && (
+                  <span className="ml-2 text-xs font-bold text-white/35">
+                    {salesFmtPct(monthTotals.nett / monthTotals.cost)} ROI
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit / Add modal ── */}
+      {editRow && (
+        <EditNightModal
+          row={editRow}
+          monthYear={month}
+          onSave={handleSave}
+          onDelete={editRow._new ? null : () => handleDelete(editRow.id)}
+          onClose={() => setEditRow(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Finance Page (P&L Calculator + Ticket Sales tabs) ───────────────────────
 function FinancePage() {
   const [tab, setTab] = useState("pl");
@@ -7164,6 +7820,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const isLightTheme = theme === "light";
   const canEdit = userRole === "admin" || userRole === "superadmin";
   const canAccessFinance = userRole === "admin" || userRole === "superadmin";
+  const canAccessSales = userRole === "admin" || userRole === "superadmin";
   const canAccessDjs = userRole === "admin" || userRole === "superadmin";
   const canAccessDjPayments = userRole === "admin" || userRole === "superadmin";
   const canManageUsers = userRole === "superadmin";
@@ -7297,6 +7954,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (!canAccessFinance && view === "Finance") navigateView("List", { replace: true });
   }, [canAccessFinance, navigateView, view]);
+
+  useEffect(() => {
+    if (!canAccessSales && view === "Sales") navigateView("List", { replace: true });
+  }, [canAccessSales, navigateView, view]);
 
   useEffect(() => {
     if (!canAccessDjs && view === "DJs") navigateView("List", { replace: true });
@@ -8689,6 +9350,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <span className={headerIconsOnly ? "sr-only" : ""}>Finance</span>
               </Button>
             ) : null}
+            {canAccessSales ? (
+              <Button
+                onClick={() => navigateView("Sales")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                  view === "Sales"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className={headerIconsOnly ? "sr-only" : ""}>Sales</span>
+              </Button>
+            ) : null}
             {canAccessDjPayments ? (
               <Button
                 onClick={() => navigateView("DJPayments")}
@@ -9164,6 +9838,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <ActivityMonitorPage userRole={userRole} />
           ) : view === "Finance" ? (
             <FinancePage />
+          ) : view === "Sales" && canAccessSales ? (
+            <WeeklySalesPage userRole={userRole} onToast={showToast} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
