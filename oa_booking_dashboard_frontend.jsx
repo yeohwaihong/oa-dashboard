@@ -6503,8 +6503,9 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       return;
     }
     const cleaned = String(editDraft ?? "").trim();
-    const value = cleaned === "" ? 0 : Number.parseFloat(cleaned.replace(/[^0-9.-]/g, ""));
-    if (!Number.isFinite(value)) {
+    const isText = field === "pax";
+    const value = isText ? cleaned : (cleaned === "" ? 0 : Number.parseFloat(cleaned.replace(/[^0-9.-]/g, "")));
+    if (!isText && !Number.isFinite(value)) {
       onToast?.("Invalid number.", "error");
       return;
     }
@@ -7660,7 +7661,39 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                             <span className="text-white/25">No DJ link</span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-right text-white/50">{row.pax || "—"}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          {canEdit && editingCell?.rowId === String(row.id) && editingCell?.field === "pax" ? (
+                            <input
+                              autoFocus
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelCellEdit();
+                                }
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitCellEdit(String(row.id), "pax");
+                                }
+                              }}
+                              onBlur={() => commitCellEdit(String(row.id), "pax")}
+                              className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                              disabled={cellSaving}
+                            />
+                          ) : canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => beginCellEdit(row, "pax")}
+                              className="w-full text-right text-white/50 hover:text-white"
+                              title="Click to edit"
+                            >
+                              {row.pax || "—"}
+                            </button>
+                          ) : (
+                            <span className="text-white/50">{row.pax || "—"}</span>
+                          )}
+                        </td>
                         {[
                           { key: "table_bookings", display: salesFmtRM(row.table_bookings), cls: "text-white/50", raw: row.table_bookings },
                           { key: "door_sales", display: salesFmtRM(row.door_sales), cls: "text-white/50", raw: row.door_sales },
