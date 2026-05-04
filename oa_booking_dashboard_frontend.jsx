@@ -6903,11 +6903,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
 
             {/* Sales table */}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-xs">
+              <table className="w-full min-w-[980px] text-xs">
                 <thead>
                   <tr className="border-b border-white/5">
-                    {["Date","Event","Event ID","DJs","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 3 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
+                    {["Date","Event","DJs","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
+                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 2 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
                     ))}
                     {canEdit && <th className="px-3 py-2.5" />}
                   </tr>
@@ -6917,33 +6917,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                     const total     = (row.pos_total || 0) + (row.ticketmelon_total || 0);
                     const hitTarget = total >= (row.weekly_target || 0);
                     const link = linksByRowId.get(String(row.id)) || null;
+                    const primaryEvent = link?.event || link?.linkedEvents?.[0] || null;
                     return (
                       <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.015]">
                         <td className="pl-4 pr-3 py-2.5 font-bold text-white/60">{salesFmtDate(row.date)}</td>
                         <td className="px-3 py-2.5 font-bold text-white/85">{row.event_name}</td>
-                        <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
-                          {link?.linkedEvents?.length ? (
-                            <div className="space-y-1">
-                              {link.linkedEvents.map((event) => (
-                                <button
-                                  key={event.id}
-                                  type="button"
-                                  onClick={() => openEvent(event)}
-                                  className={`block w-full break-all rounded-lg border px-2 py-1 text-left transition ${
-                                    link?.event?.id === event.id
-                                      ? "border-cyan-300/40 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
-                                      : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:text-white/70"
-                                  }`}
-                                  title="Open event"
-                                >
-                                  {event.id}
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-white/25">No event link</span>
-                          )}
-                        </td>
                         <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
                           {link?.djNames?.length ? (
                             <div className="flex flex-wrap gap-1.5">
@@ -6951,13 +6929,13 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                                 <button
                                   key={name}
                                   type="button"
-                                  onClick={() => typeof onOpenDj === "function" && onOpenDj(name)}
+                                  onClick={() => primaryEvent && openEvent(primaryEvent)}
                                   className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider transition ${
-                                    typeof onOpenDj === "function"
-                                      ? "border-purple-300/25 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20"
+                                    primaryEvent
+                                      ? "border-cyan-300/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
                                       : "border-white/10 bg-white/[0.03] text-white/40"
                                   }`}
-                                  title={typeof onOpenDj === "function" ? "Open DJ" : undefined}
+                                  title={primaryEvent ? "Open event" : undefined}
                                 >
                                   {name}
                                 </button>
@@ -6991,7 +6969,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                 </tbody>
                 <tfoot>
                   <tr className="bg-white/[0.03]">
-                    <td colSpan={10} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
+                    <td colSpan={9} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
                     <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-black ${weekSalesTotal > 0 ? "text-white" : "text-white/30"}`}>{salesFmtRMFull(weekSalesTotal)}</td>
                     <td className="px-3 py-2.5" />
                     {canEdit && <td />}
@@ -10537,6 +10515,17 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [navigateView, todayISO]);
 
+  const openSingleEvent = useCallback((event) => {
+    const eventId = event?.id ? String(event.id) : "";
+    if (!eventId) return;
+    setNotificationsOpen(false);
+    setRouteEventId(eventId);
+    if (typeof window === "undefined") return;
+    const nextPath = `/event/${encodeURIComponent(eventId)}`;
+    if (window.location.pathname === nextPath && !window.location.search) return;
+    window.history.pushState({}, "", nextPath);
+  }, []);
+
   const openDjFromName = useCallback((name) => {
     setDjProfilesInitialQuery(String(name || ""));
     navigateView("DJs");
@@ -11738,7 +11727,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Finance" ? (
             <FinancePage />
           ) : view === "Sales" && canAccessSales ? (
-            <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openNotificationEvent} onOpenDj={openDjFromName} />
+            <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openSingleEvent} onOpenDj={openDjFromName} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
