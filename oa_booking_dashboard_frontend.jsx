@@ -6543,7 +6543,13 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   useEffect(() => { load(); }, [load]);
 
   const salesMonths = useMemo(() => {
-    const months = Array.from(new Set((allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean)));
+    const todayISO = isoFromDate(new Date());
+    const fromSales = (allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean);
+    const fromEvents = (events || [])
+      .filter((event) => event?.date && event.date >= todayISO)
+      .map((event) => monthYearFromISO(event.date))
+      .filter(Boolean);
+    const months = Array.from(new Set([...fromSales, ...fromEvents]));
     const sorted = months
       .slice()
       .sort((a, b) => {
@@ -6555,7 +6561,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         return String(b).localeCompare(String(a));
       });
     return sorted.length ? sorted : SALES_MONTHS;
-  }, [allRows]);
+  }, [allRows, events]);
 
   useEffect(() => {
     if (salesMonths.length && !salesMonths.includes(month)) setMonth(salesMonths[0]);
@@ -6599,19 +6605,21 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     for (const event of events || []) {
       if (!event?.date) continue;
       if (event.date < startISO || event.date > endISO) continue;
-      if (event.date < todayISO) continue;
       if (!eventByDate.has(event.date)) eventByDate.set(event.date, event);
     }
 
     const payload = [];
-    for (const [date, event] of eventByDate.entries()) {
-      const existing = existingByDate.get(date);
+    const includeWeekdays = new Set([3, 4, 5, 6]);
+    for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      const date = isoFromDate(d);
+      if (date < todayISO) continue;
+      if (!includeWeekdays.has(d.getDay())) continue;
+      if (existingByDate.has(date)) continue;
       const monthYear = monthYearFromISO(date);
       const weekNum = salesWeekNumberFromISO(date);
       const defaults = salesDefaultsForISO(date);
-      const plannedName = String(event?.name || "").trim();
-
-      if (existing) continue;
+      const plannedEvent = eventByDate.get(date);
+      const plannedName = String(plannedEvent?.name || "").trim();
       payload.push({
         date,
         event_name: plannedName || "TBD",
