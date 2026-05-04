@@ -1246,6 +1246,24 @@ function formatDjFee(fee) {
   return `${amount} · ${formatFeeType(fee.feeType)}`;
 }
 
+function monthInputValueFromDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function dateFromMonthInput(value) {
+  const [year, month] = String(value || "").split("-").map(Number);
+  const today = new Date();
+  return new Date(Number.isFinite(year) ? year : today.getFullYear(), Number.isFinite(month) ? month - 1 : today.getMonth(), 1);
+}
+
+function profileLookupKeys(profile) {
+  return new Set(
+    [profile?.name, profile?.stageName, profile?.realName]
+      .map(normalizeDjLookupKey)
+      .filter(Boolean),
+  );
+}
+
 function assignmentStatusLabel(status) {
   if (status === "Accepted") return "Accepted";
   if (status === "Rejected") return "Rejected";
@@ -4470,9 +4488,20 @@ function FinancePage() {
 
 function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUsers = [], onToast, onRefreshProfiles, onLogActivity }) {
   const [query, setQuery] = useState("");
+  const [availabilityMonth, setAvailabilityMonth] = useState(() => monthInputValueFromDate(new Date()));
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
   const djUsers = useMemo(() => mentionUsers.filter((user) => String(user.role || "").toLowerCase() === "dj"), [mentionUsers]);
+  const availabilityMonthDate = useMemo(() => dateFromMonthInput(availabilityMonth), [availabilityMonth]);
+  const availabilityMonthLabel = useMemo(
+    () => availabilityMonthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    [availabilityMonthDate],
+  );
+  const availabilityMonthRange = useMemo(() => {
+    const start = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth(), 1);
+    const end = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() + 1, 0);
+    return { startISO: isoFromDate(start), endISO: isoFromDate(end) };
+  }, [availabilityMonthDate]);
   const filteredProfiles = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return availableProfiles;
@@ -4481,6 +4510,55 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
       return `${profile.name} ${profile.stageName} ${profile.realName} ${profile.email} ${genreText}`.toLowerCase().includes(needle);
     });
   }, [availableProfiles, query]);
+  const monthlyAvailabilityRows = useMemo(() => {
+    const rows = [];
+    for (const profile of availableProfiles) {
+      const keys = profileLookupKeys(profile);
+      const profileIsUuid = isSupabaseUuid(profile.id);
+      const sets = [];
+
+      for (const event of events || []) {
+        if (!event?.date || event.date < availabilityMonthRange.startISO || event.date > availabilityMonthRange.endISO) continue;
+
+        for (const slot of event.slots || []) {
+          if (!slotNeedsTime(slot)) continue;
+          const assignments = Array.isArray(slot.assignments) ? slot.assignments : [];
+          const participantNames = (slot.djParticipants?.length ? slot.djParticipants : parseDjLineup(slot.dj).participants)
+            .map(canonicalDjName)
+            .filter(Boolean);
+          const slotKeys = [
+            slot.dj,
+            ...participantNames,
+            ...assignments.map((assignment) => assignment.dj),
+          ]
+            .map(normalizeDjLookupKey)
+            .filter(Boolean);
+          const matchesId = profileIsUuid && (
+            (slot.djId && String(slot.djId) === String(profile.id)) ||
+            assignments.some((assignment) => assignment.djId && String(assignment.djId) === String(profile.id))
+          );
+          const matchesName = slotKeys.some((key) => keys.has(key));
+          if (!matchesId && !matchesName) continue;
+
+          sets.push({
+            key: `${event.id}-${slot.id || slot.assignmentId || sets.length}`,
+            date: event.date,
+            eventName: event.name,
+            stage: event.stage,
+            role: slot.role,
+            start: slot.start,
+            end: slot.end,
+          });
+        }
+      }
+
+      if (!sets.length) continue;
+      sets.sort((a, b) => `${a.date} ${a.start || ""}`.localeCompare(`${b.date} ${b.start || ""}`));
+      rows.push({ profile, sets });
+    }
+
+    return rows.sort((a, b) => (a.profile.stageName || a.profile.name).localeCompare(b.profile.stageName || b.profile.name));
+  }, [availableProfiles, availabilityMonthRange.endISO, availabilityMonthRange.startISO, events]);
   const [selectedId, setSelectedId] = useState("");
 
   useEffect(() => {
@@ -4530,6 +4608,51 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
 
     return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }, [events, selectedProfile]);
+  const availabilityWhatsappText = useCallback(
+    ({ profile, sets }) => {
+      const name = formatDjDisplayName(profile.stageName || profile.name);
+      const setLines = sets.map((set) => {
+        const date = dayLabelFromISO(set.date);
+        const time = set.start && set.end ? formatTimeRange(set.start, set.end, "24") : "TBC";
+        return `- ${date} · ${time} · ${set.eventName}${set.stage ? ` · ${set.stage}` : ""}`;
+      });
+      return [
+        `Hi ${name},`,
+        `Can you check your availability for ${availabilityMonthLabel}?`,
+        "",
+        "Sets:",
+        ...setLines,
+        "",
+        "Please let me know which dates you are available for. Thank you!",
+      ].join("\n");
+    },
+    [availabilityMonthLabel],
+  );
+  const openAvailabilityWhatsApp = useCallback(
+    (row) => {
+      const url = whatsappLink(row?.profile?.phone, availabilityWhatsappText(row));
+      if (!url) {
+        onToast?.("Add a phone number to this DJ profile first.", "error");
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [availabilityWhatsappText, onToast],
+  );
+  const openAllAvailabilityWhatsApps = useCallback(() => {
+    const rowsWithPhones = monthlyAvailabilityRows.filter((row) => whatsappDigits(row.profile.phone));
+    if (!rowsWithPhones.length) {
+      onToast?.("No scheduled DJs with phone numbers for this month.", "error");
+      return;
+    }
+    rowsWithPhones.forEach((row, index) => {
+      window.setTimeout(() => {
+        const url = whatsappLink(row.profile.phone, availabilityWhatsappText(row));
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+      }, index * 250);
+    });
+    onToast?.(`Opening ${rowsWithPhones.length} WhatsApp chat${rowsWithPhones.length === 1 ? "" : "s"}.`);
+  }, [availabilityWhatsappText, monthlyAvailabilityRows, onToast]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -4707,6 +4830,99 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
 
   return (
     <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#12111f] p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Monthly WhatsApp Availability</div>
+            <div className="mt-1 text-xl font-black text-white">{availabilityMonthLabel}</div>
+            <div className="mt-1 text-xs font-bold text-white/40">
+              {monthlyAvailabilityRows.length} DJ{monthlyAvailabilityRows.length === 1 ? "" : "s"} scheduled this month
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => {
+                const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() - 1, 1);
+                setAvailabilityMonth(monthInputValueFromDate(next));
+              }}
+              title="Previous month"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <input
+              type="month"
+              value={availabilityMonth}
+              onChange={(event) => setAvailabilityMonth(event.target.value || monthInputValueFromDate(new Date()))}
+              className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+            />
+            <Button
+              onClick={() => {
+                const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() + 1, 1);
+                setAvailabilityMonth(monthInputValueFromDate(next));
+              }}
+              title="Next month"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={openAllAvailabilityWhatsApps}
+              disabled={!monthlyAvailabilityRows.some((row) => whatsappDigits(row.profile.phone))}
+              className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+            >
+              Open All WhatsApps
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {monthlyAvailabilityRows.map((row) => {
+            const displayName = row.profile.stageName || row.profile.name;
+            const hasPhone = Boolean(whatsappDigits(row.profile.phone));
+            const firstSet = row.sets[0];
+            return (
+              <div key={row.profile.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-white">{displayName}</div>
+                    <div className="mt-1 text-[11px] font-bold text-white/45">
+                      {row.sets.length} set{row.sets.length === 1 ? "" : "s"}
+                      {firstSet ? ` · ${dayLabelFromISO(firstSet.date)}` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => openAvailabilityWhatsApp(row)}
+                    disabled={!hasPhone}
+                    title={hasPhone ? "Send WhatsApp availability request" : "Add DJ phone in profile first"}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-400/10 p-0 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    <span className="sr-only">Send WhatsApp</span>
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {row.sets.slice(0, 3).map((set) => (
+                    <div key={set.key} className="flex items-center justify-between gap-2 text-[11px] font-bold text-white/50">
+                      <span className="truncate">{set.eventName}</span>
+                      <span className="shrink-0 text-cyan-100/75">{set.start && set.end ? formatTimeRange(set.start, set.end, "24") : "TBC"}</span>
+                    </div>
+                  ))}
+                  {row.sets.length > 3 ? (
+                    <div className="text-[11px] font-black text-white/30">+{row.sets.length - 3} more</div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+
+          {!monthlyAvailabilityRows.length ? (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35 md:col-span-2 xl:col-span-3">
+              No DJ sets found for {availabilityMonthLabel}.
+            </div>
+          ) : null}
+        </div>
+      </div>
       <aside className="rounded-2xl border border-white/10 bg-[#12111f] p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
