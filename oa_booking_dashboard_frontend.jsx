@@ -7,6 +7,7 @@ import {
   Music,
   Users,
   Plus,
+  Copy,
   MessageCircle,
   RefreshCcw,
   Save,
@@ -37,6 +38,7 @@ import {
   Edit2,
   Check,
   Link2,
+  Target,
   TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -4641,6 +4643,19 @@ function median(numbers) {
   return valid.length % 2 ? valid[mid] : (valid[mid - 1] + valid[mid]) / 2;
 }
 
+function quantile(numbers, q) {
+  const valid = numbers.map(Number).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!valid.length) return 0;
+  const qq = Math.min(1, Math.max(0, Number(q)));
+  if (valid.length === 1) return valid[0];
+  const idx = (valid.length - 1) * qq;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return valid[lo];
+  const weight = idx - lo;
+  return valid[lo] * (1 - weight) + valid[hi] * weight;
+}
+
 function buildSalesEventLinks(events, salesRows) {
   const eventsByDate = new Map();
   for (const event of events || []) {
@@ -7526,23 +7541,435 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
 }
 
 // ─── Finance Page (P&L Calculator + Ticket Sales tabs) ───────────────────────
-function FinancePage() {
+function NightGeneratorPage({ events = [], onToast }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [metric, setMetric] = useState("sales");
+  const [monthsBack, setMonthsBack] = useState(12);
+  const [onlyLinked, setOnlyLinked] = useState(true);
+  const [includeZero, setIncludeZero] = useState(false);
+  const [target, setTarget] = useState("");
+  const [days, setDays] = useState([3, 4, 5, 6]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      setError("Supabase is not configured.");
+      return;
+    }
+    const { data, error: err } = await supabase.from("weekly_sales").select("*").order("date", { ascending: true });
+    if (err) {
+      setError(err.message);
+      setLoading(false);
+      return;
+    }
+    setRows(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const allLinks = useMemo(() => buildSalesEventLinks(events, rows), [events, rows]);
+  const todayISO = useMemo(() => isoFromDate(new Date()), []);
+  const horizonStartISO = useMemo(() => {
+    if (!monthsBack) return "";
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - Number(monthsBack), 1);
+    return isoFromDate(start);
+  }, [monthsBack]);
+
+  const toggleDay = useCallback((dayIdx) => {
+    setDays((current) => (current.includes(dayIdx) ? current.filter((d) => d !== dayIdx) : [...current, dayIdx].sort((a, b) => a - b)));
+  }, []);
+
+  const buildPlanForDay = useCallback((dayIdx) => {
+    const history = allLinks
+      .filter((link) => {
+        const date = link?.row?.date;
+        if (!date) return false;
+        if (date >= todayISO) return false;
+        if (horizonStartISO && date < horizonStartISO) return false;
+        const weekday = isoToDate(date).getDay();
+        if (weekday !== dayIdx) return false;
+        const linked = Array.isArray(link.linkedEvents) && link.linkedEvents.length > 0;
+        if (onlyLinked && !linked) return false;
+        if (!includeZero && (Number(link.total) || 0) <= 0) return false;
+        return true;
+      })
+      .map((link) => {
+        const row = link.row || {};
+        const sales = Number(link.total) || 0;
+        const nett = Number(link.pl?.nett) || 0;
+        const value = metric === "nett" ? nett : sales;
+        const eventLabel = String(link.event?.name || row.event_name || "").trim();
+        const eventKey = eventNameKey(eventLabel);
+        const djNames = Array.isArray(link.djNames) ? link.djNames : [];
+        const genreList = (link.linkedEvents || []).map((ev) => String(ev?.genre || "").trim()).filter(Boolean);
+        return { date: row.date, sales, nett, value, eventLabel, eventKey, djNames, genres: genreList };
+      });
+
+    const values = history.map((h) => h.value);
+    const avg = average(values);
+    const med = median(values);
+    const p75 = quantile(values, 0.75);
+    const p90 = quantile(values, 0.9);
+
+    const bestNights = [...history].sort((a, b) => b.value - a.value).slice(0, 8);
+
+    const eventStats = new Map();
+    for (const h of history) {
+      if (!h.eventKey) continue;
+      const current = eventStats.get(h.eventKey) || { key: h.eventKey, label: h.eventLabel, nights: 0, value: 0, sales: 0, nett: 0 };
+      current.nights += 1;
+      current.value += h.value;
+      current.sales += h.sales;
+      current.nett += h.nett;
+      if (!current.label && h.eventLabel) current.label = h.eventLabel;
+      eventStats.set(h.eventKey, current);
+    }
+    const topEvents = Array.from(eventStats.values())
+      .map((s) => ({ ...s, avg: s.nights ? s.value / s.nights : 0 }))
+      .sort((a, b) => b.avg - a.avg || b.nights - a.nights)
+      .slice(0, 6);
+
+    const djStats = new Map();
+    for (const h of history) {
+      for (const name of h.djNames) {
+        const current = djStats.get(name) || { name, nights: 0, value: 0, best: 0 };
+        current.nights += 1;
+        current.value += h.value;
+        current.best = Math.max(current.best, h.value);
+        djStats.set(name, current);
+      }
+    }
+    const topDjs = Array.from(djStats.values())
+      .map((d) => ({ ...d, avg: d.nights ? d.value / d.nights : 0 }))
+      .sort((a, b) => b.avg - a.avg || b.nights - a.nights)
+      .slice(0, 10);
+
+    const pairStats = new Map();
+    for (const h of history) {
+      const names = Array.from(new Set(h.djNames)).sort((a, b) => a.localeCompare(b));
+      for (let i = 0; i < names.length; i++) {
+        for (let j = i + 1; j < names.length; j++) {
+          const key = `${names[i]} × ${names[j]}`;
+          const current = pairStats.get(key) || { key, a: names[i], b: names[j], nights: 0, value: 0 };
+          current.nights += 1;
+          current.value += h.value;
+          pairStats.set(key, current);
+        }
+      }
+    }
+    const topPairs = Array.from(pairStats.values())
+      .filter((p) => p.nights >= 2)
+      .map((p) => ({ ...p, avg: p.value / p.nights }))
+      .sort((a, b) => b.avg - a.avg || b.nights - a.nights)
+      .slice(0, 6);
+
+    const genreStats = new Map();
+    for (const h of history) {
+      for (const tag of h.genres) {
+        for (const g of splitGenreTags(tag)) {
+          if (!g) continue;
+          const current = genreStats.get(g) || { genre: g, nights: 0, value: 0 };
+          current.nights += 1;
+          current.value += h.value;
+          genreStats.set(g, current);
+        }
+      }
+    }
+    const topGenres = Array.from(genreStats.values())
+      .filter((g) => g.nights >= 2)
+      .map((g) => ({ ...g, avg: g.value / g.nights }))
+      .sort((a, b) => b.avg - a.avg || b.nights - a.nights)
+      .slice(0, 6);
+
+    const suggestedEvent = topEvents[0]?.label || "";
+    const suggestedPair = topPairs[0] ? [topPairs[0].a, topPairs[0].b] : [];
+    const suggestedDjs = suggestedPair.length
+      ? [...suggestedPair, ...topDjs.map((d) => d.name).filter((n) => !suggestedPair.includes(n)).slice(0, 1)]
+      : topDjs.map((d) => d.name).slice(0, 3);
+
+    return {
+      dayIdx,
+      count: history.length,
+      avg,
+      med,
+      p75,
+      p90,
+      bestNights,
+      topEvents,
+      topDjs,
+      topPairs,
+      topGenres,
+      suggestedEvent,
+      suggestedDjs,
+    };
+  }, [allLinks, horizonStartISO, includeZero, metric, onlyLinked, todayISO]);
+
+  const plans = useMemo(() => {
+    return days.map((dayIdx) => buildPlanForDay(dayIdx));
+  }, [buildPlanForDay, days]);
+
+  const aiPrompt = useMemo(() => {
+    const metricLabel = metric === "nett" ? "net profit" : "gross sales";
+    const targetValue = target && Number.isFinite(Number(target)) ? Number(target) : null;
+    const dayName = (idx) => ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][idx];
+    const horizonLabel = monthsBack ? `last ${monthsBack} months` : "all time";
+    const lines = [];
+    lines.push("You are a club night programming analyst.");
+    lines.push(`Goal: propose Wed–Sat night concepts + DJ lineups to maximize ${metricLabel}.`);
+    lines.push(`Use only our historical data (${horizonLabel}). ${onlyLinked ? "Use only nights linked to events." : "Include unlinked nights too."}`);
+    if (targetValue != null) lines.push(`Constraint: aim for at least RM ${targetValue.toLocaleString("en-MY")} ${metricLabel} for each night.`);
+    lines.push("");
+    lines.push("For each day (Wed/Thu/Fri/Sat), output:");
+    lines.push("- Recommended concept / event name (and genre vibe if possible)");
+    lines.push("- Suggested 2–3 DJs");
+    lines.push("- Expected range (median to P75) and confidence");
+    lines.push("- 3 comparable historical examples");
+    lines.push("");
+    for (const plan of plans) {
+      lines.push(`${dayName(plan.dayIdx)}:`);
+      lines.push(`- Sample size: ${plan.count} nights`);
+      lines.push(`- ${metricLabel} stats: avg ${salesFmtRMFull(plan.avg)}, median ${salesFmtRMFull(plan.med)}, P75 ${salesFmtRMFull(plan.p75)}`);
+      if (plan.suggestedEvent) lines.push(`- Top event brand: ${plan.suggestedEvent}`);
+      if (plan.topGenres.length) lines.push(`- Top genres: ${plan.topGenres.map((g) => `${g.genre} (avg ${salesFmtRMFull(g.avg)})`).join(", ")}`);
+      if (plan.suggestedDjs.length) lines.push(`- Suggested DJs: ${plan.suggestedDjs.join(", ")}`);
+      lines.push("- Top examples:");
+      for (const ex of plan.bestNights.slice(0, 3)) {
+        lines.push(`  - ${ex.date} · ${ex.eventLabel || "—"} · DJs: ${ex.djNames.join(", ") || "—"} · ${metricLabel}: ${salesFmtRMFull(ex.value)}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }, [metric, monthsBack, onlyLinked, plans, target]);
+
+  const copyPrompt = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(aiPrompt);
+      onToast?.("Copied AI prompt.", "success");
+    } catch {
+      onToast?.("Could not copy. Your browser may block clipboard access.", "error");
+    }
+  }, [aiPrompt, onToast]);
+
+  const metricLabel = metric === "nett" ? "Net Profit" : "Gross Sales";
+  const dayLabel = (idx) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][idx];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-lg font-black text-white">Generate a Night</div>
+          <div className="mt-1 text-xs font-bold text-white/35">Data-driven suggestions for Wed–Sat programming (no external AI keys needed).</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={load}
+            className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+          >
+            <RefreshCcw className="h-4 w-4" /> Refresh sales
+          </button>
+          <button
+            type="button"
+            onClick={copyPrompt}
+            className="flex h-10 items-center gap-2 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 text-xs font-black text-emerald-100 hover:bg-emerald-400/20"
+          >
+            <Copy className="h-4 w-4" /> Copy AI prompt
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-2">
+            <select
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+            >
+              <option value="sales">Optimize Gross Sales</option>
+              <option value="nett">Optimize Net Profit</option>
+            </select>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-2">
+            <select
+              value={monthsBack}
+              onChange={(e) => setMonthsBack(Number(e.target.value))}
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+            >
+              <option value={3}>Last 3 months</option>
+              <option value={6}>Last 6 months</option>
+              <option value={12}>Last 12 months</option>
+              <option value={24}>Last 24 months</option>
+              <option value={0}>All time</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+            <Target className="h-4 w-4 shrink-0" />
+            <input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="Target (RM) optional"
+              inputMode="numeric"
+              className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setOnlyLinked((v) => !v)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                onlyLinked ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+              }`}
+            >
+              Linked only
+            </button>
+            <button
+              type="button"
+              onClick={() => setIncludeZero((v) => !v)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                includeZero ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+              }`}
+            >
+              Include 0
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {[
+            { idx: 3, label: "Wed" },
+            { idx: 4, label: "Thu" },
+            { idx: 5, label: "Fri" },
+            { idx: 6, label: "Sat" },
+          ].map((d) => (
+            <button
+              key={d.idx}
+              type="button"
+              onClick={() => toggleDay(d.idx)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                days.includes(d.idx) ? "border-purple-300/40 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-14 text-center text-sm font-black text-white/25">Loading…</div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-bold text-red-300">{error}</div>
+      ) : !plans.some((p) => p.count) ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-12 text-center text-sm font-bold text-white/35">
+          No matching sales nights for this selection.
+        </div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {plans.map((plan) => (
+            <div key={plan.dayIdx} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+              <div className="border-b border-white/10 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-black text-white">{dayLabel(plan.dayIdx)} — Recommendation</div>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-black text-white/45">{plan.count} nights</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">{metricLabel} median</div>
+                    <div className="mt-1 text-base font-black text-white">{salesFmtRMFull(plan.med)}</div>
+                    <div className="mt-1 text-xs font-bold text-white/35">P75 {salesFmtRMFull(plan.p75)} · P90 {salesFmtRMFull(plan.p90)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Suggested</div>
+                    <div className="mt-1 text-sm font-black text-cyan-100">{plan.suggestedEvent || "—"}</div>
+                    <div className="mt-1 text-xs font-bold text-white/35">{plan.suggestedDjs.length ? plan.suggestedDjs.join(" · ") : "No DJ links"}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 p-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Top events</div>
+                  <div className="mt-2 space-y-1.5">
+                    {(plan.topEvents.length ? plan.topEvents : []).map((e) => (
+                      <div key={e.key} className="flex items-center justify-between gap-2 text-xs">
+                        <div className="min-w-0 truncate font-black text-white/75">{e.label || "—"}</div>
+                        <div className="shrink-0 text-right text-[11px] font-black text-white/60">{salesFmtRMFull(e.avg)}</div>
+                      </div>
+                    ))}
+                    {!plan.topEvents.length ? <div className="text-xs font-bold text-white/30">No event history.</div> : null}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Top DJs</div>
+                  <div className="mt-2 space-y-1.5">
+                    {(plan.topDjs.length ? plan.topDjs : []).slice(0, 6).map((d) => (
+                      <div key={d.name} className="flex items-center justify-between gap-2 text-xs">
+                        <div className="min-w-0 truncate font-black text-white/75">{d.name}</div>
+                        <div className="shrink-0 text-right text-[11px] font-black text-white/60">{salesFmtRMFull(d.avg)}</div>
+                      </div>
+                    ))}
+                    {!plan.topDjs.length ? <div className="text-xs font-bold text-white/30">No DJ links.</div> : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 px-4 py-3">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Comparable best nights</div>
+                <div className="mt-2 space-y-2">
+                  {plan.bestNights.slice(0, 5).map((n) => (
+                    <div key={n.date} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-white/85">{dayLabelFromISO(n.date)} · {n.eventLabel || "—"}</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-white/35">{n.djNames.length ? n.djNames.join(" · ") : "No DJ link"}</div>
+                      </div>
+                      <div className="text-right text-xs font-black text-cyan-100">{salesFmtRMFull(n.value)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <div className="text-[10px] font-black uppercase tracking-widest text-white/35">AI usage tip</div>
+        <div className="mt-2 text-sm font-bold text-white/55">
+          Use “Copy AI prompt”, paste into ChatGPT/Claude, then ask it to generate marketing angles, poster copy, and DJ rotation options based on the comparable nights.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinancePage({ events = [], onToast }) {
   const [tab, setTab] = useState("pl");
   const [savedScenarios, setSavedScenarios] = useState(readSavedFinanceScenarios);
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1">
-        {[["pl", "P&L Calculator"], ["tickets", "Ticket Sales"]].map(([val, label]) => (
+        {[["pl", "P&L Calculator"], ["tickets", "Ticket Sales"], ["generate", "Generate a Night"]].map(([val, label]) => (
           <button key={val} onClick={() => setTab(val)}
             className={`rounded-lg border px-3 py-2 text-xs font-black transition ${tab === val ? "border-purple-300/50 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"}`}>
             {label}
           </button>
         ))}
       </div>
-      {tab === "pl"
-        ? <FinanceMathPage onScenariosChange={setSavedScenarios} />
-        : <TicketSalesPage savedScenarios={savedScenarios} />}
+      {tab === "pl" ? (
+        <FinanceMathPage onScenariosChange={setSavedScenarios} />
+      ) : tab === "tickets" ? (
+        <TicketSalesPage savedScenarios={savedScenarios} />
+      ) : (
+        <NightGeneratorPage events={events} onToast={onToast} />
+      )}
     </div>
   );
 }
@@ -12244,7 +12671,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Activity" && canViewActivity ? (
             <ActivityMonitorPage userRole={userRole} />
           ) : view === "Finance" ? (
-            <FinancePage />
+            <FinancePage events={events} onToast={showToast} />
           ) : view === "Sales" && canAccessSales ? (
             <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openSingleEvent} onOpenDj={openDjFromName} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
