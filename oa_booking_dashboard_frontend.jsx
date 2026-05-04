@@ -4575,6 +4575,32 @@ function monthYearFromISO(dateStr) {
   return isoToDate(dateStr).toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase();
 }
 
+const SALES_MONTH_NAME_TO_INDEX = {
+  JANUARY: 0,
+  FEBRUARY: 1,
+  MARCH: 2,
+  APRIL: 3,
+  MAY: 4,
+  JUNE: 5,
+  JULY: 6,
+  AUGUST: 7,
+  SEPTEMBER: 8,
+  OCTOBER: 9,
+  NOVEMBER: 10,
+  DECEMBER: 11,
+};
+
+function parseSalesMonthYear(label) {
+  const raw = String(label || "").trim().toUpperCase();
+  const match = raw.match(/^([A-Z]+)\s+(\d{4})$/);
+  if (!match) return { label: String(label || ""), year: null, monthIndex: null, monthName: null };
+  const monthName = match[1];
+  const year = Number(match[2]);
+  const monthIndex = SALES_MONTH_NAME_TO_INDEX[monthName];
+  if (!Number.isFinite(year) || monthIndex == null) return { label: String(label || ""), year: null, monthIndex: null, monthName: null };
+  return { label: raw, year, monthIndex, monthName };
+}
+
 function eventDjNames(event) {
   const names = new Set();
   for (const slot of event?.slots || []) {
@@ -4987,6 +5013,8 @@ function EventNightAnalytics({ insights }) {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [compareMode, setCompareMode] = useState("auto");
   const [manualNightIds, setManualNightIds] = useState([]);
+  const [compareQuery, setCompareQuery] = useState("");
+  const [compareDjName, setCompareDjName] = useState("");
   const selectedForecast = nextForecasts.find((item) => item.event.id === selectedEventId) || nextForecasts[0] || null;
 
   useEffect(() => {
@@ -4996,6 +5024,8 @@ function EventNightAnalytics({ insights }) {
 
   useEffect(() => {
     setManualNightIds([]);
+    setCompareQuery("");
+    setCompareDjName("");
   }, [selectedEventId]);
 
   const comparisonOptions = useMemo(() => {
@@ -5013,8 +5043,36 @@ function EventNightAnalytics({ insights }) {
         return { ...link, sameEvent, sameDj, sameDay, score, reason };
       })
       .sort((a, b) => b.score - a.score || b.row.date.localeCompare(a.row.date))
-      .slice(0, 14);
+      .slice(0, 60);
   }, [insights.historical, selectedForecast]);
+
+  const comparisonDjOptions = useMemo(() => {
+    const set = new Set();
+    for (const link of comparisonOptions) {
+      for (const name of link.djNames || []) set.add(name);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [comparisonOptions]);
+
+  const filteredComparisonOptions = useMemo(() => {
+    const needle = compareQuery.trim().toLowerCase();
+    return comparisonOptions.filter((link) => {
+      if (compareDjName && !(link.djNames || []).includes(compareDjName)) return false;
+      if (!needle) return true;
+      const haystack = [
+        link.row?.date,
+        salesFmtDate(link.row?.date),
+        link.event?.name,
+        link.row?.event_name,
+        (link.djNames || []).join(" "),
+        link.reason,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [compareDjName, compareQuery, comparisonOptions]);
 
   const activeComparison = useMemo(() => {
     if (!selectedForecast) return [];
@@ -5120,8 +5178,30 @@ function EventNightAnalytics({ insights }) {
                 </span>
               </div>
 
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_220px]">
+                <div className="flex min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+                  <Search className="h-4 w-4 shrink-0" />
+                  <input
+                    value={compareQuery}
+                    onChange={(e) => setCompareQuery(e.target.value)}
+                    placeholder="Search nights / DJs / dates..."
+                    className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25"
+                  />
+                </div>
+                <select
+                  value={compareDjName}
+                  onChange={(e) => setCompareDjName(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white outline-none focus:border-cyan-300/40"
+                >
+                  <option value="">All DJs</option>
+                  {comparisonDjOptions.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="mt-3 grid max-h-[360px] gap-2 overflow-y-auto pr-1">
-                {comparisonOptions.length ? comparisonOptions.map((link) => {
+                {filteredComparisonOptions.length ? filteredComparisonOptions.map((link) => {
                   const manualSelected = manualNightIds.includes(String(link.row.id));
                   const active = compareMode === "manual" ? manualSelected : activeComparison.some((item) => item.row.id === link.row.id);
                   return (
@@ -5197,13 +5277,160 @@ function EventNightAnalytics({ insights }) {
   );
 }
 
+function SalesTrendChart({ rows, metric = "sales", chartType = "bar" }) {
+  const points = useMemo(() => {
+    const list = (rows || [])
+      .slice()
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+      .map((row) => {
+        const sales = salesTotalForRow(row);
+        const nett = calcNightPL(row).nett;
+        const value = metric === "nett" ? nett : sales;
+        return { row, value, label: salesFmtDate(row.date) };
+      });
+    return list;
+  }, [metric, rows]);
+
+  const bounds = useMemo(() => {
+    if (!points.length) return { min: 0, max: 0 };
+    let min = points[0].value;
+    let max = points[0].value;
+    for (const p of points) {
+      if (p.value < min) min = p.value;
+      if (p.value > max) max = p.value;
+    }
+    if (min === max) {
+      if (min === 0) return { min: -1, max: 1 };
+      return { min: min * 0.85, max: max * 1.15 };
+    }
+    const pad = (max - min) * 0.08;
+    return { min: min - pad, max: max + pad };
+  }, [points]);
+
+  const width = 920;
+  const height = 220;
+  const padLeft = 44;
+  const padRight = 14;
+  const padTop = 16;
+  const padBottom = 32;
+  const innerW = width - padLeft - padRight;
+  const innerH = height - padTop - padBottom;
+  const n = points.length;
+  const stepX = n > 1 ? innerW / (n - 1) : innerW;
+  const valueToY = (v) => {
+    const t = (v - bounds.min) / (bounds.max - bounds.min || 1);
+    return padTop + (1 - t) * innerH;
+  };
+  const zeroY = valueToY(0);
+
+  const poly = useMemo(() => {
+    if (!n) return "";
+    return points
+      .map((p, i) => {
+        const x = padLeft + i * stepX;
+        const y = valueToY(p.value);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [n, padLeft, points, stepX]);
+
+  const ticks = useMemo(() => {
+    const count = 4;
+    const out = [];
+    for (let i = 0; i <= count; i += 1) {
+      const t = i / count;
+      const v = bounds.min + (bounds.max - bounds.min) * (1 - t);
+      out.push({ y: padTop + innerH * t, value: v });
+    }
+    return out;
+  }, [bounds.max, bounds.min, innerH, padTop]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Trend</div>
+          <div className="mt-0.5 text-sm font-black text-white">{metric === "nett" ? "Net Profit" : "Gross Sales"}</div>
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+          {chartType === "line" ? "Line" : "Bar"}
+        </div>
+      </div>
+      <div className="px-2 py-2">
+        {points.length ? (
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-[220px] w-full">
+            {ticks.map((tick) => (
+              <g key={tick.y}>
+                <line x1={padLeft} x2={width - padRight} y1={tick.y} y2={tick.y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                <text x={padLeft - 10} y={tick.y + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="700">
+                  {salesFmtRMFull(tick.value)}
+                </text>
+              </g>
+            ))}
+            <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke="rgba(103,232,249,0.25)" strokeWidth="1" />
+            {chartType === "bar" ? (
+              <g>
+                {points.map((p, i) => {
+                  const x = padLeft + i * stepX;
+                  const y = valueToY(p.value);
+                  const barW = Math.max(8, innerW / Math.max(1, n) * 0.62);
+                  const left = x - barW / 2;
+                  const top = Math.min(y, zeroY);
+                  const h = Math.max(1, Math.abs(zeroY - y));
+                  const positive = p.value >= 0;
+                  return (
+                    <g key={p.row.id || p.row.date || i}>
+                      <rect x={left} y={top} width={barW} height={h} rx="6" fill={positive ? "rgba(167,139,250,0.55)" : "rgba(248,113,113,0.55)"} />
+                      {n <= 18 ? (
+                        <text x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="800">
+                          {p.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            ) : (
+              <g>
+                <polyline points={poly} fill="none" stroke="rgba(167,139,250,0.9)" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+                {points.map((p, i) => {
+                  const x = padLeft + i * stepX;
+                  const y = valueToY(p.value);
+                  return <circle key={p.row.id || p.row.date || i} cx={x} cy={y} r="4.2" fill="rgba(103,232,249,0.9)" />;
+                })}
+                {n <= 18 ? (
+                  <g>
+                    {points.map((p, i) => {
+                      const x = padLeft + i * stepX;
+                      return (
+                        <text key={p.row.id || p.row.date || i} x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="800">
+                          {p.label}
+                        </text>
+                      );
+                    })}
+                  </g>
+                ) : null}
+              </g>
+            )}
+          </svg>
+        ) : (
+          <div className="px-4 py-10 text-center text-sm font-bold text-white/35">No data to chart for this month yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj }) {
+  const [tab, setTab]             = useState("nights");
   const [month, setMonth]         = useState("APRIL 2026");
   const [allRows, setAllRows]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [editRow, setEditRow]     = useState(null);
   const [expandedPL, setExpandedPL] = useState({});
+  const [chartMetric, setChartMetric] = useState("sales");
+  const [chartType, setChartType] = useState("bar");
   const canEdit = userRole === "admin" || userRole === "superadmin";
 
   const load = useCallback(async () => {
@@ -5227,12 +5454,45 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
 
   const salesMonths = useMemo(() => {
     const months = Array.from(new Set((allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean)));
-    return months.length ? months : SALES_MONTHS;
+    const sorted = months
+      .slice()
+      .sort((a, b) => {
+        const A = parseSalesMonthYear(a);
+        const B = parseSalesMonthYear(b);
+        if (A.year != null && B.year != null) {
+          return B.year - A.year || B.monthIndex - A.monthIndex;
+        }
+        return String(b).localeCompare(String(a));
+      });
+    return sorted.length ? sorted : SALES_MONTHS;
   }, [allRows]);
 
   useEffect(() => {
     if (salesMonths.length && !salesMonths.includes(month)) setMonth(salesMonths[0]);
   }, [month, salesMonths]);
+
+  const salesMonthsMeta = useMemo(() => salesMonths.map(parseSalesMonthYear), [salesMonths]);
+  const years = useMemo(() => {
+    const set = new Set(salesMonthsMeta.map((m) => m.year).filter((y) => y != null));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [salesMonthsMeta]);
+  const monthsByYear = useMemo(() => {
+    const map = new Map();
+    for (const meta of salesMonthsMeta) {
+      if (meta.year == null) continue;
+      const list = map.get(meta.year) || [];
+      list.push(meta);
+      map.set(meta.year, list);
+    }
+    for (const [year, list] of map.entries()) {
+      list.sort((a, b) => a.monthIndex - b.monthIndex);
+      map.set(year, list);
+    }
+    return map;
+  }, [salesMonthsMeta]);
+  const selectedMeta = useMemo(() => parseSalesMonthYear(month), [month]);
+  const selectedYear = selectedMeta.year ?? years[0] ?? null;
+  const yearMonths = selectedYear != null ? (monthsByYear.get(selectedYear) || []) : [];
 
   const data = useMemo(() => allRows.filter((row) => (row.month_year || monthYearFromISO(row.date)) === month), [allRows, month]);
 
@@ -5316,19 +5576,35 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
           <h1 className="text-lg font-black text-white">Weekly Sales</h1>
         </div>
         <div className="flex items-center gap-2">
-          {/* Month tabs */}
-          <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
-            {salesMonths.map((m) => (
-              <button
-                key={m}
-                onClick={() => setMonth(m)}
-                className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition ${
-                  month === m ? "bg-purple-400 text-black" : "text-white/40 hover:text-white"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+            <select
+              value={selectedYear ?? ""}
+              onChange={(e) => {
+                const nextYear = Number(e.target.value);
+                if (!Number.isFinite(nextYear)) return;
+                const options = monthsByYear.get(nextYear) || [];
+                const keepMonth = selectedMeta.monthIndex != null ? options.find((m) => m.monthIndex === selectedMeta.monthIndex) : null;
+                setMonth((keepMonth || options[options.length - 1] || options[0] || { label: salesMonths[0] }).label);
+              }}
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <select
+              value={selectedMeta.monthIndex ?? ""}
+              onChange={(e) => {
+                const idx = Number(e.target.value);
+                const next = yearMonths.find((m) => m.monthIndex === idx);
+                if (next?.label) setMonth(next.label);
+              }}
+              className="h-10 min-w-[160px] rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+            >
+              {yearMonths.map((m) => (
+                <option key={m.label} value={m.monthIndex}>{m.monthName ? m.monthName[0] + m.monthName.slice(1).toLowerCase() : m.label}</option>
+              ))}
+            </select>
           </div>
           <button
             onClick={load}
@@ -5346,6 +5622,21 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
             </button>
           )}
         </div>
+      </div>
+
+      <div className="flex gap-1">
+        {[["nights", "Nights"], ["analysis", "Analysis"]].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+              tab === key ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* ── States ── */}
@@ -5369,12 +5660,40 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         </div>
       )}
 
-      {!loading && !error && allRows.length > 0 && (
-        <EventNightAnalytics insights={eventInsights} />
+      {!loading && !error && tab === "analysis" && allRows.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={chartMetric}
+                onChange={(e) => setChartMetric(e.target.value)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              >
+                <option value="sales">Gross Sales</option>
+                <option value="nett">Net Profit</option>
+              </select>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={chartType}
+                onChange={(e) => setChartType(e.target.value)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              >
+                <option value="bar">Bar</option>
+                <option value="line">Line</option>
+              </select>
+            </div>
+            <div className="ml-auto rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+              {month}
+            </div>
+          </div>
+          <SalesTrendChart rows={data} metric={chartMetric} chartType={chartType} />
+          <EventNightAnalytics insights={eventInsights} />
+        </div>
       )}
 
       {/* ── Week blocks ── */}
-      {!loading && !error && weeks.map(({ weekNum, rows }) => {
+      {!loading && !error && tab === "nights" && weeks.map(({ weekNum, rows }) => {
         const weekSalesTotal = rows.reduce((s, r) => s + (r.pos_total || 0) + (r.ticketmelon_total || 0), 0);
         const weekPLTotal    = rows.reduce((acc, r) => { const pl = calcNightPL(r); return { nett: acc.nett + pl.nett, cost: acc.cost + pl.costTotal }; }, { nett: 0, cost: 0 });
         const isPLOpen       = !!expandedPL[weekNum];
@@ -5534,7 +5853,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       })}
 
       {/* ── Monthly summary ── */}
-      {!loading && !error && weeks.length > 0 && (
+      {!loading && !error && tab === "nights" && weeks.length > 0 && (
         <div className="rounded-2xl border border-purple-400/20 bg-purple-400/[0.06] px-6 py-5">
           <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-purple-300/60">
             {month} — Monthly Summary
