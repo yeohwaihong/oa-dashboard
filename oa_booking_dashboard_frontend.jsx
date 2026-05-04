@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarDays,
@@ -4630,6 +4630,21 @@ function salesTotalForRow(row) {
   return (Number(row?.pos_total) || 0) + (Number(row?.ticketmelon_total) || 0);
 }
 
+function salesWeekNumberFromISO(dateStr) {
+  const d = isoToDate(dateStr);
+  const day = d.getDate();
+  return Math.max(1, Math.min(6, Math.floor((day - 1) / 7) + 1));
+}
+
+function salesDefaultsForISO(dateStr) {
+  const dayIdx = isoToDate(dateStr).getDay();
+  if (dayIdx === 5) return { weekly_target: 120000, utilities: 1500, man_power: 13100, local_dj: 1500 };
+  if (dayIdx === 6) return { weekly_target: 150000, utilities: 1500, man_power: 13100, local_dj: 2300 };
+  if (dayIdx === 3) return { weekly_target: 15000, utilities: 1500, man_power: 9500, local_dj: 1500 };
+  if (dayIdx === 4) return { weekly_target: 15000, utilities: 1500, man_power: 9500, local_dj: 2000 };
+  return { weekly_target: 15000, utilities: 1500, man_power: 9500, local_dj: 2000 };
+}
+
 function average(numbers) {
   const valid = numbers.map(Number).filter((n) => Number.isFinite(n));
   if (!valid.length) return 0;
@@ -6402,6 +6417,111 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const [chartIncludeZero, setChartIncludeZero] = useState(false);
   const [chartWeekdays, setChartWeekdays] = useState([]);
   const canEdit = userRole === "admin" || userRole === "superadmin";
+  const [editingCell, setEditingCell] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [cellSaving, setCellSaving] = useState(false);
+  const [seedingPlanned, setSeedingPlanned] = useState(false);
+
+  const weeklyCols = useMemo(
+    () => [
+      { key: "date", label: "Date", align: "left", defaultWidth: 88, minWidth: 70 },
+      { key: "event", label: "Event", align: "left", defaultWidth: 240, minWidth: 160 },
+      { key: "djs", label: "DJs", align: "left", defaultWidth: 220, minWidth: 160 },
+      { key: "pax", label: "PAX", align: "right", defaultWidth: 96, minWidth: 80 },
+      { key: "table_bookings", label: "Table Bookings", align: "right", defaultWidth: 140, minWidth: 120 },
+      { key: "door_sales", label: "Door Sales", align: "right", defaultWidth: 120, minWidth: 110 },
+      { key: "cover_charge", label: "Cover Charge", align: "right", defaultWidth: 120, minWidth: 110 },
+      { key: "pos_total", label: "POS Total", align: "right", defaultWidth: 130, minWidth: 120 },
+      { key: "ticketmelon_total", label: "TicketMelon", align: "right", defaultWidth: 120, minWidth: 110 },
+      { key: "total", label: "Total", align: "right", defaultWidth: 120, minWidth: 110 },
+      { key: "weekly_target", label: "Target", align: "right", defaultWidth: 120, minWidth: 110 },
+    ],
+    [],
+  );
+
+  const [weeklyColWidths, setWeeklyColWidths] = useState(() => {
+    try {
+      const raw = localStorage.getItem("oa_sales_weekly_col_widths_v1");
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("oa_sales_weekly_col_widths_v1", JSON.stringify(weeklyColWidths || {}));
+    } catch {}
+  }, [weeklyColWidths]);
+
+  const resizingRef = useRef(null);
+  const weeklyColsByKey = useMemo(() => new Map(weeklyCols.map((c) => [c.key, c])), [weeklyCols]);
+  const onResizeMove = useCallback((event) => {
+    const active = resizingRef.current;
+    if (!active) return;
+    const col = weeklyColsByKey.get(active.key);
+    const minWidth = col?.minWidth ?? 80;
+    const next = Math.max(minWidth, active.startWidth + (event.clientX - active.startX));
+    setWeeklyColWidths((prev) => ({ ...(prev || {}), [active.key]: Math.min(520, next) }));
+  }, [weeklyColsByKey]);
+  const stopResize = useCallback(() => {
+    if (!resizingRef.current) return;
+    resizingRef.current = null;
+    window.removeEventListener("mousemove", onResizeMove);
+    window.removeEventListener("mouseup", stopResize);
+  }, [onResizeMove]);
+  const startResize = useCallback((event, key) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const th = event.currentTarget?.parentElement;
+    const startWidth = weeklyColWidths?.[key] ?? (th ? th.getBoundingClientRect().width : 120);
+    resizingRef.current = { key, startX: event.clientX, startWidth };
+    window.addEventListener("mousemove", onResizeMove);
+    window.addEventListener("mouseup", stopResize);
+  }, [onResizeMove, stopResize, weeklyColWidths]);
+
+  const beginCellEdit = useCallback((row, field) => {
+    if (!canEdit) return;
+    if (!row?.id) return;
+    setEditingCell({ rowId: String(row.id), field });
+    const raw = row[field];
+    setEditDraft(raw == null ? "" : String(raw));
+  }, [canEdit]);
+
+  const cancelCellEdit = useCallback(() => {
+    setEditingCell(null);
+    setEditDraft("");
+  }, []);
+
+  const commitCellEdit = useCallback(async (rowId, field) => {
+    if (!canEdit) return;
+    if (!rowId || !field) return;
+    if (!isSupabaseConfigured) {
+      onToast?.("Supabase is not configured.", "error");
+      return;
+    }
+    const cleaned = String(editDraft ?? "").trim();
+    const value = cleaned === "" ? 0 : Number.parseFloat(cleaned.replace(/[^0-9.-]/g, ""));
+    if (!Number.isFinite(value)) {
+      onToast?.("Invalid number.", "error");
+      return;
+    }
+    setCellSaving(true);
+    const { error: err } = await supabase
+      .from("weekly_sales")
+      .update({ [field]: value, updated_at: new Date().toISOString() })
+      .eq("id", rowId);
+    setCellSaving(false);
+    if (err) {
+      onToast?.(err.message || "Save failed", "error");
+      return;
+    }
+    setAllRows((prev) => (prev || []).map((r) => (String(r.id) === String(rowId) ? { ...r, [field]: value } : r)));
+    setEditingCell(null);
+    setEditDraft("");
+    onToast?.("Saved", "success");
+  }, [canEdit, editDraft, onToast]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -6465,6 +6585,81 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const yearMonths = selectedYear != null ? (monthsByYear.get(selectedYear) || []) : [];
 
   const data = useMemo(() => allRows.filter((row) => (row.month_year || monthYearFromISO(row.date)) === month), [allRows, month]);
+
+  const plannedMonthSeedPayload = useMemo(() => {
+    if (!selectedMeta?.year || selectedMeta.monthIndex == null) return [];
+    const start = new Date(selectedMeta.year, selectedMeta.monthIndex, 1);
+    const end = new Date(selectedMeta.year, selectedMeta.monthIndex + 1, 0);
+    const startISO = isoFromDate(start);
+    const endISO = isoFromDate(end);
+    const todayISO = isoFromDate(new Date());
+
+    const existingByDate = new Map((allRows || []).map((row) => [row.date, row]));
+    const eventByDate = new Map();
+    for (const event of events || []) {
+      if (!event?.date) continue;
+      if (event.date < startISO || event.date > endISO) continue;
+      if (event.date < todayISO) continue;
+      if (!eventByDate.has(event.date)) eventByDate.set(event.date, event);
+    }
+
+    const payload = [];
+    for (const [date, event] of eventByDate.entries()) {
+      const existing = existingByDate.get(date);
+      const monthYear = monthYearFromISO(date);
+      const weekNum = salesWeekNumberFromISO(date);
+      const defaults = salesDefaultsForISO(date);
+      const plannedName = String(event?.name || "").trim();
+
+      if (!existing) {
+        payload.push({
+          date,
+          event_name: plannedName || "TBD",
+          week_number: weekNum,
+          month_year: monthYear,
+          ...defaults,
+        });
+        continue;
+      }
+
+      const update = { date };
+      const existingName = String(existing.event_name || "").trim();
+      const existingMonth = String(existing.month_year || "").trim();
+      const nameNeedsUpdate = (!existingName || existingName.toUpperCase().includes("TBD")) && plannedName && !plannedName.toUpperCase().includes("TBD");
+      if (nameNeedsUpdate) update.event_name = plannedName;
+      if (!existingMonth) update.month_year = monthYear;
+      if (!existing.week_number) update.week_number = weekNum;
+
+      if (Object.keys(update).length > 1) payload.push(update);
+    }
+
+    return payload;
+  }, [allRows, events, selectedMeta.monthIndex, selectedMeta.year]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    if (view !== "weekly" || tab !== "nights") return;
+    if (!plannedMonthSeedPayload.length) return;
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+
+    async function seed() {
+      setSeedingPlanned(true);
+      const { error: err } = await supabase
+        .from("weekly_sales")
+        .upsert(plannedMonthSeedPayload, { onConflict: "date" });
+      if (cancelled) return;
+      setSeedingPlanned(false);
+      if (err) {
+        onToast?.(err.message || "Could not seed planned nights.", "error");
+        return;
+      }
+      load();
+    }
+
+    seed();
+    return () => { cancelled = true; };
+  }, [canEdit, load, onToast, plannedMonthSeedPayload, tab, view]);
 
   const eventInsights = useMemo(() => buildEventNightInsights(events, allRows), [events, allRows]);
   const linksByRowId = useMemo(() => {
@@ -6963,6 +7158,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       {loading && (
         <div className="py-16 text-center text-sm font-black text-white/25">Loading…</div>
       )}
+      {!loading && !error && seedingPlanned && view === "weekly" && tab === "nights" ? (
+        <div className="rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-100">
+          Seeding planned nights for this month…
+        </div>
+      ) : null}
       {!loading && error && (
         <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-bold text-red-300">{error}</div>
       )}
@@ -7385,13 +7585,30 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
 
             {/* Sales table */}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-xs">
+              <table className="w-full min-w-[980px] table-fixed text-xs">
+                <colgroup>
+                  {weeklyCols.map((c) => (
+                    <col key={c.key} style={{ width: `${Math.max(c.minWidth || 80, Number(weeklyColWidths?.[c.key] ?? c.defaultWidth) || c.defaultWidth)}px` }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr className="border-b border-white/5">
-                    {["Date","Event","DJs","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 2 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
+                    {weeklyCols.map((c, i) => (
+                      <th
+                        key={c.key}
+                        className={`relative px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${
+                          c.align === "left" ? "text-left" : "text-right"
+                        } ${i === 0 ? "pl-4" : ""}`}
+                      >
+                        {c.label}
+                        <span
+                          role="separator"
+                          onMouseDown={(e) => startResize(e, c.key)}
+                          className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                          title="Drag to resize"
+                        />
+                      </th>
                     ))}
-                    {canEdit && <th className="px-3 py-2.5" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -7401,7 +7618,6 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                     const link = linksByRowId.get(String(row.id)) || null;
                     const primaryEvent = link?.event || link?.linkedEvents?.[0] || null;
                     const resolvedEventName = primaryEvent?.name || row.event_name;
-                    const isNameMismatch = primaryEvent && eventNameKey(primaryEvent.name) !== eventNameKey(row.event_name);
                     return (
                       <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.015]">
                         <td className="pl-4 pr-3 py-2.5 font-bold text-white/60">{salesFmtDate(row.date)}</td>
@@ -7418,12 +7634,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                           ) : (
                             <span className="font-black text-white/85">{resolvedEventName}</span>
                           )}
-                          {isNameMismatch ? (
-                            <div className="mt-0.5 text-[10px] font-bold text-white/35">Sales row: {row.event_name}</div>
-                          ) : null}
-                          {!primaryEvent ? (
-                            <div className="mt-0.5 text-[10px] font-bold text-white/25">No matching event on this date</div>
-                          ) : null}
+                          {null}
                         </td>
                         <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
                           {link?.djNames?.length ? (
@@ -7449,23 +7660,88 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right text-white/50">{row.pax || "—"}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.table_bookings)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.door_sales)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.cover_charge)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-bold text-white/75">{salesFmtRMFull(row.pos_total)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.ticketmelon_total)}</td>
+                        {[
+                          { key: "table_bookings", display: salesFmtRM(row.table_bookings), cls: "text-white/50", raw: row.table_bookings },
+                          { key: "door_sales", display: salesFmtRM(row.door_sales), cls: "text-white/50", raw: row.door_sales },
+                          { key: "cover_charge", display: salesFmtRM(row.cover_charge), cls: "text-white/50", raw: row.cover_charge },
+                          { key: "pos_total", display: salesFmtRMFull(row.pos_total), cls: "font-bold text-white/75", raw: row.pos_total },
+                          { key: "ticketmelon_total", display: salesFmtRM(row.ticketmelon_total), cls: "text-white/50", raw: row.ticketmelon_total },
+                        ].map((cell) => {
+                          const active = canEdit && editingCell?.rowId === String(row.id) && editingCell?.field === cell.key;
+                          return (
+                            <td key={cell.key} className="px-3 py-2.5 text-right tabular-nums">
+                              {canEdit ? (
+                                active ? (
+                                  <input
+                                    autoFocus
+                                    value={editDraft}
+                                    onChange={(e) => setEditDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        cancelCellEdit();
+                                      }
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        commitCellEdit(String(row.id), cell.key);
+                                      }
+                                    }}
+                                    onBlur={() => commitCellEdit(String(row.id), cell.key)}
+                                    inputMode="decimal"
+                                    className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                                    disabled={cellSaving}
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => beginCellEdit(row, cell.key)}
+                                    className={`w-full text-right ${cell.cls} hover:text-white`}
+                                    title="Click to edit"
+                                  >
+                                    {cell.display}
+                                  </button>
+                                )
+                              ) : (
+                                <span className={cell.cls}>{cell.display}</span>
+                              )}
+                            </td>
+                          );
+                        })}
                         <td className={`px-3 py-2.5 text-right tabular-nums font-black ${hitTarget ? "text-emerald-300" : "text-amber-200"}`}>{salesFmtRMFull(total)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-white/30">{salesFmtRMFull(row.weekly_target)}</td>
-                        {canEdit && (
-                          <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {canEdit && editingCell?.rowId === String(row.id) && editingCell?.field === "weekly_target" ? (
+                            <input
+                              autoFocus
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelCellEdit();
+                                }
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitCellEdit(String(row.id), "weekly_target");
+                                }
+                              }}
+                              onBlur={() => commitCellEdit(String(row.id), "weekly_target")}
+                              inputMode="decimal"
+                              className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                              disabled={cellSaving}
+                            />
+                          ) : canEdit ? (
                             <button
-                              onClick={() => setEditRow(row)}
-                              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black text-white/40 hover:text-white"
+                              type="button"
+                              onClick={() => beginCellEdit(row, "weekly_target")}
+                              className="w-full text-right text-white/30 hover:text-white"
+                              title="Click to edit"
                             >
-                              Edit
+                              {salesFmtRMFull(row.weekly_target)}
                             </button>
-                          </td>
-                        )}
+                          ) : (
+                            <span className="text-white/30">{salesFmtRMFull(row.weekly_target)}</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -7475,7 +7751,6 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                     <td colSpan={9} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
                     <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-black ${weekSalesTotal > 0 ? "text-white" : "text-white/30"}`}>{salesFmtRMFull(weekSalesTotal)}</td>
                     <td className="px-3 py-2.5" />
-                    {canEdit && <td />}
                   </tr>
                 </tfoot>
               </table>
