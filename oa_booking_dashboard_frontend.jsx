@@ -5428,6 +5428,158 @@ function SalesTrendChart({ rows, metric = "sales", chartType = "bar" }) {
   );
 }
 
+function salesMonthKeyFromISO(dateStr) {
+  if (!dateStr) return "";
+  const d = isoToDate(dateStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function salesMonthLabelFromKey(key) {
+  const [yy, mm] = String(key || "").split("-");
+  const year = Number(yy);
+  const monthIndex = Number(mm) - 1;
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) return String(key || "");
+  return new Date(year, monthIndex, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+function salesNightLabelFromISO(dateStr) {
+  if (!dateStr) return "";
+  return isoToDate(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+}
+
+function SalesSeriesChart({ points, metricLabel, chartType }) {
+  const width = 920;
+  const height = 240;
+  const padLeft = 56;
+  const padRight = 14;
+  const padTop = 16;
+  const padBottom = 36;
+  const innerW = width - padLeft - padRight;
+  const innerH = height - padTop - padBottom;
+
+  const values = useMemo(() => (points || []).map((p) => Number(p.value) || 0), [points]);
+  const bounds = useMemo(() => {
+    if (!values.length) return { min: 0, max: 0 };
+    let min = values[0];
+    let max = values[0];
+    for (const v of values) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (min === max) {
+      if (min === 0) return { min: -1, max: 1 };
+      return { min: min * 0.85, max: max * 1.15 };
+    }
+    const pad = (max - min) * 0.08;
+    return { min: min - pad, max: max + pad };
+  }, [values]);
+
+  const n = points.length;
+  const stepX = n > 1 ? innerW / (n - 1) : innerW;
+  const valueToY = (v) => {
+    const t = (v - bounds.min) / (bounds.max - bounds.min || 1);
+    return padTop + (1 - t) * innerH;
+  };
+  const zeroY = valueToY(0);
+
+  const poly = useMemo(() => {
+    if (!n) return "";
+    return points
+      .map((p, i) => {
+        const x = padLeft + i * stepX;
+        const y = valueToY(p.value);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [n, padLeft, points, stepX]);
+
+  const ticks = useMemo(() => {
+    const count = 4;
+    const out = [];
+    for (let i = 0; i <= count; i += 1) {
+      const t = i / count;
+      const v = bounds.min + (bounds.max - bounds.min) * (1 - t);
+      out.push({ y: padTop + innerH * t, value: v });
+    }
+    return out;
+  }, [bounds.max, bounds.min, innerH, padTop]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Trend</div>
+          <div className="mt-0.5 text-sm font-black text-white">{metricLabel}</div>
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+          {chartType === "line" ? "Line" : "Bar"}
+        </div>
+      </div>
+      <div className="px-2 py-2">
+        {points.length ? (
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-[240px] w-full">
+            {ticks.map((tick) => (
+              <g key={tick.y}>
+                <line x1={padLeft} x2={width - padRight} y1={tick.y} y2={tick.y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                <text x={padLeft - 10} y={tick.y + 4} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="700">
+                  {salesFmtRMFull(tick.value)}
+                </text>
+              </g>
+            ))}
+            <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke="rgba(103,232,249,0.25)" strokeWidth="1" />
+            {chartType === "bar" ? (
+              <g>
+                {points.map((p, i) => {
+                  const x = padLeft + i * stepX;
+                  const y = valueToY(p.value);
+                  const barW = Math.max(8, innerW / Math.max(1, n) * 0.62);
+                  const left = x - barW / 2;
+                  const top = Math.min(y, zeroY);
+                  const h = Math.max(1, Math.abs(zeroY - y));
+                  const positive = p.value >= 0;
+                  return (
+                    <g key={p.key || i}>
+                      <rect x={left} y={top} width={barW} height={h} rx="6" fill={positive ? "rgba(167,139,250,0.55)" : "rgba(248,113,113,0.55)"} />
+                      {n <= 18 ? (
+                        <text x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="800">
+                          {p.label}
+                        </text>
+                      ) : null}
+                    </g>
+                  );
+                })}
+              </g>
+            ) : (
+              <g>
+                <polyline points={poly} fill="none" stroke="rgba(167,139,250,0.9)" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+                {points.map((p, i) => {
+                  const x = padLeft + i * stepX;
+                  const y = valueToY(p.value);
+                  return <circle key={p.key || i} cx={x} cy={y} r="4.2" fill="rgba(103,232,249,0.9)" />;
+                })}
+                {n <= 18 ? (
+                  <g>
+                    {points.map((p, i) => {
+                      const x = padLeft + i * stepX;
+                      return (
+                        <text key={p.key || i} x={x} y={height - 12} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.35)" fontWeight="800">
+                          {p.label}
+                        </text>
+                      );
+                    })}
+                  </g>
+                ) : null}
+              </g>
+            )}
+          </svg>
+        ) : (
+          <div className="px-4 py-10 text-center text-sm font-bold text-white/35">No data to chart yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function salesPaxNumber(value) {
   const raw = String(value || "");
   const match = raw.match(/\d+/);
@@ -6082,6 +6234,17 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const [expandedPL, setExpandedPL] = useState({});
   const [chartMetric, setChartMetric] = useState("sales");
   const [chartType, setChartType] = useState("bar");
+  const [chartGrain, setChartGrain] = useState("week");
+  const [chartScope, setChartScope] = useState("month");
+  const [chartLimit, setChartLimit] = useState(120);
+  const [chartQuery, setChartQuery] = useState("");
+  const [chartDj, setChartDj] = useState("");
+  const [chartEvent, setChartEvent] = useState("");
+  const [chartStart, setChartStart] = useState("");
+  const [chartEnd, setChartEnd] = useState("");
+  const [chartOnlyLinked, setChartOnlyLinked] = useState(false);
+  const [chartIncludeZero, setChartIncludeZero] = useState(false);
+  const [chartWeekdays, setChartWeekdays] = useState([]);
   const canEdit = userRole === "admin" || userRole === "superadmin";
 
   const load = useCallback(async () => {
@@ -6152,6 +6315,107 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     const links = buildSalesEventLinks(events, data);
     return new Map(links.map((link) => [String(link.row?.id || ""), link]));
   }, [data, events]);
+
+  const analysisRowsSource = useMemo(() => (chartScope === "all" ? allRows : data), [allRows, chartScope, data]);
+  const analysisLinks = useMemo(() => buildSalesEventLinks(events, analysisRowsSource), [analysisRowsSource, events]);
+  const analysisDjOptions = useMemo(() => {
+    const set = new Set();
+    for (const link of analysisLinks) for (const name of link.djNames || []) set.add(name);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [analysisLinks]);
+  const analysisEventOptions = useMemo(() => {
+    const set = new Set();
+    for (const link of analysisLinks) {
+      const label = String(link.event?.name || link.row?.event_name || "").trim();
+      if (label) set.add(label);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [analysisLinks]);
+
+  const toggleChartWeekday = useCallback((idx) => {
+    setChartWeekdays((current) => (current.includes(idx) ? current.filter((d) => d !== idx) : [...current, idx]));
+  }, []);
+
+  const analysisFiltered = useMemo(() => {
+    const needle = chartQuery.trim().toLowerCase();
+    const eventNeedleKey = eventNameKey(chartEvent);
+    const startISO = chartStart ? String(chartStart) : "";
+    const endISO = chartEnd ? String(chartEnd) : "";
+    const weekdaySet = new Set(chartWeekdays);
+
+    return analysisLinks
+      .map((link) => {
+        const row = link.row || {};
+        const date = row.date;
+        const total = Number(link.total) || 0;
+        const nett = Number(link.pl?.nett) || 0;
+        const eventLabel = String(link.event?.name || row.event_name || "").trim();
+        const eventKey = eventNameKey(eventLabel);
+        const djNames = Array.isArray(link.djNames) ? link.djNames : [];
+        const weekday = date ? isoToDate(date).getDay() : null;
+        const linked = Array.isArray(link.linkedEvents) && link.linkedEvents.length > 0;
+        return { date, total, nett, eventLabel, eventKey, djNames, weekday, linked };
+      })
+      .filter((item) => {
+        if (!item.date) return false;
+        if (!chartIncludeZero && item.total <= 0) return false;
+        if (chartOnlyLinked && !item.linked) return false;
+        if (chartDj && !item.djNames.includes(chartDj)) return false;
+        if (chartWeekdays.length && (item.weekday == null || !weekdaySet.has(item.weekday))) return false;
+        if (startISO && item.date < startISO) return false;
+        if (endISO && item.date > endISO) return false;
+        if (eventNeedleKey) {
+          if (!item.eventKey.includes(eventNeedleKey) && !String(item.eventLabel || "").toLowerCase().includes(chartEvent.trim().toLowerCase())) return false;
+        }
+        if (!needle) return true;
+        const haystack = [
+          item.date,
+          salesFmtDate(item.date),
+          item.eventLabel,
+          (item.djNames || []).join(" "),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      });
+  }, [analysisLinks, chartDj, chartEnd, chartEvent, chartIncludeZero, chartOnlyLinked, chartQuery, chartStart, chartWeekdays]);
+
+  const analysisPoints = useMemo(() => {
+    const metric = chartMetric;
+    const grain = chartGrain;
+    const map = new Map();
+    for (const item of analysisFiltered) {
+      const key =
+        grain === "night"
+          ? item.date
+          : grain === "week"
+          ? weekKeyFromISO(item.date)
+          : grain === "month"
+          ? salesMonthKeyFromISO(item.date)
+          : String(isoToDate(item.date).getFullYear());
+      const current = map.get(key) || { key, value: 0, firstDate: item.date };
+      current.value += metric === "nett" ? item.nett : item.total;
+      if (item.date < current.firstDate) current.firstDate = item.date;
+      map.set(key, current);
+    }
+    const list = Array.from(map.values())
+      .sort((a, b) => String(a.firstDate).localeCompare(String(b.firstDate)))
+      .map((p) => {
+        const label =
+          grain === "night"
+            ? salesNightLabelFromISO(p.key)
+            : grain === "week"
+            ? weekLabelFromKey(p.key)
+            : grain === "month"
+            ? salesMonthLabelFromKey(p.key)
+            : String(p.key);
+        return { key: p.key, label, value: p.value, firstDate: p.firstDate };
+      });
+    const limit = Math.max(10, Math.min(400, Number(chartLimit) || 120));
+    if (list.length <= limit) return list;
+    return list.slice(-limit);
+  }, [analysisFiltered, chartGrain, chartLimit, chartMetric]);
 
   const weeks = useMemo(() => {
     const map = {};
@@ -6276,7 +6540,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       </div>
 
       <div className="flex gap-1">
-        {[["nights", "Nights"], ["analysis", "Analysis"]].map(([key, label]) => (
+        {[["nights", "Nights"], ["compare", "Compare"], ["analysis", "Analysis"]].map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -6311,6 +6575,10 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         </div>
       )}
 
+      {!loading && !error && tab === "compare" && allRows.length > 0 && (
+        <SalesComparisonWorkbench events={events} salesRows={allRows} onOpenEvent={openEvent} onOpenDj={onOpenDj} />
+      )}
+
       {!loading && !error && tab === "analysis" && allRows.length > 0 && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -6334,12 +6602,121 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                 <option value="line">Line</option>
               </select>
             </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={chartGrain}
+                onChange={(e) => setChartGrain(e.target.value)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              >
+                <option value="night">Nights</option>
+                <option value="week">Weeks</option>
+                <option value="month">Months</option>
+                <option value="year">Years</option>
+              </select>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={chartScope}
+                onChange={(e) => setChartScope(e.target.value)}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              >
+                <option value="month">Selected month</option>
+                <option value="all">All time</option>
+              </select>
+            </div>
             <div className="ml-auto rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
               {month}
             </div>
           </div>
-          <SalesComparisonWorkbench events={events} salesRows={allRows} onOpenEvent={openEvent} onOpenDj={onOpenDj} />
-          <SalesTrendChart rows={data} metric={chartMetric} chartType={chartType} />
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+                <Search className="h-4 w-4 shrink-0" />
+                <input
+                  value={chartQuery}
+                  onChange={(e) => setChartQuery(e.target.value)}
+                  placeholder="Search nights / events / DJs..."
+                  className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25"
+                />
+              </div>
+              <select value={chartDj} onChange={(e) => setChartDj(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40">
+                <option value="">All DJs</option>
+                {analysisDjOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <input
+                value={chartEvent}
+                onChange={(e) => setChartEvent(e.target.value)}
+                list="sales-analysis-event"
+                placeholder="Filter by event..."
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              />
+              <datalist id="sales-analysis-event">
+                {analysisEventOptions.slice(0, 200).map((label) => (
+                  <option key={label} value={label} />
+                ))}
+              </datalist>
+              <input type="date" value={chartStart} onChange={(e) => setChartStart(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40" />
+              <input type="date" value={chartEnd} onChange={(e) => setChartEnd(e.target.value)} className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40" />
+              <input
+                value={chartLimit}
+                onChange={(e) => setChartLimit(e.target.value)}
+                inputMode="numeric"
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((label, idx) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggleChartWeekday(idx)}
+                    className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                      chartWeekdays.includes(idx)
+                        ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100"
+                        : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setChartOnlyLinked((v) => !v)}
+                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                  chartOnlyLinked ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+                }`}
+              >
+                Linked only
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartIncludeZero((v) => !v)}
+                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                  chartIncludeZero ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+                }`}
+              >
+                Include 0
+              </button>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                {analysisFiltered.length} nights
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                {analysisPoints.length} points
+              </span>
+            </div>
+          </div>
+
+          <SalesSeriesChart
+            points={analysisPoints}
+            metricLabel={chartMetric === "nett" ? "Net Profit" : "Gross Sales"}
+            chartType={chartType}
+          />
+
           <EventNightAnalytics insights={eventInsights} />
         </div>
       )}
