@@ -4570,6 +4570,123 @@ function salesFmtDate(dateStr) {
   return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short" });
 }
 
+function monthYearFromISO(dateStr) {
+  if (!dateStr) return "";
+  return isoToDate(dateStr).toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase();
+}
+
+function eventDjNames(event) {
+  const names = new Set();
+  for (const slot of event?.slots || []) {
+    if (slot?.role === "MC") continue;
+    const participants = Array.isArray(slot?.djParticipants) && slot.djParticipants.length
+      ? slot.djParticipants
+      : parseDjLineup(slot?.dj).participants;
+    for (const name of participants) {
+      const canonical = canonicalDjName(name);
+      if (!canonical || canonical.includes("TBD")) continue;
+      names.add(canonical);
+    }
+  }
+  return Array.from(names);
+}
+
+function eventNameKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function salesTotalForRow(row) {
+  return (Number(row?.pos_total) || 0) + (Number(row?.ticketmelon_total) || 0);
+}
+
+function average(numbers) {
+  const valid = numbers.map(Number).filter((n) => Number.isFinite(n));
+  if (!valid.length) return 0;
+  return valid.reduce((sum, n) => sum + n, 0) / valid.length;
+}
+
+function buildSalesEventLinks(events, salesRows) {
+  const eventsByDate = new Map();
+  for (const event of events || []) {
+    if (!event?.date) continue;
+    const list = eventsByDate.get(event.date) || [];
+    list.push(event);
+    eventsByDate.set(event.date, list);
+  }
+
+  return (salesRows || []).map((row) => {
+    const linkedEvents = eventsByDate.get(row.date) || [];
+    const primaryEvent =
+      linkedEvents.find((event) => eventNameKey(event.name) === eventNameKey(row.event_name)) ||
+      linkedEvents[0] ||
+      null;
+    return {
+      row,
+      event: primaryEvent,
+      linkedEvents,
+      total: salesTotalForRow(row),
+      pl: calcNightPL(row),
+      djNames: eventDjNames(primaryEvent),
+      eventKey: eventNameKey(primaryEvent?.name || row.event_name),
+    };
+  });
+}
+
+function buildEventNightInsights(events, salesRows) {
+  const links = buildSalesEventLinks(events, salesRows);
+  const historical = links.filter((link) => link.total > 0 || link.pl.incomeTotal > 0);
+  const todayISO = isoFromDate(new Date());
+  const salesByDate = new Map((salesRows || []).map((row) => [row.date, row]));
+  const upcomingEvents = (events || [])
+    .filter((event) => event?.date >= todayISO && !salesByDate.has(event.date))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 6);
+
+  const forecasts = upcomingEvents.map((event) => {
+    const eventKey = eventNameKey(event.name);
+    const djNames = eventDjNames(event);
+    const eventMatches = historical.filter((link) => link.eventKey && link.eventKey === eventKey && link.row.date < event.date);
+    const djMatches = historical.filter((link) => link.row.date < event.date && link.djNames.some((name) => djNames.includes(name)));
+    const dayMatches = historical.filter((link) => isoToDate(link.row.date).getDay() === isoToDate(event.date).getDay() && link.row.date < event.date);
+    const basis = eventMatches.length ? eventMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
+    const forecastSales = average(basis.map((link) => link.total));
+    const forecastNett = average(basis.map((link) => link.pl.nett));
+    return {
+      event,
+      djNames,
+      eventMatches,
+      djMatches,
+      basis,
+      forecastSales,
+      forecastNett,
+      confidence: eventMatches.length ? "High" : djMatches.length ? "Medium" : dayMatches.length ? "Low" : "None",
+    };
+  });
+
+  const topHistorical = [...historical]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+  const djStats = new Map();
+  for (const link of historical) {
+    for (const name of link.djNames) {
+      const stat = djStats.get(name) || { name, nights: 0, sales: 0, nett: 0 };
+      stat.nights += 1;
+      stat.sales += link.total;
+      stat.nett += link.pl.nett;
+      djStats.set(name, stat);
+    }
+  }
+  const topDjs = Array.from(djStats.values())
+    .map((stat) => ({ ...stat, avgSales: stat.sales / stat.nights, avgNett: stat.nett / stat.nights }))
+    .sort((a, b) => b.avgSales - a.avgSales)
+    .slice(0, 6);
+
+  return { links, historical, forecasts, topHistorical, topDjs };
+}
+
 function PLBreakdownTable({ rows }) {
   const nights = rows.map((row) => ({ date: row.date, pl: calcNightPL(row) }));
 
@@ -4863,9 +4980,118 @@ function EditNightModal({ row, monthYear, onSave, onDelete, onClose }) {
   );
 }
 
-function WeeklySalesPage({ userRole, onToast }) {
+function EventNightAnalytics({ insights }) {
+  const forecastReady = insights.forecasts.filter((item) => item.confidence !== "None");
+  const nextForecasts = forecastReady.length ? forecastReady : insights.forecasts;
+  const linkedCount = insights.links.filter((link) => link.event).length;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.045]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-4 w-4 text-cyan-200" />
+          <div>
+            <div className="text-sm font-black text-white">Event Night Analytics</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-white/35">
+              {linkedCount} sales nights linked to booking dates
+            </div>
+          </div>
+        </div>
+        <div className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-100">
+          Forecast from same event, same DJ, then same weekday
+        </div>
+      </div>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-3">
+          <div className="text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Upcoming Forecast</div>
+          {nextForecasts.length ? (
+            <div className="grid gap-2">
+              {nextForecasts.slice(0, 4).map(({ event, djNames, basis, forecastSales, forecastNett, confidence }) => (
+                <div key={event.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-white/35">{salesFmtDate(event.date)} · {event.stage}</div>
+                      <div className="mt-1 truncate text-sm font-black text-white">{event.name}</div>
+                      <div className="mt-1 truncate text-xs font-bold text-white/40">{djNames.slice(0, 4).join(" / ") || "Lineup pending"}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-right">
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Sales</div>
+                        <div className="text-sm font-black text-cyan-100">{forecastSales ? salesFmtRMFull(forecastSales) : "No basis"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Nett</div>
+                        <div className={`text-sm font-black ${forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                          {forecastSales ? salesFmtRMFull(forecastNett) : "-"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                      confidence === "High" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+                      : confidence === "Medium" ? "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
+                      : confidence === "Low" ? "border-amber-300/25 bg-amber-400/10 text-amber-100"
+                      : "border-white/10 bg-white/5 text-white/35"
+                    }`}>
+                      {confidence} confidence
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/35">
+                      {basis.length} comparable night{basis.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-6 text-center text-sm font-bold text-white/35">
+              Add upcoming booking dates and previous sales rows to unlock forecasts.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Best Previous Event Nights</div>
+            <div className="space-y-2">
+              {insights.topHistorical.length ? insights.topHistorical.map((link) => (
+                <div key={link.row.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-black text-white">{link.event?.name || link.row.event_name}</div>
+                    <div className="text-[10px] font-bold text-white/35">{salesFmtDate(link.row.date)} · {link.djNames.slice(0, 2).join(" / ") || "No DJ link"}</div>
+                  </div>
+                  <div className="text-right text-xs font-black text-white">{salesFmtRMFull(link.total)}</div>
+                </div>
+              )) : (
+                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-center text-xs font-bold text-white/35">No linked history yet.</div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-cyan-100/65">DJ Pull</div>
+            <div className="grid grid-cols-2 gap-2">
+              {insights.topDjs.length ? insights.topDjs.map((dj) => (
+                <div key={dj.name} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                  <div className="truncate text-xs font-black text-white">{dj.name}</div>
+                  <div className="mt-1 text-[10px] font-bold text-white/35">{dj.nights} night{dj.nights === 1 ? "" : "s"}</div>
+                  <div className="mt-1 text-xs font-black text-cyan-100">{salesFmtRMFull(dj.avgSales)}</div>
+                </div>
+              )) : (
+                <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-center text-xs font-bold text-white/35">Lineups need sales history.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WeeklySalesPage({ userRole, onToast, events = [] }) {
   const [month, setMonth]         = useState("APRIL 2026");
-  const [data, setData]           = useState([]);
+  const [allRows, setAllRows]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
   const [editRow, setEditRow]     = useState(null);
@@ -4883,14 +5109,26 @@ function WeeklySalesPage({ userRole, onToast }) {
     const { data: rows, error: err } = await supabase
       .from("weekly_sales")
       .select("*")
-      .eq("month_year", month)
       .order("date", { ascending: true });
     if (err) { setError(err.message); setLoading(false); return; }
-    setData(rows || []);
+    setAllRows(rows || []);
     setLoading(false);
-  }, [month]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const salesMonths = useMemo(() => {
+    const months = Array.from(new Set((allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean)));
+    return months.length ? months : SALES_MONTHS;
+  }, [allRows]);
+
+  useEffect(() => {
+    if (salesMonths.length && !salesMonths.includes(month)) setMonth(salesMonths[0]);
+  }, [month, salesMonths]);
+
+  const data = useMemo(() => allRows.filter((row) => (row.month_year || monthYearFromISO(row.date)) === month), [allRows, month]);
+
+  const eventInsights = useMemo(() => buildEventNightInsights(events, allRows), [events, allRows]);
 
   const weeks = useMemo(() => {
     const map = {};
@@ -4958,7 +5196,7 @@ function WeeklySalesPage({ userRole, onToast }) {
         <div className="flex items-center gap-2">
           {/* Month tabs */}
           <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
-            {SALES_MONTHS.map((m) => (
+            {salesMonths.map((m) => (
               <button
                 key={m}
                 onClick={() => setMonth(m)}
@@ -5007,6 +5245,10 @@ function WeeklySalesPage({ userRole, onToast }) {
             </button>
           )}
         </div>
+      )}
+
+      {!loading && !error && allRows.length > 0 && (
+        <EventNightAnalytics insights={eventInsights} />
       )}
 
       {/* ── Week blocks ── */}
@@ -9839,7 +10081,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Finance" ? (
             <FinancePage />
           ) : view === "Sales" && canAccessSales ? (
-            <WeeklySalesPage userRole={userRole} onToast={showToast} />
+            <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
