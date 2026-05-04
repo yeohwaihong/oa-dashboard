@@ -6543,12 +6543,8 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   useEffect(() => { load(); }, [load]);
 
   const salesMonths = useMemo(() => {
-    const todayISO = isoFromDate(new Date());
     const fromSales = (allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean);
-    const fromEvents = (events || [])
-      .filter((event) => event?.date && event.date >= todayISO)
-      .map((event) => monthYearFromISO(event.date))
-      .filter(Boolean);
+    const fromEvents = (events || []).filter((event) => event?.date).map((event) => monthYearFromISO(event.date)).filter(Boolean);
     const months = Array.from(new Set([...fromSales, ...fromEvents]));
     const sorted = months
       .slice()
@@ -6598,7 +6594,6 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     const end = new Date(selectedMeta.year, selectedMeta.monthIndex + 1, 0);
     const startISO = isoFromDate(start);
     const endISO = isoFromDate(end);
-    const todayISO = isoFromDate(new Date());
 
     const existingByDate = new Map((allRows || []).map((row) => [row.date, row]));
     const eventByDate = new Map();
@@ -6609,17 +6604,12 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     }
 
     const payload = [];
-    const includeWeekdays = new Set([3, 4, 5, 6]);
-    for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
-      const date = isoFromDate(d);
-      if (date < todayISO) continue;
-      if (!includeWeekdays.has(d.getDay())) continue;
+    for (const [date, event] of eventByDate.entries()) {
       if (existingByDate.has(date)) continue;
       const monthYear = monthYearFromISO(date);
       const weekNum = salesWeekNumberFromISO(date);
       const defaults = salesDefaultsForISO(date);
-      const plannedEvent = eventByDate.get(date);
-      const plannedName = String(plannedEvent?.name || "").trim();
+      const plannedName = String(event?.name || "").trim();
       payload.push({
         date,
         event_name: plannedName || "TBD",
