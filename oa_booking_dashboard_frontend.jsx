@@ -6555,7 +6555,8 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const salesMonths = useMemo(() => {
     const fromSales = (allRows || []).map((row) => row.month_year || monthYearFromISO(row.date)).filter(Boolean);
     const fromEvents = (events || []).filter((event) => event?.date).map((event) => monthYearFromISO(event.date)).filter(Boolean);
-    const months = Array.from(new Set([...fromSales, ...fromEvents]));
+    const currentMonth = monthYearFromISO(isoFromDate(new Date()));
+    const months = Array.from(new Set([...fromSales, ...fromEvents, currentMonth].filter(Boolean)));
     const sorted = months
       .slice()
       .sort((a, b) => {
@@ -11005,6 +11006,35 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_time_format", timeFormat);
   }, [timeFormat]);
+
+  useEffect(() => {
+    const shouldAutoSelect = (el) => {
+      if (!el) return false;
+      if (el.disabled || el.readOnly) return false;
+      if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") return false;
+      const type = String(el.type || "").toLowerCase();
+      const inputMode = String(el.inputMode || "").toLowerCase();
+      const value = String(el.value ?? "").trim();
+      const numericish = type === "number" || inputMode === "numeric" || inputMode === "decimal";
+      if (!numericish) return false;
+      return value === "0" || /^0(?:\.0+)?$/.test(value);
+    };
+
+    const onFocusIn = (event) => {
+      const el = event.target;
+      if (!shouldAutoSelect(el)) return;
+      window.requestAnimationFrame(() => {
+        try {
+          el.focus();
+          if (typeof el.select === "function") el.select();
+          if (typeof el.setSelectionRange === "function") el.setSelectionRange(0, String(el.value ?? "").length);
+        } catch {}
+      });
+    };
+
+    window.addEventListener("focusin", onFocusIn, true);
+    return () => window.removeEventListener("focusin", onFocusIn, true);
+  }, []);
 
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
