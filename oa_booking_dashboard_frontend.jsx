@@ -7087,6 +7087,7 @@ function FinancePage() {
 
 
 function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUsers = [], onToast, onRefreshProfiles, onLogActivity, initialQuery = "" }) {
+  const [tab, setTab] = useState("profiles");
   const [query, setQuery] = useState(() => String(initialQuery || ""));
   const [availabilityMonth, setAvailabilityMonth] = useState(() => monthInputValueFromDate(new Date()));
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
@@ -7433,101 +7434,129 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
   }, [canEdit, editForm, onLogActivity, onRefreshProfiles, onToast, selectedProfile]);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-[#12111f] p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Monthly WhatsApp Availability</div>
-            <div className="mt-1 text-xl font-black text-white">{availabilityMonthLabel}</div>
-            <div className="mt-1 text-xs font-bold text-white/40">
-              {monthlyAvailabilityRows.length} DJ{monthlyAvailabilityRows.length === 1 ? "" : "s"} scheduled this month
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => {
-                const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() - 1, 1);
-                setAvailabilityMonth(monthInputValueFromDate(next));
-              }}
-              title="Previous month"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <input
-              type="month"
-              value={availabilityMonth}
-              onChange={(event) => setAvailabilityMonth(event.target.value || monthInputValueFromDate(new Date()))}
-              className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
-            />
-            <Button
-              onClick={() => {
-                const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() + 1, 1);
-                setAvailabilityMonth(monthInputValueFromDate(next));
-              }}
-              title="Next month"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={openAllAvailabilityWhatsApps}
-              disabled={!monthlyAvailabilityRows.some((row) => whatsappDigits(row.profile.phone))}
-              className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
-            >
-              Open All WhatsApps
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {monthlyAvailabilityRows.map((row) => {
-            const displayName = row.profile.stageName || row.profile.name;
-            const hasPhone = Boolean(whatsappDigits(row.profile.phone));
-            const firstSet = row.sets[0];
-            return (
-              <div key={row.profile.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-black text-white">{displayName}</div>
-                    <div className="mt-1 text-[11px] font-bold text-white/45">
-                      {row.sets.length} set{row.sets.length === 1 ? "" : "s"}
-                      {firstSet ? ` · ${dayLabelFromISO(firstSet.date)}` : ""}
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => openAvailabilityWhatsApp(row)}
-                    disabled={!hasPhone}
-                    title={hasPhone ? "Send WhatsApp availability request" : "Add DJ phone in profile first"}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-400/10 p-0 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    <span className="sr-only">Send WhatsApp</span>
-                  </Button>
-                </div>
-                <div className="mt-3 space-y-1.5">
-                  {row.sets.slice(0, 3).map((set) => (
-                    <div key={set.key} className="flex items-center justify-between gap-2 text-[11px] font-bold text-white/50">
-                      <span className="truncate">{set.eventName}</span>
-                      <span className="shrink-0 text-cyan-100/75">{set.start && set.end ? formatTimeRange(set.start, set.end, "24") : "TBC"}</span>
-                    </div>
-                  ))}
-                  {row.sets.length > 3 ? (
-                    <div className="text-[11px] font-black text-white/30">+{row.sets.length - 3} more</div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-
-          {!monthlyAvailabilityRows.length ? (
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35 md:col-span-2 xl:col-span-3">
-              No DJ sets found for {availabilityMonthLabel}.
-            </div>
-          ) : null}
-        </div>
+    <section className="space-y-4">
+      <div className="flex gap-1">
+        {[["profiles", "DJ Profiles"], ["whatsapp", "WhatsApp"]].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+              tab === key ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      <aside className="rounded-2xl border border-white/10 bg-[#12111f] p-3">
+
+      {tab === "whatsapp" ? (
+        <div className="rounded-2xl border border-white/10 bg-[#12111f] p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">Monthly WhatsApp Availability</div>
+              <div className="mt-1 text-xl font-black text-white">{availabilityMonthLabel}</div>
+              <div className="mt-1 text-xs font-bold text-white/40">
+                {monthlyAvailabilityRows.length} DJ{monthlyAvailabilityRows.length === 1 ? "" : "s"} scheduled this month
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => {
+                  const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() - 1, 1);
+                  setAvailabilityMonth(monthInputValueFromDate(next));
+                }}
+                title="Previous month"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <input
+                type="month"
+                value={availabilityMonth}
+                onChange={(event) => setAvailabilityMonth(event.target.value || monthInputValueFromDate(new Date()))}
+                className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black text-white outline-none focus:border-purple-300/60"
+              />
+              <Button
+                onClick={() => {
+                  const next = new Date(availabilityMonthDate.getFullYear(), availabilityMonthDate.getMonth() + 1, 1);
+                  setAvailabilityMonth(monthInputValueFromDate(next));
+                }}
+                title="Next month"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 p-0 text-white/60 hover:bg-white/10 hover:text-white"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={openAllAvailabilityWhatsApps}
+                disabled={!monthlyAvailabilityRows.some((row) => whatsappDigits(row.profile.phone))}
+                className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+              >
+                Open All WhatsApps
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {monthlyAvailabilityRows.map((row) => {
+              const displayName = row.profile.stageName || row.profile.name;
+              const hasPhone = Boolean(whatsappDigits(row.profile.phone));
+              const firstSet = row.sets[0];
+              return (
+                <div key={row.profile.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedId(row.profile.id);
+                          setTab("profiles");
+                        }}
+                        className="truncate text-left text-sm font-black text-white hover:text-purple-100"
+                        title="Open DJ profile"
+                      >
+                        {displayName}
+                      </button>
+                      <div className="mt-1 text-[11px] font-bold text-white/45">
+                        {row.sets.length} set{row.sets.length === 1 ? "" : "s"}
+                        {firstSet ? ` · ${dayLabelFromISO(firstSet.date)}` : ""}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => openAvailabilityWhatsApp(row)}
+                      disabled={!hasPhone}
+                      title={hasPhone ? "Send WhatsApp availability request" : "Add DJ phone in profile first"}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-400/10 p-0 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-white/25"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      <span className="sr-only">Send WhatsApp</span>
+                    </Button>
+                  </div>
+                  <div className="mt-3 space-y-1.5">
+                    {row.sets.slice(0, 3).map((set) => (
+                      <div key={set.key} className="flex items-center justify-between gap-2 text-[11px] font-bold text-white/50">
+                        <span className="truncate">{set.eventName}</span>
+                        <span className="shrink-0 text-cyan-100/75">{set.start && set.end ? formatTimeRange(set.start, set.end, "24") : "TBC"}</span>
+                      </div>
+                    ))}
+                    {row.sets.length > 3 ? (
+                      <div className="text-[11px] font-black text-white/30">+{row.sets.length - 3} more</div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+
+            {!monthlyAvailabilityRows.length ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-8 text-center text-sm font-bold text-white/35 md:col-span-2 xl:col-span-3">
+                No DJ sets found for {availabilityMonthLabel}.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="rounded-2xl border border-white/10 bg-[#12111f] p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/30">DJ Directory</div>
@@ -7727,6 +7756,8 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
           </div>
         )}
       </div>
+        </div>
+      )}
       {editOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 backdrop-blur-sm sm:p-4"
