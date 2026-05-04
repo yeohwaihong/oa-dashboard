@@ -230,17 +230,25 @@ function dashboardPathForView(view) {
   return dashboardViewRoutes[view] || dashboardViewRoutes.List;
 }
 
+function eventIdFromSharePath(pathname) {
+  const match = normalizeDashboardPath(pathname).match(/^\/event\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function isEventSharePath(pathname) {
+  return Boolean(eventIdFromSharePath(pathname));
+}
+
 function eventShareIdFromLocation() {
   if (typeof window === "undefined") return "";
-  return new URLSearchParams(window.location.search).get("event") || "";
+  return eventIdFromSharePath(window.location.pathname) || new URLSearchParams(window.location.search).get("event") || "";
 }
 
 function eventShareUrl(eventId) {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
-  url.pathname = dashboardViewRoutes.List;
+  url.pathname = `/event/${encodeURIComponent(String(eventId))}`;
   url.search = "";
-  url.searchParams.set("event", String(eventId));
   url.hash = "";
   return url.toString();
 }
@@ -2706,7 +2714,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
               </div>
             </div>
 
-            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
+            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
               {canEdit ? (
                 <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
@@ -7180,7 +7188,6 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const listWeekNavInitRef = React.useRef({ view: null, grouping: null, monthKey: null });
   const didInitCommentsToastRef = React.useRef(false);
   const knownCommentIdsRef = React.useRef(new Set());
-  const handledRouteEventIdRef = React.useRef("");
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -7265,10 +7272,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   );
 
   const navigateView = useCallback((nextView, { replace = false } = {}) => {
+    setRouteEventId("");
     setView(nextView);
     if (typeof window === "undefined") return;
     const nextPath = dashboardPathForView(nextView);
-    if (window.location.pathname === nextPath) return;
+    if (window.location.pathname === nextPath && !window.location.search) return;
     const method = replace ? "replaceState" : "pushState";
     window.history[method]({}, "", nextPath);
   }, []);
@@ -7276,12 +7284,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handlePopState = () => {
-      handledRouteEventIdRef.current = "";
       setView(dashboardViewFromPath(window.location.pathname));
       setRouteEventId(eventShareIdFromLocation());
     };
     window.addEventListener("popstate", handlePopState);
-    if (!routeDashboardViews[normalizeDashboardPath(window.location.pathname)]) {
+    if (!routeDashboardViews[normalizeDashboardPath(window.location.pathname)] && !isEventSharePath(window.location.pathname)) {
       navigateView(view, { replace: true });
     }
     return () => window.removeEventListener("popstate", handlePopState);
@@ -7591,6 +7598,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [events]);
 
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const focusedEvent = routeEventId ? eventsById.get(String(routeEventId)) || null : null;
 
   const commentsByEventId = useMemo(() => {
     const map = new Map();
@@ -7973,23 +7981,6 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setActiveWeekKey(weekKey);
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [navigateView, todayISO]);
-
-  useEffect(() => {
-    if (!routeEventId) return;
-    if (handledRouteEventIdRef.current === routeEventId) return;
-    const event = eventsById.get(String(routeEventId));
-    if (!event) return;
-
-    const weekKey = weekKeyFromISO(event.date);
-    setSearch("");
-    setActiveFilter("All");
-    setDateScope(event.date < todayISO ? "Past" : "Upcoming");
-    setListGrouping("all");
-    navigateView("List", { replace: normalizeDashboardPath(window.location.pathname) !== dashboardViewRoutes.List });
-    setActiveWeekKey(weekKey);
-    setPendingNotificationTarget({ eventId: String(event.id), weekKey });
-    handledRouteEventIdRef.current = routeEventId;
-  }, [eventsById, navigateView, routeEventId, todayISO]);
 
   const respondToBookingRequest = useCallback(
     async (event, slot, assignment, nextStatus) => {
@@ -8999,7 +8990,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           </div>
         ) : null}
 
-        {view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
+        {!routeEventId && view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
         <section className="grid grid-cols-2 gap-2 border-b border-white/10 px-3 py-3 sm:grid-cols-4 sm:px-4 md:px-6 xl:gap-4 xl:px-8 xl:py-6">
           <Stat number={stats.total} label="Events" />
           <Stat number={stats.confirmed} label="Confirmed" tone="text-emerald-300" />
@@ -9008,7 +8999,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         </section>
         ) : null}
 
-        {view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
+        {!routeEventId && view !== "Finance" && view !== "DJs" && view !== "DJPayments" ? (
         <section className="sticky top-0 z-10 grid gap-2 border-b border-white/10 bg-[#0d0c17]/95 px-3 py-2.5 backdrop-blur sm:px-4 md:flex md:flex-wrap md:items-center md:px-6 xl:px-8">
           {view === "List" ? (
           <div className="mx-auto grid w-full max-w-md grid-cols-2 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:max-w-none md:mx-0 md:flex md:w-auto md:max-w-full md:overflow-x-auto">
@@ -9123,7 +9114,51 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         ) : null}
 
         <main className="space-y-4 px-3 py-3 sm:px-4 md:px-6 xl:px-8 xl:py-6">
-          {view === "Users" ? (
+          {routeEventId ? (
+            focusedEvent ? (
+              <section className="mx-auto max-w-4xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/35">Shared Event</div>
+                    <div className="mt-1 truncate text-sm font-black text-white/80">{dayLabelFromISO(focusedEvent.date)} · {focusedEvent.name}</div>
+                  </div>
+                  <Button
+                    onClick={() => navigateView("List", { replace: true })}
+                    className="h-10 rounded-xl bg-white/5 px-4 text-xs font-black text-white/60 hover:bg-white/10 hover:text-white"
+                  >
+                    Back to All Events
+                  </Button>
+                </div>
+                <EventCard
+                  event={focusedEvent}
+                  holidays={holidaysByDate.get(focusedEvent.date) ?? []}
+                  timeFormat={timeFormat}
+                  canEdit={canEdit}
+                  mentionUsers={mentionUsers}
+                  comments={commentsByEventId.get(focusedEvent.id) ?? []}
+                  currentUser={currentUser}
+                  commentsError={commentsError}
+                  onEdit={() => openEditModal(focusedEvent)}
+                  onAssignIC={(ic) => assignIC(focusedEvent.id, ic)}
+                  onConfirm={() => updateEventStatus(focusedEvent, "Confirmed")}
+                  onShare={() => shareEvent(focusedEvent)}
+                  onOpenDetails={() => setPreviewEvent(focusedEvent)}
+                  onAddComment={addEventComment}
+                />
+              </section>
+            ) : (
+              <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-10 text-center">
+                <div className="text-lg font-black text-white">Event not found</div>
+                <div className="mt-2 text-sm font-bold text-white/45">This link does not match an event currently available in the dashboard.</div>
+                <Button
+                  onClick={() => navigateView("List", { replace: true })}
+                  className="mt-5 h-10 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300"
+                >
+                  Back to All Events
+                </Button>
+              </section>
+            )
+          ) : view === "Users" ? (
             <UserManagementPage onToast={showToast} onLogActivity={logActivity} />
           ) : view === "Activity" && canViewActivity ? (
             <ActivityMonitorPage userRole={userRole} />
