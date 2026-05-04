@@ -36,6 +36,7 @@ import {
   CircleDot,
   Edit2,
   Check,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -227,6 +228,21 @@ function dashboardViewFromPath(pathname) {
 
 function dashboardPathForView(view) {
   return dashboardViewRoutes[view] || dashboardViewRoutes.List;
+}
+
+function eventShareIdFromLocation() {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("event") || "";
+}
+
+function eventShareUrl(eventId) {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.href);
+  url.pathname = dashboardViewRoutes.List;
+  url.search = "";
+  url.searchParams.set("event", String(eventId));
+  url.hash = "";
+  return url.toString();
 }
 
 const statusConfig = {
@@ -2527,7 +2543,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onOpenDetails, onAddComment }) {
+function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -2690,7 +2706,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
               </div>
             </div>
 
-            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
+            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5 border-t border-white/10 pt-3 sm:col-span-1 sm:flex sm:flex-col sm:items-end sm:gap-2 sm:border-t-0 sm:pt-0">
               {canEdit ? (
                 <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">PIC</div>
@@ -2715,6 +2731,24 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                   <span className="hidden sm:inline">Edit</span>
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={onShare}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400 hover:text-black sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                title="Copy share link"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Share</span>
+              </button>
+              <button
+                type="button"
+                onClick={onOpenDetails}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white sm:h-8 sm:w-auto sm:gap-2 sm:px-3 sm:text-xs md:h-9 md:text-sm"
+                title="Open details"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Details</span>
+              </button>
               {canEdit && event.status !== "Confirmed" ? (
                 <button
                   onClick={onConfirm}
@@ -2733,7 +2767,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
   );
 }
 
-function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, djProfiles, onAddComment, onClose, onEdit, onDelete, onConfirm, canEdit }) {
+function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, djProfiles, onAddComment, onClose, onEdit, onDelete, onConfirm, onShare, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
   const djPhoneById = useMemo(() => {
@@ -2930,12 +2964,21 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
         </div>
 
         <div className="oa-modal-footer grid gap-2 border-t border-white/10 px-4 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-6">
-          <Button
-            onClick={onClose}
-            className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
-          >
-            Close
-          </Button>
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <Button
+              onClick={onClose}
+              className="h-11 rounded-xl bg-white/5 px-5 text-sm font-black text-white/55 hover:bg-white/10 hover:text-white"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={() => onShare(event)}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-5 text-sm font-black text-cyan-100 hover:bg-cyan-400 hover:text-black"
+            >
+              <Link2 className="h-4 w-4" />
+              <span>Share Link</span>
+            </Button>
+          </div>
           {canEdit ? (
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
               <Button
@@ -7067,6 +7110,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [search, setSearch] = useState("");
   const [events, setEvents] = useState(() => eventsSeed.map((e) => ({ ...e, id: String(e.id) })));
   const [view, setView] = useState(() => (typeof window === "undefined" ? "List" : dashboardViewFromPath(window.location.pathname)));
+  const [routeEventId, setRouteEventId] = useState(() => eventShareIdFromLocation());
   const [listGrouping, setListGrouping] = useState("all");
   const [listMonthCursor, setListMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -7136,6 +7180,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const listWeekNavInitRef = React.useRef({ view: null, grouping: null, monthKey: null });
   const didInitCommentsToastRef = React.useRef(false);
   const knownCommentIdsRef = React.useRef(new Set());
+  const handledRouteEventIdRef = React.useRef("");
 
   useEffect(() => {
     window.localStorage.setItem("oa_dashboard_theme", theme);
@@ -7191,6 +7236,34 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     showToast("Staff accounts are view-only", "error");
   }, [showToast]);
 
+  const shareEvent = useCallback(
+    async (event) => {
+      const url = eventShareUrl(event?.id);
+      if (!url) return;
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: event?.name || "OA event",
+            text: event?.date ? `${event.name} · ${dayLabelFromISO(event.date)}` : event?.name || "OA event",
+            url,
+          });
+          return;
+        }
+        await navigator.clipboard.writeText(url);
+        showToast("Event link copied");
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        try {
+          await navigator.clipboard.writeText(url);
+          showToast("Event link copied");
+        } catch {
+          window.prompt("Copy event link", url);
+        }
+      }
+    },
+    [showToast]
+  );
+
   const navigateView = useCallback((nextView, { replace = false } = {}) => {
     setView(nextView);
     if (typeof window === "undefined") return;
@@ -7203,7 +7276,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handlePopState = () => {
+      handledRouteEventIdRef.current = "";
       setView(dashboardViewFromPath(window.location.pathname));
+      setRouteEventId(eventShareIdFromLocation());
     };
     window.addEventListener("popstate", handlePopState);
     if (!routeDashboardViews[normalizeDashboardPath(window.location.pathname)]) {
@@ -7898,6 +7973,23 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setActiveWeekKey(weekKey);
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [navigateView, todayISO]);
+
+  useEffect(() => {
+    if (!routeEventId) return;
+    if (handledRouteEventIdRef.current === routeEventId) return;
+    const event = eventsById.get(String(routeEventId));
+    if (!event) return;
+
+    const weekKey = weekKeyFromISO(event.date);
+    setSearch("");
+    setActiveFilter("All");
+    setDateScope(event.date < todayISO ? "Past" : "Upcoming");
+    setListGrouping("all");
+    navigateView("List", { replace: normalizeDashboardPath(window.location.pathname) !== dashboardViewRoutes.List });
+    setActiveWeekKey(weekKey);
+    setPendingNotificationTarget({ eventId: String(event.id), weekKey });
+    handledRouteEventIdRef.current = routeEventId;
+  }, [eventsById, navigateView, routeEventId, todayISO]);
 
   const respondToBookingRequest = useCallback(
     async (event, slot, assignment, nextStatus) => {
@@ -9124,6 +9216,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                         onEdit={() => openEditModal(event)}
                         onAssignIC={(ic) => assignIC(event.id, ic)}
                         onConfirm={() => updateEventStatus(event, "Confirmed")}
+                        onShare={() => shareEvent(event)}
                         onOpenDetails={() => setPreviewEvent(event)}
                         onAddComment={addEventComment}
                       />
@@ -9213,6 +9306,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         onEdit={openEditFromPreview}
         onDelete={deleteEventDay}
         onConfirm={(event) => updateEventStatus(event, "Confirmed")}
+        onShare={shareEvent}
         canEdit={canEdit}
       />
 
