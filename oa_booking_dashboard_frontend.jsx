@@ -4634,6 +4634,13 @@ function average(numbers) {
   return valid.reduce((sum, n) => sum + n, 0) / valid.length;
 }
 
+function median(numbers) {
+  const valid = numbers.map(Number).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!valid.length) return 0;
+  const mid = Math.floor(valid.length / 2);
+  return valid.length % 2 ? valid[mid] : (valid[mid - 1] + valid[mid]) / 2;
+}
+
 function buildSalesEventLinks(events, salesRows) {
   const eventsByDate = new Map();
   for (const event of events || []) {
@@ -5421,6 +5428,650 @@ function SalesTrendChart({ rows, metric = "sales", chartType = "bar" }) {
   );
 }
 
+function salesPaxNumber(value) {
+  const raw = String(value || "");
+  const match = raw.match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function salesWeekdayIndex(dateStr) {
+  if (!dateStr) return null;
+  return isoToDate(dateStr).getDay();
+}
+
+function salesWeekdayShort(dateStr) {
+  if (!dateStr) return "";
+  return isoToDate(dateStr).toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function intersectCount(listA, listB) {
+  if (!Array.isArray(listA) || !Array.isArray(listB) || !listA.length || !listB.length) return 0;
+  const setB = new Set(listB);
+  let count = 0;
+  for (const item of listA) if (setB.has(item)) count += 1;
+  return count;
+}
+
+function SalesComparisonWorkbench({ events = [], salesRows = [], onOpenEvent, onOpenDj }) {
+  const [subTab, setSubTab] = useState("nights");
+  const links = useMemo(() => buildSalesEventLinks(events, salesRows), [events, salesRows]);
+  const nights = useMemo(() => {
+    return links
+      .filter((link) => link?.row?.id && link?.row?.date)
+      .map((link) => {
+        const row = link.row;
+        const date = row.date;
+        const eventLabel = String(link.event?.name || row.event_name || "").trim();
+        const eventKey = eventNameKey(eventLabel);
+        const weekday = salesWeekdayIndex(date);
+        return {
+          id: String(row.id),
+          row,
+          date,
+          weekday,
+          weekdayLabel: salesWeekdayShort(date),
+          eventLabel,
+          eventKey,
+          djNames: Array.isArray(link.djNames) ? link.djNames : [],
+          linkedEvents: Array.isArray(link.linkedEvents) ? link.linkedEvents : [],
+          primaryEvent: link.event || null,
+          total: Number(link.total) || 0,
+          nett: Number(link.pl?.nett) || 0,
+          paxNumber: salesPaxNumber(row.pax),
+        };
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [links]);
+
+  const [targetNightId, setTargetNightId] = useState("");
+  useEffect(() => {
+    if (!nights.length) return;
+    if (targetNightId && nights.some((night) => night.id === targetNightId)) return;
+    setTargetNightId(nights[0].id);
+  }, [nights, targetNightId]);
+
+  const targetNight = useMemo(() => nights.find((night) => night.id === targetNightId) || null, [nights, targetNightId]);
+
+  const eventDatalist = useMemo(() => {
+    const map = new Map();
+    for (const night of nights) {
+      if (!night.eventKey) continue;
+      if (!map.has(night.eventKey)) map.set(night.eventKey, night.eventLabel || night.eventKey);
+    }
+    const entries = Array.from(map.entries()).map(([key, label]) => ({ key, label }));
+    entries.sort((a, b) => a.label.localeCompare(b.label));
+    return entries;
+  }, [nights]);
+
+  const djOptions = useMemo(() => {
+    const set = new Set();
+    for (const night of nights) for (const dj of night.djNames || []) set.add(dj);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [nights]);
+
+  const [basisMode, setBasisMode] = useState("auto");
+  const [selectedNightIds, setSelectedNightIds] = useState([]);
+
+  const [query, setQuery] = useState("");
+  const [djFilter, setDjFilter] = useState("");
+  const [eventFilter, setEventFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [minSales, setMinSales] = useState("");
+  const [maxSales, setMaxSales] = useState("");
+  const [onlyLinked, setOnlyLinked] = useState(false);
+  const [includeZero, setIncludeZero] = useState(false);
+  const [weekdayFilter, setWeekdayFilter] = useState([]);
+
+  const toggleWeekday = useCallback((dayIndex) => {
+    setWeekdayFilter((current) => (current.includes(dayIndex) ? current.filter((d) => d !== dayIndex) : [...current, dayIndex]));
+  }, []);
+
+  const filteredNights = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const eventNeedleKey = eventNameKey(eventFilter);
+    const startISO = startDate ? String(startDate) : "";
+    const endISO = endDate ? String(endDate) : "";
+    const min = minSales === "" ? null : Number(minSales);
+    const max = maxSales === "" ? null : Number(maxSales);
+
+    return nights.filter((night) => {
+      if (!includeZero && night.total <= 0) return false;
+      if (onlyLinked && !night.linkedEvents.length) return false;
+      if (djFilter && !(night.djNames || []).includes(djFilter)) return false;
+      if (weekdayFilter.length && (night.weekday == null || !weekdayFilter.includes(night.weekday))) return false;
+      if (startISO && night.date < startISO) return false;
+      if (endISO && night.date > endISO) return false;
+      if (min != null && night.total < min) return false;
+      if (max != null && night.total > max) return false;
+      if (eventNeedleKey) {
+        if (!night.eventKey.includes(eventNeedleKey) && !String(night.eventLabel || "").toLowerCase().includes(eventFilter.trim().toLowerCase())) return false;
+      }
+      if (!needle) return true;
+      const haystack = [
+        night.date,
+        salesFmtDate(night.date),
+        night.eventLabel,
+        night.eventKey,
+        (night.djNames || []).join(" "),
+        night.id,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [djFilter, endDate, eventFilter, includeZero, maxSales, minSales, nights, onlyLinked, query, startDate, weekdayFilter]);
+
+  useEffect(() => {
+    setSelectedNightIds((current) => current.filter((id) => nights.some((night) => night.id === id)));
+  }, [nights]);
+
+  const selectedSet = useMemo(() => new Set(selectedNightIds), [selectedNightIds]);
+
+  const [autoSameEvent, setAutoSameEvent] = useState(true);
+  const [autoShareDj, setAutoShareDj] = useState(true);
+  const [autoSameWeekday, setAutoSameWeekday] = useState(false);
+  const [autoScope, setAutoScope] = useState("before");
+  const [autoLimit, setAutoLimit] = useState(12);
+
+  const autoBasis = useMemo(() => {
+    if (!targetNight) return [];
+    const targetDjNames = targetNight.djNames || [];
+    const candidates = filteredNights
+      .filter((night) => night.id !== targetNight.id)
+      .filter((night) => (autoScope === "before" ? night.date < targetNight.date : true));
+    return candidates
+      .map((night) => {
+        const sameEvent = autoSameEvent && night.eventKey && targetNight.eventKey && night.eventKey === targetNight.eventKey;
+        const sharedDj = autoShareDj ? intersectCount(night.djNames, targetDjNames) : 0;
+        const shareDj = sharedDj > 0;
+        const sameWeekday = autoSameWeekday && night.weekday != null && targetNight.weekday != null && night.weekday === targetNight.weekday;
+        const score = (sameEvent ? 4 : 0) + (shareDj ? 2 : 0) + (sameWeekday ? 1 : 0) + Math.min(3, sharedDj) * 0.25;
+        const reason = sameEvent ? "Same event" : shareDj ? "Shared DJ" : sameWeekday ? "Same weekday" : "Other";
+        return { night, score, reason, sharedDj };
+      })
+      .sort((a, b) => b.score - a.score || b.night.date.localeCompare(a.night.date))
+      .slice(0, Math.max(1, Math.min(60, Number(autoLimit) || 12)));
+  }, [autoLimit, autoSameEvent, autoSameWeekday, autoScope, autoShareDj, filteredNights, targetNight]);
+
+  const activeBasis = useMemo(() => {
+    if (!targetNight) return [];
+    if (basisMode === "manual") return nights.filter((night) => selectedSet.has(night.id) && night.id !== targetNight.id);
+    return autoBasis.map((item) => item.night);
+  }, [autoBasis, basisMode, nights, selectedSet, targetNight]);
+
+  const activeBasisStats = useMemo(() => {
+    const sales = activeBasis.map((night) => night.total);
+    const nett = activeBasis.map((night) => night.nett);
+    const pax = activeBasis.map((night) => night.paxNumber);
+    return {
+      nights: activeBasis.length,
+      avgSales: average(sales),
+      medianSales: median(sales),
+      avgNett: average(nett),
+      avgPax: average(pax),
+      bestSales: sales.length ? Math.max(...sales) : 0,
+      worstSales: sales.length ? Math.min(...sales) : 0,
+    };
+  }, [activeBasis]);
+
+  const autoBasisIds = useMemo(() => new Set(autoBasis.map((item) => item.night.id)), [autoBasis]);
+
+  const toggleNight = useCallback((nightId) => {
+    const key = String(nightId);
+    setBasisMode("manual");
+    setSelectedNightIds((current) => (current.includes(key) ? current.filter((id) => id !== key) : [...current, key]));
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedNightIds([]), []);
+
+  const addAllFiltered = useCallback(() => {
+    setBasisMode("manual");
+    setSelectedNightIds((current) => {
+      const set = new Set(current);
+      for (const night of filteredNights) {
+        if (targetNight && night.id === targetNight.id) continue;
+        set.add(night.id);
+        if (set.size >= 60) break;
+      }
+      return Array.from(set);
+    });
+  }, [filteredNights, targetNight]);
+
+  const [djCompareQuery, setDjCompareQuery] = useState("");
+  const [djComparePicked, setDjComparePicked] = useState([]);
+  const djPickedSet = useMemo(() => new Set(djComparePicked), [djComparePicked]);
+
+  const filteredDjOptions = useMemo(() => {
+    const needle = djCompareQuery.trim().toLowerCase();
+    if (!needle) return djOptions;
+    return djOptions.filter((name) => name.toLowerCase().includes(needle));
+  }, [djCompareQuery, djOptions]);
+
+  const toggleDjPick = useCallback((name) => {
+    setDjComparePicked((current) => (current.includes(name) ? current.filter((n) => n !== name) : [...current, name].slice(0, 8)));
+  }, []);
+
+  const poolForDjStats = useMemo(() => filteredNights, [filteredNights]);
+
+  const djStats = useMemo(() => {
+    const list = [];
+    const names = djComparePicked.length ? djComparePicked : [];
+    for (const name of names) {
+      const relevant = poolForDjStats.filter((night) => (night.djNames || []).includes(name));
+      const sales = relevant.map((n) => n.total);
+      const nett = relevant.map((n) => n.nett);
+      list.push({
+        name,
+        nights: relevant.length,
+        avgSales: average(sales),
+        medianSales: median(sales),
+        avgNett: average(nett),
+        bestSales: sales.length ? Math.max(...sales) : 0,
+      });
+    }
+    return list.sort((a, b) => b.avgSales - a.avgSales);
+  }, [djComparePicked, poolForDjStats]);
+
+  const topDjInPool = useMemo(() => {
+    const map = new Map();
+    for (const night of poolForDjStats) {
+      for (const name of night.djNames || []) {
+        const stat = map.get(name) || { name, nights: 0, sales: 0, nett: 0 };
+        stat.nights += 1;
+        stat.sales += night.total;
+        stat.nett += night.nett;
+        map.set(name, stat);
+      }
+    }
+    return Array.from(map.values())
+      .map((s) => ({ ...s, avgSales: s.nights ? s.sales / s.nights : 0, avgNett: s.nights ? s.nett / s.nights : 0 }))
+      .sort((a, b) => b.avgSales - a.avgSales)
+      .slice(0, 10);
+  }, [poolForDjStats]);
+
+  const maxDjAvgSales = useMemo(() => Math.max(1, ...djStats.map((d) => d.avgSales)), [djStats]);
+
+  const inputCls = "h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40";
+  const pillCls = (active) =>
+    `rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+      active ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+    }`;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Sales Comparison</div>
+          <div className="mt-0.5 truncate text-sm font-black text-white">Workbench</div>
+        </div>
+        <div className="flex gap-1">
+          {[["nights", "Night Compare"], ["djs", "DJ Compare"]].map(([key, label]) => (
+            <button key={key} type="button" onClick={() => setSubTab(key)} className={pillCls(subTab === key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {subTab === "nights" ? (
+        <div className="grid gap-4 p-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="grid gap-2 sm:grid-cols-[1fr_190px]">
+                <select value={targetNightId} onChange={(e) => setTargetNightId(e.target.value)} className={inputCls}>
+                  {nights.map((night) => (
+                    <option key={night.id} value={night.id}>
+                      {salesFmtDate(night.date)} · {night.eventLabel || "Untitled"} · {salesFmtRMFull(night.total)}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex gap-1">
+                  <button type="button" onClick={() => setBasisMode("auto")} className={pillCls(basisMode === "auto")}>Auto</button>
+                  <button type="button" onClick={() => setBasisMode("manual")} className={pillCls(basisMode === "manual")}>Manual</button>
+                </div>
+              </div>
+
+              {targetNight ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Target</div>
+                    <div className="mt-1 truncate text-xs font-black text-white">{targetNight.weekdayLabel} · {targetNight.eventLabel}</div>
+                    <div className="mt-1 text-[10px] font-bold text-white/35">{(targetNight.djNames || []).slice(0, 3).join(" / ") || "No DJ link"}</div>
+                  </div>
+                  <div className="rounded-xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-cyan-100/50">Target Sales</div>
+                    <div className="mt-1 text-sm font-black text-cyan-100">{salesFmtRMFull(targetNight.total)}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Target Nett</div>
+                    <div className={`mt-1 text-sm font-black ${targetNight.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(targetNight.nett)}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Target PAX</div>
+                    <div className="mt-1 text-sm font-black text-white">{targetNight.paxNumber ? targetNight.paxNumber.toLocaleString("en-MY") : "—"}</div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+                  <Search className="h-4 w-4 shrink-0" />
+                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search nights / events / DJs..." className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25" />
+                </div>
+                <select value={djFilter} onChange={(e) => setDjFilter(e.target.value)} className={inputCls}>
+                  <option value="">All DJs</option>
+                  {djOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <div className="sm:col-span-2">
+                  <input value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} list="sales-event-filter" placeholder="Filter by event (type to search)..." className={inputCls} />
+                  <datalist id="sales-event-filter">
+                    {eventDatalist.map((item) => <option key={item.key} value={item.label} />)}
+                  </datalist>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} />
+                  <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={minSales} onChange={(e) => setMinSales(e.target.value)} inputMode="numeric" placeholder="Min sales" className={inputCls} />
+                  <input value={maxSales} onChange={(e) => setMaxSales(e.target.value)} inputMode="numeric" placeholder="Max sales" className={inputCls} />
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((label, idx) => (
+                  <button key={label} type="button" onClick={() => toggleWeekday(idx)} className={pillCls(weekdayFilter.includes(idx))}>
+                    {label}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setOnlyLinked((v) => !v)} className={pillCls(onlyLinked)}>
+                  Linked only
+                </button>
+                <button type="button" onClick={() => setIncludeZero((v) => !v)} className={pillCls(includeZero)}>
+                  Include 0
+                </button>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                  {filteredNights.length} nights
+                </span>
+              </div>
+            </div>
+
+            {basisMode === "auto" ? (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => setAutoSameEvent((v) => !v)} className={pillCls(autoSameEvent)}>Same event</button>
+                  <button type="button" onClick={() => setAutoShareDj((v) => !v)} className={pillCls(autoShareDj)}>Shared DJ</button>
+                  <button type="button" onClick={() => setAutoSameWeekday((v) => !v)} className={pillCls(autoSameWeekday)}>Same weekday</button>
+                  <select value={autoScope} onChange={(e) => setAutoScope(e.target.value)} className={inputCls}>
+                    <option value="before">Before target</option>
+                    <option value="all">Any date</option>
+                  </select>
+                  <input value={autoLimit} onChange={(e) => setAutoLimit(e.target.value)} inputMode="numeric" className={inputCls} />
+                </div>
+                <div className="mt-2 text-[10px] font-bold text-white/35">
+                  Auto basis selects top matches from your filtered pool.
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={addAllFiltered} className={pillCls(false)}>Add filtered</button>
+                  <button type="button" onClick={clearSelection} className={pillCls(false)}>Clear</button>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                    {selectedNightIds.length} selected
+                  </span>
+                </div>
+                <div className="mt-2 text-[10px] font-bold text-white/35">
+                  Tap any night in the list to add/remove it.
+                </div>
+              </div>
+            )}
+
+            <div className="max-h-[520px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
+              <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">
+                Night Pool
+              </div>
+              <div className="grid gap-2 p-3">
+                {(filteredNights || []).slice(0, 120).map((night) => {
+                  const isTarget = targetNight && night.id === targetNight.id;
+                  const active = basisMode === "manual" ? selectedSet.has(night.id) : autoBasisIds.has(night.id);
+                  const canSelect = !isTarget;
+                  const clickable = basisMode === "manual" && canSelect;
+                  return (
+                    <button
+                      key={night.id}
+                      type="button"
+                      onClick={() => clickable && toggleNight(night.id)}
+                      className={`grid gap-2 rounded-xl border px-3 py-2 text-left transition sm:grid-cols-[1fr_auto] ${
+                        isTarget
+                          ? "border-purple-300/35 bg-purple-400/12"
+                          : active
+                          ? "border-cyan-300/35 bg-cyan-400/12"
+                          : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-black text-white">{salesFmtDate(night.date)} · {night.weekdayLabel}</span>
+                          {night.linkedEvents.length ? (
+                            <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/35">
+                              Linked
+                            </span>
+                          ) : null}
+                          {isTarget ? (
+                            <span className="rounded-full border border-purple-300/25 bg-purple-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-100">
+                              Target
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 truncate text-xs font-bold text-white/75">{night.eventLabel || "Untitled"}</div>
+                        <div className="mt-0.5 truncate text-[10px] font-bold text-white/35">{(night.djNames || []).slice(0, 4).join(" / ") || "No DJ link"}</div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-right sm:block">
+                        <div className="text-xs font-black text-cyan-100">{salesFmtRMFull(night.total)}</div>
+                        <div className={`mt-0.5 text-[10px] font-black ${night.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(night.nett)}</div>
+                        <div className="mt-1 flex justify-end gap-1">
+                          {night.primaryEvent ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                typeof onOpenEvent === "function" && onOpenEvent(night.primaryEvent);
+                              }}
+                              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black text-white/40 hover:text-white"
+                            >
+                              Event
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Basis Nights</div>
+                <div className="mt-1 text-lg font-black text-white">{activeBasisStats.nights}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Avg Sales</div>
+                <div className="mt-1 text-lg font-black text-white">{activeBasisStats.nights ? salesFmtRMFull(activeBasisStats.avgSales) : "—"}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Median Sales</div>
+                <div className="mt-1 text-lg font-black text-white">{activeBasisStats.nights ? salesFmtRMFull(activeBasisStats.medianSales) : "—"}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Avg Nett</div>
+                <div className={`mt-1 text-lg font-black ${activeBasisStats.avgNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{activeBasisStats.nights ? salesFmtRMFull(activeBasisStats.avgNett) : "—"}</div>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Basis Nights</div>
+                {basisMode === "auto" && autoBasis.length ? (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                    Auto matched
+                  </span>
+                ) : null}
+              </div>
+              <div className="max-h-[520px] overflow-auto">
+                {activeBasis.length ? (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="px-4 py-2 text-left text-[9px] font-black uppercase tracking-wider text-white/25">Date</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-wider text-white/25">Event</th>
+                        <th className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-wider text-white/25">DJs</th>
+                        <th className="px-3 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Sales</th>
+                        <th className="px-4 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Nett</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeBasis
+                        .slice()
+                        .sort((a, b) => b.date.localeCompare(a.date))
+                        .map((night) => (
+                          <tr key={night.id} className="border-b border-white/[0.06]">
+                            <td className="px-4 py-2 font-bold text-white/60">{salesFmtDate(night.date)} · {night.weekdayLabel}</td>
+                            <td className="px-3 py-2 font-bold text-white/80">{night.eventLabel}</td>
+                            <td className="px-3 py-2 text-[10px] font-bold text-white/35">
+                              {(night.djNames || []).slice(0, 4).map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => typeof onOpenDj === "function" && onOpenDj(name)}
+                                  className={`mr-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                                    typeof onOpenDj === "function" ? "border-purple-300/25 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20" : "border-white/10 bg-white/[0.03] text-white/40"
+                                  }`}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </td>
+                            <td className="px-3 py-2 text-right font-black text-white">{salesFmtRMFull(night.total)}</td>
+                            <td className={`px-4 py-2 text-right font-black ${night.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(night.nett)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="px-4 py-10 text-center text-sm font-bold text-white/35">No basis nights selected.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 p-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+                <Search className="h-4 w-4 shrink-0" />
+                <input value={djCompareQuery} onChange={(e) => setDjCompareQuery(e.target.value)} placeholder="Search DJs..." className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25" />
+              </div>
+              <div className="mt-2 text-[10px] font-bold text-white/35">Pick up to 8 DJs to compare from your current filter pool.</div>
+            </div>
+
+            <div className="max-h-[520px] overflow-auto rounded-2xl border border-white/10 bg-black/20">
+              <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">DJs</div>
+              <div className="flex flex-wrap gap-1.5 p-3">
+                {filteredDjOptions.slice(0, 120).map((name) => (
+                  <button key={name} type="button" onClick={() => toggleDjPick(name)} className={pillCls(djPickedSet.has(name))}>
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Top DJs (current pool)</div>
+              <div className="mt-2 space-y-2">
+                {topDjInPool.map((dj) => (
+                  <button
+                    key={dj.name}
+                    type="button"
+                    onClick={() => toggleDjPick(dj.name)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition ${
+                      djPickedSet.has(dj.name) ? "border-cyan-300/35 bg-cyan-400/12" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-black text-white">{dj.name}</div>
+                      <div className="text-[10px] font-bold text-white/35">{dj.nights} night{dj.nights === 1 ? "" : "s"}</div>
+                    </div>
+                    <div className="text-right text-xs font-black text-cyan-100">{salesFmtRMFull(dj.avgSales)}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+              <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">DJ Stats</div>
+              {djStats.length ? (
+                <div className="overflow-auto">
+                  <table className="w-full min-w-[640px] text-xs">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="px-4 py-2 text-left text-[9px] font-black uppercase tracking-wider text-white/25">DJ</th>
+                        <th className="px-3 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Nights</th>
+                        <th className="px-3 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Avg Sales</th>
+                        <th className="px-3 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Median</th>
+                        <th className="px-3 py-2 text-right text-[9px] font-black uppercase tracking-wider text-white/25">Avg Nett</th>
+                        <th className="px-4 py-2 text-left text-[9px] font-black uppercase tracking-wider text-white/25">Bar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {djStats.map((dj) => (
+                        <tr key={dj.name} className="border-b border-white/[0.06]">
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => typeof onOpenDj === "function" && onOpenDj(dj.name)}
+                              className={`text-left text-xs font-black ${
+                                typeof onOpenDj === "function" ? "text-purple-200 hover:text-purple-100" : "text-white"
+                              }`}
+                            >
+                              {dj.name}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-right font-black text-white/60">{dj.nights}</td>
+                          <td className="px-3 py-2 text-right font-black text-white">{salesFmtRMFull(dj.avgSales)}</td>
+                          <td className="px-3 py-2 text-right font-black text-white/70">{salesFmtRMFull(dj.medianSales)}</td>
+                          <td className={`px-3 py-2 text-right font-black ${dj.avgNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(dj.avgNett)}</td>
+                          <td className="px-4 py-2">
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                              <div className="h-full rounded-full bg-cyan-300/60" style={{ width: `${Math.min(100, (dj.avgSales / maxDjAvgSales) * 100)}%` }} />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="px-4 py-10 text-center text-sm font-bold text-white/35">Pick DJs to compare.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj }) {
   const [tab, setTab]             = useState("nights");
   const [month, setMonth]         = useState("APRIL 2026");
@@ -5687,6 +6338,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
               {month}
             </div>
           </div>
+          <SalesComparisonWorkbench events={events} salesRows={allRows} onOpenEvent={openEvent} onOpenDj={onOpenDj} />
           <SalesTrendChart rows={data} metric={chartMetric} chartType={chartType} />
           <EventNightAnalytics insights={eventInsights} />
         </div>
