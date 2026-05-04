@@ -6392,7 +6392,7 @@ function SalesComparisonWorkbench({ events = [], salesRows = [], onOpenEvent, on
 function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj }) {
   const [view, setView]           = useState("weekly");
   const [tab, setTab]             = useState("nights");
-  const [month, setMonth]         = useState("APRIL 2026");
+  const [month, setMonth]         = useState(() => monthYearFromISO(isoFromDate(new Date())));
   const [allRows, setAllRows]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState("");
@@ -7596,7 +7596,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                     {weeklyCols.map((c, i) => (
                       <th
                         key={c.key}
-                        className={`relative px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${
+                        className={`group relative px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${
                           c.align === "left" ? "text-left" : "text-right"
                         } ${i === 0 ? "pl-4" : ""}`}
                       >
@@ -7604,9 +7604,10 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                         <span
                           role="separator"
                           onMouseDown={(e) => startResize(e, c.key)}
-                          className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                          className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none bg-white/[0.03] opacity-60 transition hover:bg-cyan-300/25 hover:opacity-100 group-hover:bg-white/[0.06]"
                           title="Drag to resize"
                         />
+                        <span className="pointer-events-none absolute right-0 top-0 h-full w-px bg-white/10" />
                       </th>
                     ))}
                   </tr>
