@@ -6360,6 +6360,7 @@ function SalesComparisonWorkbench({ events = [], salesRows = [], onOpenEvent, on
 }
 
 function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj }) {
+  const [view, setView]           = useState("weekly");
   const [tab, setTab]             = useState("nights");
   const [month, setMonth]         = useState("APRIL 2026");
   const [allRows, setAllRows]     = useState([]);
@@ -6367,6 +6368,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const [error, setError]         = useState("");
   const [editRow, setEditRow]     = useState(null);
   const [expandedPL, setExpandedPL] = useState({});
+  const [salesQuery, setSalesQuery] = useState("");
+  const [salesDj, setSalesDj] = useState("");
+  const [salesEvent, setSalesEvent] = useState("");
+  const [salesOnlyLinked, setSalesOnlyLinked] = useState(false);
+  const [salesIncludeZero, setSalesIncludeZero] = useState(false);
   const [chartMetric, setChartMetric] = useState("sales");
   const [chartType, setChartType] = useState("bar");
   const [chartGrain, setChartGrain] = useState("week");
@@ -6467,6 +6473,21 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [analysisLinks]);
 
+  const salesLinksAll = useMemo(() => buildSalesEventLinks(events, allRows), [allRows, events]);
+  const salesDjOptions = useMemo(() => {
+    const set = new Set();
+    for (const link of salesLinksAll) for (const name of link.djNames || []) set.add(name);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [salesLinksAll]);
+  const salesEventOptions = useMemo(() => {
+    const set = new Set();
+    for (const link of salesLinksAll) {
+      const label = String(link.event?.name || link.row?.event_name || "").trim();
+      if (label) set.add(label);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [salesLinksAll]);
+
   const toggleChartWeekday = useCallback((idx) => {
     setChartWeekdays((current) => (current.includes(idx) ? current.filter((d) => d !== idx) : [...current, idx]));
   }, []);
@@ -6552,9 +6573,47 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     return list.slice(-limit);
   }, [analysisFiltered, chartGrain, chartLimit, chartMetric]);
 
+  const salesFilteredLinks = useMemo(() => {
+    const needle = salesQuery.trim().toLowerCase();
+    const eventNeedleKey = eventNameKey(salesEvent);
+    return buildSalesEventLinks(events, view === "weekly" ? data : allRows)
+      .filter((link) => {
+        const row = link.row || {};
+        const date = row.date;
+        const total = Number(link.total) || 0;
+        const eventLabel = String(link.event?.name || row.event_name || "").trim();
+        const eventKey = eventNameKey(eventLabel);
+        const djNames = Array.isArray(link.djNames) ? link.djNames : [];
+        const linked = Array.isArray(link.linkedEvents) && link.linkedEvents.length > 0;
+        if (!date) return false;
+        if (!salesIncludeZero && total <= 0) return false;
+        if (salesOnlyLinked && !linked) return false;
+        if (salesDj && !djNames.includes(salesDj)) return false;
+        if (eventNeedleKey) {
+          if (!eventKey.includes(eventNeedleKey) && !String(eventLabel || "").toLowerCase().includes(salesEvent.trim().toLowerCase())) return false;
+        }
+        if (!needle) return true;
+        const haystack = [
+          date,
+          salesFmtDate(date),
+          eventLabel,
+          (djNames || []).join(" "),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      });
+  }, [allRows, data, events, salesDj, salesEvent, salesIncludeZero, salesOnlyLinked, salesQuery, view]);
+
+  const weeklyFilteredRows = useMemo(() => {
+    if (view !== "weekly") return data;
+    return salesFilteredLinks.map((link) => link.row);
+  }, [data, salesFilteredLinks, view]);
+
   const weeks = useMemo(() => {
     const map = {};
-    for (const row of data) {
+    for (const row of weeklyFilteredRows) {
       const k = row.week_number;
       if (!map[k]) map[k] = [];
       map[k].push(row);
@@ -6562,10 +6621,10 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     return Object.entries(map)
       .sort(([a], [b]) => +a - +b)
       .map(([k, rows]) => ({ weekNum: +k, rows }));
-  }, [data]);
+  }, [weeklyFilteredRows]);
 
   const monthTotals = useMemo(() => {
-    return data.reduce(
+    return weeklyFilteredRows.reduce(
       (acc, row) => {
         const pl = calcNightPL(row);
         return {
@@ -6577,7 +6636,66 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       },
       { sales: 0, income: 0, cost: 0, nett: 0 }
     );
-  }, [data]);
+  }, [weeklyFilteredRows]);
+
+  const summaryYears = useMemo(() => {
+    const set = new Set();
+    for (const link of salesLinksAll) {
+      const date = link.row?.date;
+      if (!date) continue;
+      set.add(isoToDate(date).getFullYear());
+    }
+    return Array.from(set).sort((a, b) => b - a);
+  }, [salesLinksAll]);
+  const [summaryYear, setSummaryYear] = useState(() => selectedYear ?? summaryYears[0] ?? new Date().getFullYear());
+  useEffect(() => {
+    if (!summaryYears.length) return;
+    if (!summaryYears.includes(summaryYear)) setSummaryYear(summaryYears[0]);
+  }, [summaryYear, summaryYears]);
+
+  const monthlySummaryRows = useMemo(() => {
+    const map = new Map();
+    for (const link of salesFilteredLinks) {
+      const row = link.row || {};
+      const date = row.date;
+      if (!date) continue;
+      const year = isoToDate(date).getFullYear();
+      if (year !== summaryYear) continue;
+      const key = salesMonthKeyFromISO(date);
+      const current = map.get(key) || { key, year, firstDate: date, nights: 0, sales: 0, nett: 0, best: null };
+      current.nights += 1;
+      current.sales += Number(link.total) || 0;
+      current.nett += Number(link.pl?.nett) || 0;
+      if (date < current.firstDate) current.firstDate = date;
+      if (!current.best || (Number(link.total) || 0) > current.best.sales) {
+        current.best = { date, label: String(link.event?.name || row.event_name || "").trim(), sales: Number(link.total) || 0 };
+      }
+      map.set(key, current);
+    }
+    return Array.from(map.values())
+      .sort((a, b) => String(a.firstDate).localeCompare(String(b.firstDate)));
+  }, [salesFilteredLinks, summaryYear]);
+
+  const yearlySummaryRows = useMemo(() => {
+    const map = new Map();
+    for (const link of salesFilteredLinks) {
+      const row = link.row || {};
+      const date = row.date;
+      if (!date) continue;
+      const year = isoToDate(date).getFullYear();
+      const current = map.get(year) || { year, firstDate: date, nights: 0, sales: 0, nett: 0, best: null };
+      current.nights += 1;
+      current.sales += Number(link.total) || 0;
+      current.nett += Number(link.pl?.nett) || 0;
+      if (date < current.firstDate) current.firstDate = date;
+      if (!current.best || (Number(link.total) || 0) > current.best.sales) {
+        current.best = { date, label: String(link.event?.name || row.event_name || "").trim(), sales: Number(link.total) || 0 };
+      }
+      map.set(year, current);
+    }
+    return Array.from(map.values())
+      .sort((a, b) => a.year - b.year);
+  }, [salesFilteredLinks]);
 
   async function handleDelete(id) {
     if (!window.confirm("Delete this night? This cannot be undone.")) return;
@@ -6623,39 +6741,53 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-purple-300" />
-          <h1 className="text-lg font-black text-white">Weekly Sales</h1>
+          <h1 className="text-lg font-black text-white">Sales</h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
-            <select
-              value={selectedYear ?? ""}
-              onChange={(e) => {
-                const nextYear = Number(e.target.value);
-                if (!Number.isFinite(nextYear)) return;
-                const options = monthsByYear.get(nextYear) || [];
-                const keepMonth = selectedMeta.monthIndex != null ? options.find((m) => m.monthIndex === selectedMeta.monthIndex) : null;
-                setMonth((keepMonth || options[options.length - 1] || options[0] || { label: salesMonths[0] }).label);
-              }}
-              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
-            >
-              {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            <select
-              value={selectedMeta.monthIndex ?? ""}
-              onChange={(e) => {
-                const idx = Number(e.target.value);
-                const next = yearMonths.find((m) => m.monthIndex === idx);
-                if (next?.label) setMonth(next.label);
-              }}
-              className="h-10 min-w-[160px] rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
-            >
-              {yearMonths.map((m) => (
-                <option key={m.label} value={m.monthIndex}>{m.monthName ? m.monthName[0] + m.monthName.slice(1).toLowerCase() : m.label}</option>
-              ))}
-            </select>
-          </div>
+          {view === "weekly" ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={selectedYear ?? ""}
+                onChange={(e) => {
+                  const nextYear = Number(e.target.value);
+                  if (!Number.isFinite(nextYear)) return;
+                  const options = monthsByYear.get(nextYear) || [];
+                  const keepMonth = selectedMeta.monthIndex != null ? options.find((m) => m.monthIndex === selectedMeta.monthIndex) : null;
+                  setMonth((keepMonth || options[options.length - 1] || options[0] || { label: salesMonths[0] }).label);
+                }}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <select
+                value={selectedMeta.monthIndex ?? ""}
+                onChange={(e) => {
+                  const idx = Number(e.target.value);
+                  const next = yearMonths.find((m) => m.monthIndex === idx);
+                  if (next?.label) setMonth(next.label);
+                }}
+                className="h-10 min-w-[160px] rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+              >
+                {yearMonths.map((m) => (
+                  <option key={m.label} value={m.monthIndex}>{m.monthName ? m.monthName[0] + m.monthName.slice(1).toLowerCase() : m.label}</option>
+                ))}
+              </select>
+            </div>
+          ) : view === "monthly" ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-2">
+              <select
+                value={summaryYear ?? ""}
+                onChange={(e) => setSummaryYear(Number(e.target.value))}
+                className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-purple-300/60"
+              >
+                {summaryYears.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <button
             onClick={load}
             className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/40 hover:text-white"
@@ -6675,19 +6807,97 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       </div>
 
       <div className="flex gap-1">
-        {[["nights", "Nights"], ["compare", "Compare"], ["analysis", "Analysis"]].map(([key, label]) => (
+        {[["weekly", "Weekly"], ["monthly", "Monthly"], ["yearly", "Yearly"]].map(([key, label]) => (
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => setView(key)}
             className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
-              tab === key ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+              view === key ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
             }`}
           >
             {label}
           </button>
         ))}
       </div>
+
+      {(view === "monthly" || view === "yearly" || (view === "weekly" && tab === "nights")) && (
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/40">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                value={salesQuery}
+                onChange={(e) => setSalesQuery(e.target.value)}
+                placeholder="Search nights / events / DJs..."
+                className="w-full bg-transparent text-xs font-bold text-white outline-none placeholder:text-white/25"
+              />
+            </div>
+            <select
+              value={salesDj}
+              onChange={(e) => setSalesDj(e.target.value)}
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+            >
+              <option value="">All DJs</option>
+              {salesDjOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            <input
+              value={salesEvent}
+              onChange={(e) => setSalesEvent(e.target.value)}
+              list="sales-summary-event"
+              placeholder="Filter by event..."
+              className="h-10 rounded-xl border border-white/10 bg-white/5 px-3 text-[11px] font-black text-white/70 outline-none hover:bg-white/10 focus:border-cyan-300/40"
+            />
+            <datalist id="sales-summary-event">
+              {salesEventOptions.slice(0, 200).map((label) => (
+                <option key={label} value={label} />
+              ))}
+            </datalist>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSalesOnlyLinked((v) => !v)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                salesOnlyLinked ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+              }`}
+            >
+              Linked only
+            </button>
+            <button
+              type="button"
+              onClick={() => setSalesIncludeZero((v) => !v)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                salesIncludeZero ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+              }`}
+            >
+              Include 0
+            </button>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+              {salesFilteredLinks.length} nights
+            </span>
+          </div>
+        </div>
+      )}
+
+      {view === "weekly" && (
+        <div className="flex gap-1">
+          {[["nights", "Nights"], ["compare", "Compare"], ["analysis", "Analysis"]].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`rounded-lg border px-3 py-2 text-xs font-black transition ${
+                tab === key ? "border-purple-300/50 bg-purple-400/20 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── States ── */}
       {loading && (
@@ -6696,7 +6906,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       {!loading && error && (
         <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-bold text-red-300">{error}</div>
       )}
-      {!loading && !error && weeks.length === 0 && (
+      {!loading && !error && view === "weekly" && weeks.length === 0 && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] py-16 text-center">
           <div className="text-sm font-black text-white/30">No data for {month}</div>
           {canEdit && (
@@ -6710,11 +6920,11 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         </div>
       )}
 
-      {!loading && !error && tab === "compare" && allRows.length > 0 && (
+      {!loading && !error && view === "weekly" && tab === "compare" && allRows.length > 0 && (
         <SalesComparisonWorkbench events={events} salesRows={allRows} onOpenEvent={openEvent} onOpenDj={onOpenDj} />
       )}
 
-      {!loading && !error && tab === "analysis" && allRows.length > 0 && (
+      {!loading && !error && view === "weekly" && tab === "analysis" && allRows.length > 0 && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
@@ -6856,8 +7066,117 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         </div>
       )}
 
+      {!loading && !error && view === "monthly" && (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Monthly Sales — {summaryYear}</div>
+          <div className="overflow-auto">
+            <table className="w-full min-w-[860px] text-xs">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {["Month", "Nights", "Gross Sales", "Net Profit", "Avg / night", "Best night"].map((h, i) => (
+                    <th key={h} className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider text-white/25 ${i === 0 || i === 5 ? "text-left" : "text-right"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {monthlySummaryRows.map((m) => (
+                  <tr key={m.key} className="border-b border-white/[0.06] hover:bg-white/[0.03]">
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMonth(monthYearFromISO(m.firstDate));
+                          setView("weekly");
+                          setTab("nights");
+                        }}
+                        className="text-left text-xs font-black text-cyan-100 hover:text-cyan-50"
+                        title="Open month"
+                      >
+                        {salesMonthLabelFromKey(m.key)}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2 text-right font-black text-white/60">{m.nights}</td>
+                    <td className="px-4 py-2 text-right font-black text-white">{salesFmtRMFull(m.sales)}</td>
+                    <td className={`px-4 py-2 text-right font-black ${m.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(m.nett)}</td>
+                    <td className="px-4 py-2 text-right font-black text-white/70">{salesFmtRMFull(m.nights ? m.sales / m.nights : 0)}</td>
+                    <td className="px-4 py-2 text-left text-[11px] font-bold text-white/55">
+                      {m.best ? (
+                        <span className="font-black text-white/70">
+                          {salesFmtDate(m.best.date)} · {m.best.label || "—"} · <span className="text-cyan-100">{salesFmtRMFull(m.best.sales)}</span>
+                        </span>
+                      ) : (
+                        <span className="text-white/25">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!monthlySummaryRows.length ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-white/35">No matching nights.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && view === "yearly" && (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="border-b border-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white/35">Yearly Sales</div>
+          <div className="overflow-auto">
+            <table className="w-full min-w-[860px] text-xs">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {["Year", "Nights", "Gross Sales", "Net Profit", "Avg / night", "Best night"].map((h, i) => (
+                    <th key={h} className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider text-white/25 ${i === 0 || i === 5 ? "text-left" : "text-right"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {yearlySummaryRows.map((y) => (
+                  <tr key={y.year} className="border-b border-white/[0.06] hover:bg-white/[0.03]">
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSummaryYear(y.year);
+                          setView("monthly");
+                        }}
+                        className="text-left text-xs font-black text-cyan-100 hover:text-cyan-50"
+                        title="Open year"
+                      >
+                        {y.year}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2 text-right font-black text-white/60">{y.nights}</td>
+                    <td className="px-4 py-2 text-right font-black text-white">{salesFmtRMFull(y.sales)}</td>
+                    <td className={`px-4 py-2 text-right font-black ${y.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(y.nett)}</td>
+                    <td className="px-4 py-2 text-right font-black text-white/70">{salesFmtRMFull(y.nights ? y.sales / y.nights : 0)}</td>
+                    <td className="px-4 py-2 text-left text-[11px] font-bold text-white/55">
+                      {y.best ? (
+                        <span className="font-black text-white/70">
+                          {salesFmtDate(y.best.date)} · {y.best.label || "—"} · <span className="text-cyan-100">{salesFmtRMFull(y.best.sales)}</span>
+                        </span>
+                      ) : (
+                        <span className="text-white/25">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!yearlySummaryRows.length ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-white/35">No matching nights.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Week blocks ── */}
-      {!loading && !error && tab === "nights" && weeks.map(({ weekNum, rows }) => {
+      {!loading && !error && view === "weekly" && tab === "nights" && weeks.map(({ weekNum, rows }) => {
         const weekSalesTotal = rows.reduce((s, r) => s + (r.pos_total || 0) + (r.ticketmelon_total || 0), 0);
         const weekPLTotal    = rows.reduce((acc, r) => { const pl = calcNightPL(r); return { nett: acc.nett + pl.nett, cost: acc.cost + pl.costTotal }; }, { nett: 0, cost: 0 });
         const isPLOpen       = !!expandedPL[weekNum];
@@ -7016,7 +7335,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       })}
 
       {/* ── Monthly summary ── */}
-      {!loading && !error && tab === "nights" && weeks.length > 0 && (
+      {!loading && !error && view === "weekly" && tab === "nights" && weeks.length > 0 && (
         <div className="rounded-2xl border border-purple-400/20 bg-purple-400/[0.06] px-6 py-5">
           <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-purple-300/60">
             {month} — Monthly Summary
