@@ -5837,8 +5837,8 @@ const PAY_STATUS_CYCLE = ["pending", "invoice_uploaded", "paid"];
 
 function djPayStatusLabel(s) {
   if (s === "paid") return "Paid";
-  if (s === "invoice_uploaded") return "Invoice Up";
-  return "Pending";
+  if (s === "invoice_uploaded") return "Invoice Uploaded";
+  return "Pending Invoice";
 }
 function djPayStatusClass(s) {
   if (s === "paid") return "border-emerald-300/40 bg-emerald-400/10 text-emerald-200";
@@ -5850,6 +5850,12 @@ function djPayStatusIcon(s) {
   if (s === "invoice_uploaded") return <FileCheck className="h-3 w-3" />;
   return <CircleDot className="h-3 w-3" />;
 }
+const DJ_PAY_STATUS_FILTERS = [
+  ["ALL", "All Status", null],
+  ["pending", djPayStatusLabel("pending"), "pending"],
+  ["invoice_uploaded", djPayStatusLabel("invoice_uploaded"), "invoice_uploaded"],
+  ["paid", djPayStatusLabel("paid"), "paid"],
+];
 
 function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity }) {
   // Payment status: keyed by assignmentId, stored in localStorage
@@ -6302,17 +6308,18 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
           ))}
         </div>
         {/* Payment status */}
-        <div className="flex gap-1">
-          {[["ALL", "All Status"], ["pending", "Pending"], ["invoice_uploaded", "Invoice Up"], ["paid", "Paid"]].map(([val, label]) => (
+        <div className="flex flex-wrap gap-1">
+          {DJ_PAY_STATUS_FILTERS.map(([val, label, status]) => (
             <button
               key={val}
               onClick={() => setFilterPayStatus(val)}
-              className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
+              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition ${
                 filterPayStatus === val
                   ? "border-yellow-300/50 bg-yellow-400/20 text-yellow-100"
                   : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
               }`}
             >
+              {status ? djPayStatusIcon(status) : null}
               {label}
             </button>
           ))}
@@ -6442,10 +6449,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
                             <button
                               type="button"
                               onClick={() => cycleStatus(`console:${ev.id}`, consoleStatus)}
-                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 ${djPayStatusClass(consoleStatus)}`}
+                              className={`flex h-8 min-w-[132px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-black transition hover:scale-105 ${djPayStatusClass(consoleStatus)}`}
                               title={`${djPayStatusLabel(consoleStatus)} — click to cycle`}
                             >
                               {djPayStatusIcon(consoleStatus)}
+                              <span>{djPayStatusLabel(consoleStatus)}</span>
                             </button>
                           </>
                         ) : null}
@@ -6607,10 +6615,11 @@ function DjPaymentsPage({ events, djProfiles, onRefresh, onToast, onLogActivity 
                         ) : (
                           <button
                             onClick={() => cycleStatus(slot.assignmentId, payStatus)}
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition hover:scale-105 sm:h-7 sm:w-7 ${djPayStatusClass(payStatus)}`}
+                            className={`flex h-8 min-w-[132px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2 text-[10px] font-black transition hover:scale-105 sm:h-7 ${djPayStatusClass(payStatus)}`}
                             title={`${djPayStatusLabel(payStatus)} — click to cycle`}
                           >
                             {djPayStatusIcon(payStatus)}
+                            <span>{djPayStatusLabel(payStatus)}</span>
                           </button>
                         )}
                       </div>
