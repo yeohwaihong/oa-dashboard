@@ -5197,7 +5197,7 @@ function EventNightAnalytics({ insights }) {
   );
 }
 
-function WeeklySalesPage({ userRole, onToast, events = [] }) {
+function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj }) {
   const [month, setMonth]         = useState("APRIL 2026");
   const [allRows, setAllRows]     = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -5237,6 +5237,10 @@ function WeeklySalesPage({ userRole, onToast, events = [] }) {
   const data = useMemo(() => allRows.filter((row) => (row.month_year || monthYearFromISO(row.date)) === month), [allRows, month]);
 
   const eventInsights = useMemo(() => buildEventNightInsights(events, allRows), [events, allRows]);
+  const linksByRowId = useMemo(() => {
+    const links = buildSalesEventLinks(events, data);
+    return new Map(links.map((link) => [String(link.row?.id || ""), link]));
+  }, [data, events]);
 
   const weeks = useMemo(() => {
     const map = {};
@@ -5292,6 +5296,16 @@ function WeeklySalesPage({ userRole, onToast, events = [] }) {
   }
 
   const nextWeekNum = weeks.length ? weeks[weeks.length - 1].weekNum + 1 : 1;
+  const openEvent = useCallback((event) => {
+    if (!event) return;
+    if (typeof onOpenEvent === "function") {
+      onOpenEvent(event);
+      return;
+    }
+    const url = eventShareUrl(event?.id);
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [onOpenEvent]);
 
   return (
     <div className="space-y-5 px-1 py-2">
@@ -5411,11 +5425,11 @@ function WeeklySalesPage({ userRole, onToast, events = [] }) {
 
             {/* Sales table */}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-xs">
+              <table className="w-full min-w-[1100px] text-xs">
                 <thead>
                   <tr className="border-b border-white/5">
-                    {["Date","Event","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
-                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 1 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
+                    {["Date","Event","Event ID","DJs","PAX","Table Bookings","Door Sales","Cover Charge","POS Total","TicketMelon","Total","Target"].map((h, i) => (
+                      <th key={h} className={`px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white/25 ${i <= 3 ? "text-left" : "text-right"} ${i === 0 ? "pl-4" : ""}`}>{h}</th>
                     ))}
                     {canEdit && <th className="px-3 py-2.5" />}
                   </tr>
@@ -5424,10 +5438,57 @@ function WeeklySalesPage({ userRole, onToast, events = [] }) {
                   {rows.map((row) => {
                     const total     = (row.pos_total || 0) + (row.ticketmelon_total || 0);
                     const hitTarget = total >= (row.weekly_target || 0);
+                    const link = linksByRowId.get(String(row.id)) || null;
                     return (
                       <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.015]">
                         <td className="pl-4 pr-3 py-2.5 font-bold text-white/60">{salesFmtDate(row.date)}</td>
                         <td className="px-3 py-2.5 font-bold text-white/85">{row.event_name}</td>
+                        <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
+                          {link?.linkedEvents?.length ? (
+                            <div className="space-y-1">
+                              {link.linkedEvents.map((event) => (
+                                <button
+                                  key={event.id}
+                                  type="button"
+                                  onClick={() => openEvent(event)}
+                                  className={`block w-full break-all rounded-lg border px-2 py-1 text-left transition ${
+                                    link?.event?.id === event.id
+                                      ? "border-cyan-300/40 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
+                                      : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:text-white/70"
+                                  }`}
+                                  title="Open event"
+                                >
+                                  {event.id}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-white/25">No event link</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
+                          {link?.djNames?.length ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {link.djNames.map((name) => (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => typeof onOpenDj === "function" && onOpenDj(name)}
+                                  className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider transition ${
+                                    typeof onOpenDj === "function"
+                                      ? "border-purple-300/25 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20"
+                                      : "border-white/10 bg-white/[0.03] text-white/40"
+                                  }`}
+                                  title={typeof onOpenDj === "function" ? "Open DJ" : undefined}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-white/25">No DJ link</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-right text-white/50">{row.pax || "—"}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.table_bookings)}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-white/50">{salesFmtRM(row.door_sales)}</td>
@@ -5452,7 +5513,7 @@ function WeeklySalesPage({ userRole, onToast, events = [] }) {
                 </tbody>
                 <tfoot>
                   <tr className="bg-white/[0.03]">
-                    <td colSpan={8} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
+                    <td colSpan={10} className="pl-4 pr-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-white/35">Grand Total</td>
                     <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-black ${weekSalesTotal > 0 ? "text-white" : "text-white/30"}`}>{salesFmtRMFull(weekSalesTotal)}</td>
                     <td className="px-3 py-2.5" />
                     {canEdit && <td />}
@@ -5543,8 +5604,8 @@ function FinancePage() {
 }
 
 
-function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUsers = [], onToast, onRefreshProfiles, onLogActivity }) {
-  const [query, setQuery] = useState("");
+function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUsers = [], onToast, onRefreshProfiles, onLogActivity, initialQuery = "" }) {
+  const [query, setQuery] = useState(() => String(initialQuery || ""));
   const [availabilityMonth, setAvailabilityMonth] = useState(() => monthInputValueFromDate(new Date()));
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
@@ -5567,6 +5628,10 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
       return `${profile.name} ${profile.stageName} ${profile.realName} ${profile.email} ${genreText}`.toLowerCase().includes(needle);
     });
   }, [availableProfiles, query]);
+  useEffect(() => {
+    if (initialQuery == null) return;
+    setQuery(String(initialQuery || ""));
+  }, [initialQuery]);
   const monthlyAvailabilityRows = useMemo(() => {
     const rows = [];
     for (const profile of availableProfiles) {
@@ -8154,6 +8219,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   const [djProfiles, setDjProfiles] = useState([]);
   const [djProfilesLoading, setDjProfilesLoading] = useState(isSupabaseConfigured);
   const [djProfilesError, setDjProfilesError] = useState("");
+  const [djProfilesInitialQuery, setDjProfilesInitialQuery] = useState("");
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
@@ -8992,6 +9058,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     setActiveWeekKey(weekKey);
     setPendingNotificationTarget({ eventId: String(event.id), weekKey });
   }, [navigateView, todayISO]);
+
+  const openDjFromName = useCallback((name) => {
+    setDjProfilesInitialQuery(String(name || ""));
+    navigateView("DJs");
+  }, [navigateView]);
 
   const respondToBookingRequest = useCallback(
     async (event, slot, assignment, nextStatus) => {
@@ -10189,7 +10260,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
           ) : view === "Finance" ? (
             <FinancePage />
           ) : view === "Sales" && canAccessSales ? (
-            <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} />
+            <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openNotificationEvent} onOpenDj={openDjFromName} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
@@ -10211,6 +10282,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
               onToast={showToast}
               onRefreshProfiles={loadDjProfiles}
               onLogActivity={logActivity}
+              initialQuery={djProfilesInitialQuery}
             />
           ) : view === "List" ? (
             <>
