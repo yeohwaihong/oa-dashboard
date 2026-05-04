@@ -5456,6 +5456,9 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
   const padBottom = 36;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
+  const svgRef = React.useRef(null);
+  const [hoverState, setHoverState] = useState(null);
+  const [pinnedIndex, setPinnedIndex] = useState(null);
 
   const values = useMemo(() => (points || []).map((p) => Number(p.value) || 0), [points]);
   const bounds = useMemo(() => {
@@ -5481,6 +5484,10 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
     return padTop + (1 - t) * innerH;
   };
   const zeroY = valueToY(0);
+  const hoverIndex = pinnedIndex != null ? pinnedIndex : hoverState?.index ?? null;
+  const activePoint = hoverIndex != null && points[hoverIndex] ? points[hoverIndex] : null;
+  const activeX = hoverIndex != null ? padLeft + hoverIndex * stepX : null;
+  const activeY = activePoint ? valueToY(activePoint.value) : null;
 
   const poly = useMemo(() => {
     if (!n) return "";
@@ -5504,6 +5511,57 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
     return out;
   }, [bounds.max, bounds.min, innerH, padTop]);
 
+  const summary = useMemo(() => {
+    if (!points.length) return { total: 0, max: null, min: null, last: null, prev: null };
+    let max = points[0];
+    let min = points[0];
+    let total = 0;
+    for (const p of points) {
+      total += Number(p.value) || 0;
+      if ((Number(p.value) || 0) > (Number(max.value) || 0)) max = p;
+      if ((Number(p.value) || 0) < (Number(min.value) || 0)) min = p;
+    }
+    const last = points[points.length - 1];
+    const prev = points.length > 1 ? points[points.length - 2] : null;
+    return { total, max, min, last, prev };
+  }, [points]);
+  const lastDelta = summary.prev ? (Number(summary.last.value) || 0) - (Number(summary.prev.value) || 0) : 0;
+  const lastDeltaPct = summary.prev && (Number(summary.prev.value) || 0) !== 0 ? lastDelta / (Number(summary.prev.value) || 1) : null;
+
+  const handleMouseMove = useCallback((event) => {
+    if (!svgRef.current || !points.length) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const relX = event.clientX - rect.left;
+    const relY = event.clientY - rect.top;
+    const xInViewBox = (relX / rect.width) * width;
+    const raw = (xInViewBox - padLeft) / (stepX || 1);
+    const idx = Math.max(0, Math.min(points.length - 1, Math.round(raw)));
+    setHoverState({ index: idx, relX, relY, rectW: rect.width, rectH: rect.height });
+  }, [padLeft, points, stepX, width]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (pinnedIndex != null) return;
+    setHoverState(null);
+  }, [pinnedIndex]);
+
+  const handleClick = useCallback(() => {
+    if (!points.length) return;
+    const idx = hoverState?.index;
+    if (idx == null) return;
+    setPinnedIndex((current) => (current === idx ? null : idx));
+  }, [hoverState?.index, points.length]);
+
+  const tooltip = useMemo(() => {
+    if (!activePoint || !hoverState) return null;
+    const idx = hoverIndex;
+    const prev = idx > 0 ? points[idx - 1] : null;
+    const delta = prev ? (Number(activePoint.value) || 0) - (Number(prev.value) || 0) : null;
+    const pct = prev && (Number(prev.value) || 0) !== 0 ? delta / (Number(prev.value) || 1) : null;
+    const clampedX = Math.min(Math.max(hoverState.relX, 90), hoverState.rectW - 90);
+    const clampedY = Math.min(Math.max(hoverState.relY, 60), hoverState.rectH - 16);
+    return { idx, prev, delta, pct, clampedX, clampedY };
+  }, [activePoint, hoverIndex, hoverState, points]);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
@@ -5515,9 +5573,44 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
           {chartType === "line" ? "Line" : "Bar"}
         </div>
       </div>
-      <div className="px-2 py-2">
+      <div className="px-4 pt-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Total</div>
+            <div className="mt-1 text-sm font-black text-white">{points.length ? salesFmtRMFull(summary.total) : "—"}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Best</div>
+            <div className="mt-1 text-sm font-black text-white">{summary.max ? salesFmtRMFull(summary.max.value) : "—"}</div>
+            <div className="mt-1 text-[10px] font-bold text-white/35">{summary.max?.label || ""}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Worst</div>
+            <div className="mt-1 text-sm font-black text-white">{summary.min ? salesFmtRMFull(summary.min.value) : "—"}</div>
+            <div className="mt-1 text-[10px] font-bold text-white/35">{summary.min?.label || ""}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Last Δ</div>
+            <div className={`mt-1 text-sm font-black ${lastDelta >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+              {summary.prev ? `${lastDelta >= 0 ? "+" : ""}${salesFmtRMFull(lastDelta)}` : "—"}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-white/35">
+              {summary.prev && lastDeltaPct != null ? `${(lastDeltaPct * 100).toFixed(1)}% vs prev` : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative px-2 py-2">
         {points.length ? (
-          <svg viewBox={`0 0 ${width} ${height}`} className="h-[240px] w-full">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-[240px] w-full"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            onClick={handleClick}
+          >
             {ticks.map((tick) => (
               <g key={tick.y}>
                 <line x1={padLeft} x2={width - padRight} y1={tick.y} y2={tick.y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
@@ -5527,6 +5620,9 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
               </g>
             ))}
             <line x1={padLeft} x2={width - padRight} y1={zeroY} y2={zeroY} stroke="rgba(103,232,249,0.25)" strokeWidth="1" />
+            {activeX != null ? (
+              <line x1={activeX} x2={activeX} y1={padTop} y2={height - padBottom} stroke="rgba(103,232,249,0.22)" strokeWidth="1" />
+            ) : null}
             {chartType === "bar" ? (
               <g>
                 {points.map((p, i) => {
@@ -5548,6 +5644,7 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
                     </g>
                   );
                 })}
+                <rect x={padLeft} y={padTop} width={innerW} height={innerH} fill="transparent" />
               </g>
             ) : (
               <g>
@@ -5555,7 +5652,16 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
                 {points.map((p, i) => {
                   const x = padLeft + i * stepX;
                   const y = valueToY(p.value);
-                  return <circle key={p.key || i} cx={x} cy={y} r="4.2" fill="rgba(103,232,249,0.9)" />;
+                  const active = hoverIndex === i;
+                  return (
+                    <circle
+                      key={p.key || i}
+                      cx={x}
+                      cy={y}
+                      r={active ? "6" : "4.2"}
+                      fill={active ? "rgba(103,232,249,1)" : "rgba(103,232,249,0.9)"}
+                    />
+                  );
                 })}
                 {n <= 18 ? (
                   <g>
@@ -5569,12 +5675,36 @@ function SalesSeriesChart({ points, metricLabel, chartType }) {
                     })}
                   </g>
                 ) : null}
+                <rect x={padLeft} y={padTop} width={innerW} height={innerH} fill="transparent" />
               </g>
             )}
           </svg>
         ) : (
           <div className="px-4 py-10 text-center text-sm font-bold text-white/35">No data to chart yet.</div>
         )}
+        {tooltip && activePoint ? (
+          <div
+            className="pointer-events-none absolute z-10 w-[240px] -translate-x-1/2 -translate-y-[115%] rounded-2xl border border-white/10 bg-black/90 px-3 py-2.5 text-white shadow-2xl"
+            style={{ left: tooltip.clampedX, top: tooltip.clampedY }}
+          >
+            <div className="text-[10px] font-black uppercase tracking-wider text-white/40">{activePoint.label}</div>
+            <div className="mt-1 flex items-baseline justify-between gap-3">
+              <div className="text-sm font-black text-white">{salesFmtRMFull(activePoint.value)}</div>
+              {tooltip.delta != null ? (
+                <div className={`text-xs font-black ${tooltip.delta >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                  {tooltip.delta >= 0 ? "+" : ""}{salesFmtRMFull(tooltip.delta)}
+                </div>
+              ) : (
+                <div className="text-xs font-black text-white/30">—</div>
+              )}
+            </div>
+            {tooltip.pct != null ? (
+              <div className="mt-1 text-[10px] font-bold text-white/35">{(tooltip.pct * 100).toFixed(1)}% vs prev</div>
+            ) : (
+              <div className="mt-1 text-[10px] font-bold text-white/35">Click to pin</div>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );
