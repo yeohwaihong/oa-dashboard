@@ -4656,13 +4656,18 @@ function buildSalesEventLinks(events, salesRows) {
       linkedEvents.find((event) => eventNameKey(event.name) === eventNameKey(row.event_name)) ||
       linkedEvents[0] ||
       null;
+    const djNameSet = new Set();
+    for (const event of linkedEvents) {
+      for (const name of eventDjNames(event)) djNameSet.add(name);
+    }
+    const djNames = djNameSet.size ? Array.from(djNameSet) : eventDjNames(primaryEvent);
     return {
       row,
       event: primaryEvent,
       linkedEvents,
       total: salesTotalForRow(row),
       pl: calcNightPL(row),
-      djNames: eventDjNames(primaryEvent),
+      djNames,
       eventKey: eventNameKey(primaryEvent?.name || row.event_name),
     };
   });
@@ -6918,10 +6923,31 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                     const hitTarget = total >= (row.weekly_target || 0);
                     const link = linksByRowId.get(String(row.id)) || null;
                     const primaryEvent = link?.event || link?.linkedEvents?.[0] || null;
+                    const resolvedEventName = primaryEvent?.name || row.event_name;
+                    const isNameMismatch = primaryEvent && eventNameKey(primaryEvent.name) !== eventNameKey(row.event_name);
                     return (
                       <tr key={row.id} className="border-b border-white/[0.04] hover:bg-white/[0.015]">
                         <td className="pl-4 pr-3 py-2.5 font-bold text-white/60">{salesFmtDate(row.date)}</td>
-                        <td className="px-3 py-2.5 font-bold text-white/85">{row.event_name}</td>
+                        <td className="px-3 py-2.5 font-bold text-white/85">
+                          {primaryEvent ? (
+                            <button
+                              type="button"
+                              onClick={() => openEvent(primaryEvent)}
+                              className="text-left font-black text-cyan-100 hover:text-cyan-50"
+                              title="Open event"
+                            >
+                              {resolvedEventName}
+                            </button>
+                          ) : (
+                            <span className="font-black text-white/85">{resolvedEventName}</span>
+                          )}
+                          {isNameMismatch ? (
+                            <div className="mt-0.5 text-[10px] font-bold text-white/35">Sales row: {row.event_name}</div>
+                          ) : null}
+                          {!primaryEvent ? (
+                            <div className="mt-0.5 text-[10px] font-bold text-white/25">No matching event on this date</div>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-2.5 text-[10px] font-bold text-white/40">
                           {link?.djNames?.length ? (
                             <div className="flex flex-wrap gap-1.5">
@@ -6929,13 +6955,13 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                                 <button
                                   key={name}
                                   type="button"
-                                  onClick={() => primaryEvent && openEvent(primaryEvent)}
+                                  onClick={() => typeof onOpenDj === "function" && onOpenDj(name)}
                                   className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider transition ${
-                                    primaryEvent
-                                      ? "border-cyan-300/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
+                                    typeof onOpenDj === "function"
+                                      ? "border-purple-300/25 bg-purple-400/10 text-purple-100 hover:bg-purple-400/20"
                                       : "border-white/10 bg-white/[0.03] text-white/40"
                                   }`}
-                                  title={primaryEvent ? "Open event" : undefined}
+                                  title={typeof onOpenDj === "function" ? "Open DJ" : undefined}
                                 >
                                   {name}
                                 </button>
