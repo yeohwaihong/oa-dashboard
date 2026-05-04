@@ -6482,6 +6482,14 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     window.addEventListener("mouseup", stopResize);
   }, [onResizeMove, stopResize, weeklyColWidths]);
 
+  const resetWeeklyColumnWidths = useCallback(() => {
+    setWeeklyColWidths({});
+    try {
+      localStorage.removeItem("oa_sales_weekly_col_widths_v1");
+    } catch {}
+    onToast?.("Column widths reset.", "success");
+  }, [onToast]);
+
   const beginCellEdit = useCallback((row, field) => {
     if (!canEdit) return;
     if (!row?.id) return;
@@ -7051,6 +7059,16 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
           >
             <RefreshCcw className="h-3.5 w-3.5" />
           </button>
+          {view === "weekly" && tab === "nights" ? (
+            <button
+              type="button"
+              onClick={resetWeeklyColumnWidths}
+              className="flex h-8 items-center gap-1.5 rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-black text-cyan-100 hover:bg-cyan-400/20"
+              title="Reset column widths"
+            >
+              Reset columns
+            </button>
+          ) : null}
           {canEdit && (
             <button
               onClick={() => setEditRow({ _new: true, week_number: nextWeekNum })}
@@ -7605,6 +7623,13 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                         <span
                           role="separator"
                           onMouseDown={(e) => startResize(e, c.key)}
+                          onDoubleClick={() =>
+                            setWeeklyColWidths((prev) => {
+                              const next = { ...(prev || {}) };
+                              delete next[c.key];
+                              return next;
+                            })
+                          }
                           className="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none bg-white/[0.03] opacity-60 transition hover:bg-cyan-300/25 hover:opacity-100 group-hover:bg-white/[0.06]"
                           title="Drag to resize"
                         />
@@ -7678,7 +7703,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                                 }
                               }}
                               onBlur={() => commitCellEdit(String(row.id), "pax")}
-                              className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                              className="h-7 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-1.5 text-right text-[11px] font-black text-white outline-none focus:border-cyan-300/60"
                               disabled={cellSaving}
                             />
                           ) : canEdit ? (
@@ -7722,7 +7747,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                                     }}
                                     onBlur={() => commitCellEdit(String(row.id), cell.key)}
                                     inputMode="decimal"
-                                    className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                                    className="h-7 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-1.5 text-right text-[11px] font-black text-white outline-none focus:border-cyan-300/60"
                                     disabled={cellSaving}
                                   />
                                 ) : (
@@ -7760,7 +7785,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
                               }}
                               onBlur={() => commitCellEdit(String(row.id), "weekly_target")}
                               inputMode="decimal"
-                              className="h-8 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-2 text-right text-xs font-black text-white outline-none focus:border-cyan-300/60"
+                              className="h-7 w-full rounded-lg border border-cyan-300/25 bg-black/30 px-1.5 text-right text-[11px] font-black text-white outline-none focus:border-cyan-300/60"
                               disabled={cellSaving}
                             />
                           ) : canEdit ? (
