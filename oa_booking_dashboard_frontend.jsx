@@ -4984,6 +4984,55 @@ function EventNightAnalytics({ insights }) {
   const forecastReady = insights.forecasts.filter((item) => item.confidence !== "None");
   const nextForecasts = forecastReady.length ? forecastReady : insights.forecasts;
   const linkedCount = insights.links.filter((link) => link.event).length;
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [compareMode, setCompareMode] = useState("auto");
+  const [manualNightIds, setManualNightIds] = useState([]);
+  const selectedForecast = nextForecasts.find((item) => item.event.id === selectedEventId) || nextForecasts[0] || null;
+
+  useEffect(() => {
+    if (!selectedForecast) return;
+    setSelectedEventId((current) => (current && nextForecasts.some((item) => item.event.id === current) ? current : selectedForecast.event.id));
+  }, [nextForecasts, selectedForecast]);
+
+  useEffect(() => {
+    setManualNightIds([]);
+  }, [selectedEventId]);
+
+  const comparisonOptions = useMemo(() => {
+    if (!selectedForecast) return [];
+    const eventKey = eventNameKey(selectedForecast.event.name);
+    const targetDay = isoToDate(selectedForecast.event.date).getDay();
+    return insights.historical
+      .filter((link) => link.row.date < selectedForecast.event.date)
+      .map((link) => {
+        const sameEvent = link.eventKey && link.eventKey === eventKey;
+        const sameDj = link.djNames.some((name) => selectedForecast.djNames.includes(name));
+        const sameDay = isoToDate(link.row.date).getDay() === targetDay;
+        const score = (sameEvent ? 4 : 0) + (sameDj ? 2 : 0) + (sameDay ? 1 : 0);
+        const reason = sameEvent ? "Same event" : sameDj ? "Same DJ" : sameDay ? "Same weekday" : "Other";
+        return { ...link, sameEvent, sameDj, sameDay, score, reason };
+      })
+      .sort((a, b) => b.score - a.score || b.row.date.localeCompare(a.row.date))
+      .slice(0, 14);
+  }, [insights.historical, selectedForecast]);
+
+  const activeComparison = useMemo(() => {
+    if (!selectedForecast) return [];
+    if (compareMode === "manual") return comparisonOptions.filter((link) => manualNightIds.includes(String(link.row.id)));
+    if (compareMode === "same-event") return comparisonOptions.filter((link) => link.sameEvent);
+    if (compareMode === "same-dj") return comparisonOptions.filter((link) => link.sameDj);
+    if (compareMode === "same-weekday") return comparisonOptions.filter((link) => link.sameDay);
+    return selectedForecast.basis;
+  }, [compareMode, comparisonOptions, manualNightIds, selectedForecast]);
+
+  const comparisonSales = average(activeComparison.map((link) => link.total));
+  const comparisonNett = average(activeComparison.map((link) => link.pl.nett));
+  const comparisonPax = average(activeComparison.map((link) => Number(String(link.row.pax || "").match(/\d+/)?.[0] || 0)));
+  const toggleManualNight = (id) => {
+    const key = String(id);
+    setCompareMode("manual");
+    setManualNightIds((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
+  };
 
   return (
     <div className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.045]">
@@ -4998,51 +5047,110 @@ function EventNightAnalytics({ insights }) {
           </div>
         </div>
         <div className="rounded-full border border-cyan-300/20 bg-black/20 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-100">
-          Forecast from same event, same DJ, then same weekday
+          Editable forecast basis
         </div>
       </div>
 
       <div className="grid gap-4 p-4 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-3">
-          <div className="text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Upcoming Forecast</div>
-          {nextForecasts.length ? (
-            <div className="grid gap-2">
-              {nextForecasts.slice(0, 4).map(({ event, djNames, basis, forecastSales, forecastNett, confidence }) => (
-                <div key={event.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-black uppercase tracking-wider text-white/35">{salesFmtDate(event.date)} · {event.stage}</div>
-                      <div className="mt-1 truncate text-sm font-black text-white">{event.name}</div>
-                      <div className="mt-1 truncate text-xs font-bold text-white/40">{djNames.slice(0, 4).join(" / ") || "Lineup pending"}</div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-right">
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Sales</div>
-                        <div className="text-sm font-black text-cyan-100">{forecastSales ? salesFmtRMFull(forecastSales) : "No basis"}</div>
-                      </div>
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Nett</div>
-                        <div className={`text-sm font-black ${forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                          {forecastSales ? salesFmtRMFull(forecastNett) : "-"}
-                        </div>
-                      </div>
-                    </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Compare Forecast</div>
+            {nextForecasts.length ? (
+              <select
+                value={selectedForecast?.event.id || ""}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                className="max-w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white outline-none focus:border-cyan-300/40"
+              >
+                {nextForecasts.map(({ event }) => (
+                  <option key={event.id} value={event.id}>{salesFmtDate(event.date)} - {event.name}</option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+
+          {selectedForecast ? (
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-white/35">{dayLabelFromISO(selectedForecast.event.date)} · {selectedForecast.event.stage}</div>
+                  <div className="mt-1 text-base font-black text-white">{selectedForecast.event.name}</div>
+                  <div className="mt-1 text-xs font-bold text-white/45">{selectedForecast.djNames.slice(0, 5).join(" / ") || "Lineup pending"}</div>
+                </div>
+                <div className="grid min-w-[240px] grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-cyan-100/50">Forecast Sales</div>
+                    <div className="mt-1 text-sm font-black text-cyan-100">{comparisonSales ? salesFmtRMFull(comparisonSales) : "No basis"}</div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                      confidence === "High" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
-                      : confidence === "Medium" ? "border-cyan-300/25 bg-cyan-400/10 text-cyan-100"
-                      : confidence === "Low" ? "border-amber-300/25 bg-amber-400/10 text-amber-100"
-                      : "border-white/10 bg-white/5 text-white/35"
-                    }`}>
-                      {confidence} confidence
-                    </span>
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/35">
-                      {basis.length} comparable night{basis.length === 1 ? "" : "s"}
-                    </span>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Avg PAX</div>
+                    <div className="mt-1 text-sm font-black text-white">{comparisonPax ? Math.round(comparisonPax).toLocaleString("en-MY") : "-"}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Avg Nett</div>
+                    <div className={`mt-1 text-sm font-black ${comparisonNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                      {comparisonSales ? salesFmtRMFull(comparisonNett) : "-"}
+                    </div>
                   </div>
                 </div>
-              ))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[
+                  ["auto", "Auto"],
+                  ["same-event", "Same Event"],
+                  ["same-dj", "Same DJ"],
+                  ["same-weekday", "Same Weekday"],
+                  ["manual", "Manual"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setCompareMode(key)}
+                    className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                      compareMode === key
+                        ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100"
+                        : "border-white/10 bg-white/5 text-white/35 hover:text-white"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white/35">
+                  {activeComparison.length} night{activeComparison.length === 1 ? "" : "s"} selected
+                </span>
+              </div>
+
+              <div className="mt-3 grid max-h-[360px] gap-2 overflow-y-auto pr-1">
+                {comparisonOptions.length ? comparisonOptions.map((link) => {
+                  const manualSelected = manualNightIds.includes(String(link.row.id));
+                  const active = compareMode === "manual" ? manualSelected : activeComparison.some((item) => item.row.id === link.row.id);
+                  return (
+                    <button
+                      key={link.row.id}
+                      type="button"
+                      onClick={() => toggleManualNight(link.row.id)}
+                      className={`grid gap-2 rounded-xl border px-3 py-2 text-left transition sm:grid-cols-[1fr_auto] ${
+                        active ? "border-cyan-300/35 bg-cyan-400/12" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs font-black text-white">{salesFmtDate(link.row.date)}</span>
+                          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/35">{link.reason}</span>
+                        </div>
+                        <div className="mt-1 truncate text-xs font-bold text-white/75">{link.event?.name || link.row.event_name}</div>
+                        <div className="mt-0.5 truncate text-[10px] font-bold text-white/35">{link.djNames.slice(0, 4).join(" / ") || "No DJ link"}</div>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-right sm:block">
+                        <div className="text-xs font-black text-cyan-100">{salesFmtRMFull(link.total)}</div>
+                        <div className={`mt-0.5 text-[10px] font-black ${link.pl.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(link.pl.nett)}</div>
+                      </div>
+                    </button>
+                  );
+                }) : (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-5 text-center text-xs font-bold text-white/35">No previous nights available for this event yet.</div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-6 text-center text-sm font-bold text-white/35">
