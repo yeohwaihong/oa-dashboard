@@ -6421,6 +6421,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const [editDraft, setEditDraft] = useState("");
   const [cellSaving, setCellSaving] = useState(false);
   const [seedingPlanned, setSeedingPlanned] = useState(false);
+  const didInitMonthRef = useRef(false);
 
   const weeklyCols = useMemo(
     () => [
@@ -6560,7 +6561,18 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   }, [allRows, events]);
 
   useEffect(() => {
-    if (salesMonths.length && !salesMonths.includes(month)) setMonth(salesMonths[0]);
+    if (!salesMonths.length) return;
+    if (!didInitMonthRef.current) {
+      didInitMonthRef.current = true;
+      const currentMonth = monthYearFromISO(isoFromDate(new Date()));
+      if (salesMonths.includes(currentMonth)) {
+        setMonth(currentMonth);
+        return;
+      }
+      setMonth(salesMonths[0]);
+      return;
+    }
+    if (!salesMonths.includes(month)) setMonth(salesMonths[0]);
   }, [month, salesMonths]);
 
   const salesMonthsMeta = useMemo(() => salesMonths.map(parseSalesMonthYear), [salesMonths]);
@@ -6772,6 +6784,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const salesFilteredLinks = useMemo(() => {
     const needle = salesQuery.trim().toLowerCase();
     const eventNeedleKey = eventNameKey(salesEvent);
+    const todayISO = isoFromDate(new Date());
     return buildSalesEventLinks(events, view === "weekly" ? data : allRows)
       .filter((link) => {
         const row = link.row || {};
@@ -6782,7 +6795,8 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         const djNames = Array.isArray(link.djNames) ? link.djNames : [];
         const linked = Array.isArray(link.linkedEvents) && link.linkedEvents.length > 0;
         if (!date) return false;
-        if (!salesIncludeZero && total <= 0) return false;
+        const isFuture = String(date) >= todayISO;
+        if (!salesIncludeZero && total <= 0 && !isFuture) return false;
         if (salesOnlyLinked && !linked) return false;
         if (salesDj && !djNames.includes(salesDj)) return false;
         if (eventNeedleKey) {
