@@ -6611,26 +6611,14 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       const defaults = salesDefaultsForISO(date);
       const plannedName = String(event?.name || "").trim();
 
-      if (!existing) {
-        payload.push({
-          date,
-          event_name: plannedName || "TBD",
-          week_number: weekNum,
-          month_year: monthYear,
-          ...defaults,
-        });
-        continue;
-      }
-
-      const update = { date };
-      const existingName = String(existing.event_name || "").trim();
-      const existingMonth = String(existing.month_year || "").trim();
-      const nameNeedsUpdate = (!existingName || existingName.toUpperCase().includes("TBD")) && plannedName && !plannedName.toUpperCase().includes("TBD");
-      if (nameNeedsUpdate) update.event_name = plannedName;
-      if (!existingMonth) update.month_year = monthYear;
-      if (!existing.week_number) update.week_number = weekNum;
-
-      if (Object.keys(update).length > 1) payload.push(update);
+      if (existing) continue;
+      payload.push({
+        date,
+        event_name: plannedName || "TBD",
+        week_number: weekNum,
+        month_year: monthYear,
+        ...defaults,
+      });
     }
 
     return payload;
@@ -6647,7 +6635,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
       setSeedingPlanned(true);
       const { error: err } = await supabase
         .from("weekly_sales")
-        .upsert(plannedMonthSeedPayload, { onConflict: "date" });
+        .upsert(plannedMonthSeedPayload, { onConflict: "date", ignoreDuplicates: true });
       if (cancelled) return;
       setSeedingPlanned(false);
       if (err) {
