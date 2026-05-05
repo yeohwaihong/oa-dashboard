@@ -11487,17 +11487,16 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         }
 
         const lineup = slotLineupForSave(slot);
-        for (const participantName of lineup.participants) {
-          const djId = await findOrCreateDj(participantName);
-          const savedAssignment = await supabase.from("event_assignments").insert({
-            event_slot_id: savedSlot.data.id,
-            dj_id: djId,
-            assignment_status: event.status === "Confirmed" ? "Confirmed" : "Pending",
-            notes: lineup.participants.length > 1 || !djId ? lineup.displayName || slot.dj : null,
-          });
+        const primaryName = lineup.participants[0] || slot.dj;
+        const djId = await findOrCreateDj(primaryName);
+        const savedAssignment = await supabase.from("event_assignments").insert({
+          event_slot_id: savedSlot.data.id,
+          dj_id: djId,
+          assignment_status: event.status === "Confirmed" ? "Confirmed" : "Pending",
+          notes: lineup.participants.length > 1 || !djId ? lineup.displayName || slot.dj : null,
+        });
 
-          if (savedAssignment.error) throw savedAssignment.error;
-        }
+        if (savedAssignment.error) throw savedAssignment.error;
       }
     },
     [findOrCreateDj],
