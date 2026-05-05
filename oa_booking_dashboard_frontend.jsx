@@ -11422,7 +11422,9 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     if (existing.data?.id) return existing.data.id;
 
     const created = await supabase.from("djs").insert({ name }).select("id").single();
-    if (created.error?.message?.includes("row-level security policy")) return null;
+    if (created.error?.message?.includes("row-level security policy")) {
+      throw new Error("No permission to create new DJs in Supabase (RLS). Run supabase/real_auth_roles.sql (or allow admin write to public.djs).");
+    }
     if (created.error) throw created.error;
     logActivity({
       action: "dj_created",
@@ -12211,7 +12213,15 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         const message = error.message || "Could not save to Supabase";
         setSyncError(message);
         setSyncStatus("");
-        showToast(message.includes("required_dashboard_schema_updates.sql") ? "Run required_dashboard_schema_updates.sql in Supabase first" : "Save failed", "error");
+        const friendly = (() => {
+          if (message.includes("required_dashboard_schema_updates.sql")) return "Run required_dashboard_schema_updates.sql in Supabase first";
+          if (message.toLowerCase().includes("event_assignments_assignment_status_check"))
+            return "Run supabase/dj_user_booking_approvals.sql in Supabase first (assignment_status values).";
+          if (message.toLowerCase().includes("row-level security"))
+            return "Supabase permissions blocked this save (RLS). Run supabase/real_auth_roles.sql.";
+          return message;
+        })();
+        showToast(friendly || "Save failed", "error");
         throw new Error(message);
       }
     }
