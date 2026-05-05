@@ -17,6 +17,13 @@ on public.user_roles for select
 to authenticated
 using (user_id = auth.uid());
 
+create table if not exists public.dashboard_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Replace these UUIDs after creating real Supabase Auth users.
 -- insert into public.user_roles (user_id, role)
 -- values
@@ -32,6 +39,7 @@ alter table public.event_slots enable row level security;
 alter table public.event_assignments enable row level security;
 alter table public.djs enable row level security;
 alter table public.event_templates enable row level security;
+alter table public.dashboard_settings enable row level security;
 
 drop policy if exists "dashboard anon read events" on public.events;
 create policy "dashboard anon read events"
@@ -63,6 +71,12 @@ on public.event_templates for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dashboard read settings" on public.dashboard_settings;
+create policy "dashboard read settings"
+on public.dashboard_settings for select
+to anon, authenticated
+using (true);
+
 -- Remove previous anonymous write policies if you ran the dev policy SQL.
 drop policy if exists "dashboard anon insert events" on public.events;
 drop policy if exists "dashboard anon update events" on public.events;
@@ -79,6 +93,9 @@ drop policy if exists "dashboard anon delete djs" on public.djs;
 drop policy if exists "dashboard anon insert templates" on public.event_templates;
 drop policy if exists "dashboard anon update templates" on public.event_templates;
 drop policy if exists "dashboard anon delete templates" on public.event_templates;
+drop policy if exists "dashboard anon insert settings" on public.dashboard_settings;
+drop policy if exists "dashboard anon update settings" on public.dashboard_settings;
+drop policy if exists "dashboard anon delete settings" on public.dashboard_settings;
 
 -- Let real admins manage dashboard data (staff is view-only).
 drop policy if exists "dashboard staff write events" on public.events;
@@ -117,6 +134,13 @@ drop policy if exists "dashboard staff write templates" on public.event_template
 drop policy if exists "dashboard admin write templates" on public.event_templates;
 create policy "dashboard admin write templates"
 on public.event_templates for all
+to authenticated
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
+
+drop policy if exists "dashboard admin write settings" on public.dashboard_settings;
+create policy "dashboard admin write settings"
+on public.dashboard_settings for all
 to authenticated
 using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
 with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));

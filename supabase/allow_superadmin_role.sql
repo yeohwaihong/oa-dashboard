@@ -8,6 +8,15 @@ alter table public.user_roles
 add constraint user_roles_role_check
 check (role in ('superadmin', 'admin', 'staff', 'dj'));
 
+create table if not exists public.dashboard_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.dashboard_settings enable row level security;
+
 -- Keep admin write access working for both superadmin and admin.
 drop policy if exists "dashboard admin write events" on public.events;
 create policy "dashboard admin write events"
@@ -40,6 +49,19 @@ with check (exists (select 1 from public.user_roles where user_id = auth.uid() a
 drop policy if exists "dashboard admin write templates" on public.event_templates;
 create policy "dashboard admin write templates"
 on public.event_templates for all
+to authenticated
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
+
+drop policy if exists "dashboard read settings" on public.dashboard_settings;
+create policy "dashboard read settings"
+on public.dashboard_settings for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard admin write settings" on public.dashboard_settings;
+create policy "dashboard admin write settings"
+on public.dashboard_settings for all
 to authenticated
 using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
 with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));

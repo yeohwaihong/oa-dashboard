@@ -1284,6 +1284,27 @@ function dateFromMonthInput(value) {
   return new Date(Number.isFinite(year) ? year : today.getFullYear(), Number.isFinite(month) ? month - 1 : today.getMonth(), 1);
 }
 
+const defaultAvailabilityWhatsappTemplates = {
+  message: [
+    "Hi {name}, Can you check your availability for {Month} {Year}",
+    "",
+    "{events}",
+    "",
+    "Please let me know which dates you are available for. Thank you!",
+  ].join("\n"),
+  event: [
+    "Event: {Event}",
+    "Date: {Date}",
+    "Time: {Time}",
+    "Stage: {Stage}",
+  ].join("\n"),
+};
+const AVAILABILITY_WHATSAPP_TEMPLATE_SETTING_KEY = "availability_whatsapp_templates";
+
+function fillTemplateTokens(template, tokens) {
+  return Object.entries(tokens).reduce((text, [key, value]) => text.split(`{${key}}`).join(value ?? ""), String(template || ""));
+}
+
 function profileLookupKeys(profile) {
   return new Set(
     [profile?.name, profile?.stageName, profile?.realName]
@@ -8314,10 +8335,20 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
   const [tab, setTab] = useState("profiles");
   const [query, setQuery] = useState(() => String(initialQuery || ""));
   const [availabilityMonth, setAvailabilityMonth] = useState(() => monthInputValueFromDate(new Date()));
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [availabilityTemplates, setAvailabilityTemplates] = useState(defaultAvailabilityWhatsappTemplates);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateError, setTemplateError] = useState("");
   const derivedProfiles = useMemo(() => deriveDjProfilesFromEvents(events), [events]);
   const availableProfiles = profiles.length ? profiles : derivedProfiles;
   const djUsers = useMemo(() => mentionUsers.filter((user) => String(user.role || "").toLowerCase() === "dj"), [mentionUsers]);
   const availabilityMonthDate = useMemo(() => dateFromMonthInput(availabilityMonth), [availabilityMonth]);
+  const availabilityMonthName = useMemo(
+    () => availabilityMonthDate.toLocaleDateString("en-US", { month: "long" }),
+    [availabilityMonthDate],
+  );
+  const availabilityYearLabel = useMemo(() => String(availabilityMonthDate.getFullYear()), [availabilityMonthDate]);
   const availabilityMonthLabel = useMemo(
     () => availabilityMonthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
     [availabilityMonthDate],
@@ -8339,6 +8370,37 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
     if (initialQuery == null) return;
     setQuery(String(initialQuery || ""));
   }, [initialQuery]);
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    async function loadTemplates() {
+      setTemplateLoading(true);
+      setTemplateError("");
+      try {
+        const { data, error: err } = await supabase
+          .from("dashboard_settings")
+          .select("value")
+          .eq("key", AVAILABILITY_WHATSAPP_TEMPLATE_SETTING_KEY)
+          .maybeSingle();
+        if (err) throw err;
+        const value = data?.value && typeof data.value === "object" ? data.value : {};
+        if (!cancelled) {
+          setAvailabilityTemplates({
+            message: typeof value.message === "string" ? value.message : defaultAvailabilityWhatsappTemplates.message,
+            event: typeof value.event === "string" ? value.event : defaultAvailabilityWhatsappTemplates.event,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) setTemplateError(e?.message || "Failed to load WhatsApp template.");
+      } finally {
+        if (!cancelled) setTemplateLoading(false);
+      }
+    }
+    loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const monthlyAvailabilityRows = useMemo(() => {
     const rows = [];
     for (const profile of availableProfiles) {
@@ -8440,22 +8502,24 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
   const availabilityWhatsappText = useCallback(
     ({ profile, sets }) => {
       const name = formatDjDisplayName(profile.stageName || profile.name);
-      const setLines = sets.map((set) => {
+      const setBlocks = sets.map((set) => {
         const date = dayLabelFromISO(set.date);
         const time = set.start && set.end ? formatTimeRange(set.start, set.end, "24") : "TBC";
-        return `- ${date} · ${time} · ${set.eventName}${set.stage ? ` · ${set.stage}` : ""}`;
+        return fillTemplateTokens(availabilityTemplates.event, {
+          Event: set.eventName || "",
+          Date: date,
+          Time: time,
+          Stage: set.stage || "",
+        });
       });
-      return [
-        `Hi ${name},`,
-        `Can you check your availability for ${availabilityMonthLabel}?`,
-        "",
-        "Sets:",
-        ...setLines,
-        "",
-        "Please let me know which dates you are available for. Thank you!",
-      ].join("\n");
+      return fillTemplateTokens(availabilityTemplates.message, {
+        name,
+        Month: availabilityMonthName,
+        Year: availabilityYearLabel,
+        events: setBlocks.join("\n\n"),
+      });
     },
-    [availabilityMonthLabel],
+    [availabilityMonthName, availabilityTemplates, availabilityYearLabel],
   );
   const openAvailabilityWhatsApp = useCallback(
     (row) => {
@@ -8468,20 +8532,49 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
     },
     [availabilityWhatsappText, onToast],
   );
-  const openAllAvailabilityWhatsApps = useCallback(() => {
-    const rowsWithPhones = monthlyAvailabilityRows.filter((row) => whatsappDigits(row.profile.phone));
-    if (!rowsWithPhones.length) {
-      onToast?.("No scheduled DJs with phone numbers for this month.", "error");
+  const saveAvailabilityTemplates = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      onToast?.("Supabase is not configured.", "error");
       return;
     }
-    rowsWithPhones.forEach((row, index) => {
-      window.setTimeout(() => {
-        const url = whatsappLink(row.profile.phone, availabilityWhatsappText(row));
-        if (url) window.open(url, "_blank", "noopener,noreferrer");
-      }, index * 250);
-    });
-    onToast?.(`Opening ${rowsWithPhones.length} WhatsApp chat${rowsWithPhones.length === 1 ? "" : "s"}.`);
-  }, [availabilityWhatsappText, monthlyAvailabilityRows, onToast]);
+    if (!canEdit) {
+      onToast?.("Staff accounts are view-only", "error");
+      return;
+    }
+
+    const nextTemplates = {
+      message: String(availabilityTemplates.message || defaultAvailabilityWhatsappTemplates.message),
+      event: String(availabilityTemplates.event || defaultAvailabilityWhatsappTemplates.event),
+    };
+    setTemplateSaving(true);
+    setTemplateError("");
+    try {
+      const { error: err } = await supabase
+        .from("dashboard_settings")
+        .upsert(
+          {
+            key: AVAILABILITY_WHATSAPP_TEMPLATE_SETTING_KEY,
+            value: nextTemplates,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "key" },
+        );
+      if (err) throw err;
+      setAvailabilityTemplates(nextTemplates);
+      onToast?.("WhatsApp template saved");
+      onLogActivity?.({
+        action: "whatsapp_template_updated",
+        entityType: "dashboard_setting",
+        entityId: AVAILABILITY_WHATSAPP_TEMPLATE_SETTING_KEY,
+        message: "WhatsApp availability template updated",
+      });
+    } catch (e) {
+      setTemplateError(e?.message || "Failed to save WhatsApp template.");
+      onToast?.(e?.message || "Failed to save WhatsApp template", "error");
+    } finally {
+      setTemplateSaving(false);
+    }
+  }, [availabilityTemplates, canEdit, onLogActivity, onToast]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -8712,14 +8805,73 @@ function DjProfilesPage({ profiles, events, loading, error, canEdit, mentionUser
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button
-                onClick={openAllAvailabilityWhatsApps}
-                disabled={!monthlyAvailabilityRows.some((row) => whatsappDigits(row.profile.phone))}
-                className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                onClick={() => setShowTemplateEditor((current) => !current)}
+                className={`inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black ${
+                  showTemplateEditor
+                    ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/20"
+                    : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+                }`}
               >
-                Open All WhatsApps
+                <Pencil className="h-4 w-4" />
+                Edit Templates
               </Button>
             </div>
           </div>
+
+          {showTemplateEditor ? (
+            <div className="mt-4 grid gap-3 rounded-2xl border border-cyan-300/15 bg-cyan-400/5 p-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-100/60">Message Template</span>
+                <textarea
+                  value={availabilityTemplates.message}
+                  onChange={(event) => setAvailabilityTemplates((current) => ({ ...current, message: event.target.value }))}
+                  className="mt-2 min-h-40 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold leading-relaxed text-white/80 outline-none placeholder:text-white/25 focus:border-cyan-300/50"
+                  spellCheck={false}
+                />
+              </label>
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-100/60">Event Block</span>
+                  <textarea
+                    value={availabilityTemplates.event}
+                    onChange={(event) => setAvailabilityTemplates((current) => ({ ...current, event: event.target.value }))}
+                    className="mt-2 min-h-28 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold leading-relaxed text-white/80 outline-none placeholder:text-white/25 focus:border-cyan-300/50"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  {["{name}", "{Month}", "{Year}", "{events}", "{Event}", "{Date}", "{Time}", "{Stage}"].map((token) => (
+                    <span key={token} className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-black text-white/45">
+                      {token}
+                    </span>
+                  ))}
+                  <Button
+                    onClick={() => setAvailabilityTemplates(defaultAvailabilityWhatsappTemplates)}
+                    className="ml-auto h-8 rounded-lg border border-white/10 bg-white/5 px-3 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    onClick={saveAvailabilityTemplates}
+                    disabled={!canEdit || !isSupabaseConfigured || templateSaving}
+                    className="h-8 rounded-lg bg-cyan-300 px-3 text-[10px] font-black text-black hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
+                    title={!canEdit ? "Admin access required" : !isSupabaseConfigured ? "Supabase is not configured" : "Save template to Supabase"}
+                  >
+                    {templateSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+                <div className="text-[11px] font-bold text-white/35">
+                  {templateLoading
+                    ? "Loading saved template..."
+                    : templateError
+                      ? `Supabase template sync: ${templateError}`
+                      : isSupabaseConfigured
+                        ? "Saved templates load from Supabase."
+                        : "Supabase is not configured, so template changes only apply to this session."}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {monthlyAvailabilityRows.map((row) => {

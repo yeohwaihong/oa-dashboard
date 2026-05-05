@@ -4,6 +4,13 @@
 -- These policies allow the public anon key to read, create, edit, and delete
 -- dashboard data. Before production, replace these with authenticated policies.
 
+create table if not exists public.dashboard_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.events enable row level security;
 alter table public.event_slots enable row level security;
 alter table public.event_assignments enable row level security;
@@ -12,6 +19,7 @@ alter table public.genres enable row level security;
 alter table public.dj_genres enable row level security;
 alter table public.dj_fees enable row level security;
 alter table public.event_templates enable row level security;
+alter table public.dashboard_settings enable row level security;
 
 drop policy if exists "dashboard anon read events" on public.events;
 drop policy if exists "dashboard anon insert events" on public.events;
@@ -218,5 +226,31 @@ with check (true);
 
 create policy "dashboard anon delete templates"
 on public.event_templates for delete
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard anon read settings" on public.dashboard_settings;
+drop policy if exists "dashboard anon insert settings" on public.dashboard_settings;
+drop policy if exists "dashboard anon update settings" on public.dashboard_settings;
+drop policy if exists "dashboard anon delete settings" on public.dashboard_settings;
+
+create policy "dashboard anon read settings"
+on public.dashboard_settings for select
+to anon, authenticated
+using (true);
+
+create policy "dashboard anon insert settings"
+on public.dashboard_settings for insert
+to anon, authenticated
+with check (true);
+
+create policy "dashboard anon update settings"
+on public.dashboard_settings for update
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "dashboard anon delete settings"
+on public.dashboard_settings for delete
 to anon, authenticated
 using (true);

@@ -124,3 +124,26 @@ on public.ticket_forecast_events for all
 to authenticated
 using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
 with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
+
+-- Dashboard-wide editable settings, including WhatsApp availability templates.
+create table if not exists public.dashboard_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.dashboard_settings enable row level security;
+
+drop policy if exists "dashboard read settings" on public.dashboard_settings;
+create policy "dashboard read settings"
+on public.dashboard_settings for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "dashboard admin write settings" on public.dashboard_settings;
+create policy "dashboard admin write settings"
+on public.dashboard_settings for all
+to authenticated
+using (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')))
+with check (exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('superadmin', 'admin')));
