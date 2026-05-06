@@ -152,8 +152,8 @@ async function sendMentionEmails({ req, serviceClient, actorUser, event, comment
   const baseUrl = appBaseUrl(req);
   const eventUrl = baseUrl && event?.id ? `${baseUrl}/event/${encodeURIComponent(event.id)}` : baseUrl;
   const actorName = displayNameForAuthUser(actorUser) || "Someone";
-  const eventName = event?.name || "an event";
-  const eventDate = event?.date || "";
+  const eventName = event?.event_name || "an event";
+  const eventDate = event?.event_date || "";
   const subject = `${actorName} mentioned you on ${eventName}`;
   const text = [
     `${actorName} mentioned you in a dashboard comment.`,
@@ -267,7 +267,7 @@ export default async function handler(req, res) {
       if (!commentEventId) return sendJson(res, 400, { error: "Event ID is required." });
       if (!cleanBody) return sendJson(res, 400, { error: "Comment body is required." });
 
-      const eventResult = await serviceClient.from("events").select("id, name, date").eq("id", commentEventId).maybeSingle();
+      const eventResult = await serviceClient.from("events").select("id, event_name, event_date").eq("id", commentEventId).maybeSingle();
       if (eventResult.error) return sendJson(res, 500, { error: eventResult.error.message || "Could not load event." });
       if (!eventResult.data) return sendJson(res, 404, { error: "Event not found." });
 
