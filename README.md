@@ -22,3 +22,7 @@ For local anonymous writes, run `supabase/dev_dashboard_policies.sql` after the 
 Run `supabase/weekly_sales_schema.sql` to create the `weekly_sales` table with RLS policies (admin + superadmin only).
 
 Run `supabase/seed_weekly_sales_apr_may_2026.sql` after that to seed all April 2026 nightly data and blank May 2026 placeholder rows.
+
+## Mention email notifications
+
+Comment mentions are sent through the server `/api/comments` endpoint. Set `RESEND_API_KEY`, `MENTION_EMAIL_FROM`, and `DASHBOARD_APP_URL` in the deployment environment to email mentioned dashboard users when a comment is posted.

@@ -2455,7 +2455,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment }) {
+function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -2580,7 +2580,20 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="truncate text-[11px] font-black text-white/75">{displayNameForUserId(comment.userId, mentionUsers, currentUser)}</span>
-                          <span className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</span>
+                            {comment.userId === currentUser?.id || canEdit ? (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteComment(comment)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-rose-300/15 bg-rose-400/5 text-rose-100/60 hover:bg-rose-400/15 hover:text-rose-100"
+                                title="Delete comment"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span className="sr-only">Delete comment</span>
+                              </button>
+                            ) : null}
+                          </span>
                         </div>
                         <div className="oa-clamp-2 mt-0.5 text-xs font-bold text-white/50">
                           <MentionText text={comment.body} users={mentionUsers} />
@@ -2679,7 +2692,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
   );
 }
 
-function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, djProfiles, onAddComment, onClose, onEdit, onDelete, onConfirm, onShare, canEdit }) {
+function EventDetailsModal({ event, timeFormat, mentionUsers, comments, commentsError, currentUser, djProfiles, onAddComment, onDeleteComment, onClose, onEdit, onDelete, onConfirm, onShare, canEdit }) {
   if (!event) return null;
   const confirmationBlockers = getConfirmationBlockers(event);
   const djPhoneById = useMemo(() => {
@@ -2856,7 +2869,20 @@ function EventDetailsModal({ event, timeFormat, mentionUsers, comments, comments
                   <div key={comment.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs font-black text-white/85">{displayNameForUserId(comment.userId, mentionUsers, currentUser)}</div>
-                      <div className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</div>
+                      <div className="inline-flex items-center gap-2">
+                        <div className="text-[10px] font-bold text-white/30">{formatCommentTime(comment.createdAt)}</div>
+                        {comment.userId === currentUser?.id || canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteComment(comment)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-rose-300/15 bg-rose-400/5 text-rose-100/60 hover:bg-rose-400/15 hover:text-rose-100"
+                            title="Delete comment"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span className="sr-only">Delete comment</span>
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="mt-1 whitespace-pre-wrap text-sm font-bold text-white/65">
                       <MentionText text={comment.body} users={mentionUsers} />
@@ -12363,30 +12389,74 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         return;
       }
 
-      const { error } = await supabase.from("event_comments").insert({
-        event_id: event.id,
-        user_id: currentUser.id,
-        body: cleanBody,
-        mention_user_ids: mentionUserIds,
-      });
-      if (error) {
+      try {
+        const payload = await dashboardApiRequest("/api/comments", {
+          method: "POST",
+          body: {
+            eventId: event.id,
+            body: cleanBody,
+            mentionUserIds,
+          },
+        });
+        if (payload?.comment) {
+          setComments((prev) => {
+            const nextComment = mapSupabaseComment(payload.comment);
+            return prev.some((comment) => comment.id === nextComment.id) ? prev : [...prev, nextComment];
+          });
+        }
+        setCommentsError("");
+        await loadComments();
+        const emailSent = Number(payload?.emailNotifications?.sent || 0);
+        showToast(emailSent ? `Comment posted · ${emailSent} mention email${emailSent === 1 ? "" : "s"} sent` : "Comment posted");
+        logActivity({
+          action: "event_comment_created",
+          entityType: "event",
+          entityId: event.id,
+          message: `Comment added · ${event.name} · ${dayLabelFromISO(event.date)}`,
+          meta: { eventId: event.id, date: event.date, name: event.name, mentionCount: mentionUserIds.length, mentionEmailSent: emailSent },
+        });
+      } catch (error) {
         const message = error.message || "Could not post comment.";
         setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
         showToast("Comment failed", "error");
         throw error;
       }
-      setCommentsError("");
-      await loadComments();
-      showToast("Comment posted");
-      logActivity({
-        action: "event_comment_created",
-        entityType: "event",
-        entityId: event.id,
-        message: `Comment added · ${event.name} · ${dayLabelFromISO(event.date)}`,
-        meta: { eventId: event.id, date: event.date, name: event.name, mentionCount: mentionUserIds.length },
-      });
     },
     [currentUser, loadComments, mentionUsers, showToast, logActivity],
+  );
+
+  const deleteEventComment = useCallback(
+    async (comment) => {
+      if (!comment?.id) return;
+      if (String(comment.id).startsWith("local-")) {
+        setComments((prev) => prev.filter((item) => item.id !== comment.id));
+        showToast("Comment deleted");
+        return;
+      }
+      if (!currentUser?.id) {
+        showToast("Login required to delete comment", "error");
+        return;
+      }
+      const confirmed = window.confirm("Delete this comment?");
+      if (!confirmed) return;
+
+      const previousComments = comments;
+      setComments((prev) => prev.filter((item) => item.id !== comment.id));
+      try {
+        await dashboardApiRequest("/api/comments", {
+          method: "DELETE",
+          body: { id: comment.id },
+        });
+        await loadComments();
+        showToast("Comment deleted");
+      } catch (error) {
+        setComments(previousComments);
+        const message = error.message || "Could not delete comment.";
+        setCommentsError(message.toLowerCase().includes("event_comments") ? "Run supabase/event_comments.sql in Supabase SQL Editor to enable comments." : message);
+        showToast("Delete failed", "error");
+      }
+    },
+    [comments, currentUser?.id, loadComments, showToast],
   );
 
   const deleteEventDay = async (event) => {
@@ -13164,6 +13234,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   onShare={() => shareEvent(focusedEvent)}
                   onOpenDetails={() => setPreviewEvent(focusedEvent)}
                   onAddComment={addEventComment}
+                  onDeleteComment={deleteEventComment}
                 />
               </section>
             ) : (
@@ -13277,6 +13348,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                         onShare={() => shareEvent(event)}
                         onOpenDetails={() => setPreviewEvent(event)}
                         onAddComment={addEventComment}
+                        onDeleteComment={deleteEventComment}
                       />
                     </div>
                   ))}
@@ -13360,6 +13432,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
         commentsError={commentsError}
         currentUser={currentUser}
         onAddComment={addEventComment}
+        onDeleteComment={deleteEventComment}
         onClose={() => setPreviewEvent(null)}
         onEdit={openEditFromPreview}
         onDelete={deleteEventDay}
