@@ -4856,6 +4856,56 @@ function computeLinearTrend(sortedLinks) {
   return { slope, intercept, t0, slopePerMonth: slope * 30, projectToDate, valueAt };
 }
 
+// For each DJ in an upcoming event's lineup, compute their historical performance stats.
+// Returns array of { dj, role, allNights, allAvgSales, allAvgNett, seriesNights, seriesAvgSales, seriesAvgNett, isVeteran, djAdjustedForecast }
+function buildDjLineupInsights(event, sameEventLinks, allLinks) {
+  const slots = (event?.slots || []).filter((s) => s?.dj && !String(s.dj).includes("TBD") && normalizeSlotRole(s.role) !== "MC");
+  if (!slots.length) return [];
+
+  const now = Date.now();
+  return slots.map((slot) => {
+    const dj = canonicalDjName(slot.dj) || slot.dj;
+    const role = slot.role || "DJ";
+
+    // All historical nights this DJ appeared
+    const allDjNights = allLinks.filter((l) => l.djNames.some((n) => canonicalDjName(n) === dj || n === dj));
+    const allAvgSales = average(allDjNights.map((l) => l.total));
+    const allAvgNett  = average(allDjNights.map((l) => l.pl.nett));
+
+    // Nights in this specific series
+    const seriesNights = sameEventLinks.filter((l) => l.djNames.some((n) => canonicalDjName(n) === dj || n === dj));
+    const seriesAvgSales = seriesNights.length ? average(seriesNights.map((l) => l.total)) : null;
+    const seriesAvgNett  = seriesNights.length ? average(seriesNights.map((l) => l.pl.nett)) : null;
+
+    // DJ-adjusted forecast: series avg if veteran, otherwise all-night avg
+    const djAdjustedForecast = seriesAvgSales ?? allAvgSales;
+
+    // Recency-weighted personal avg (how they've been doing lately)
+    const djRecentForecast = allDjNights.length
+      ? recencyWeightedAvg([...allDjNights].sort((a, b) => a.row.date.localeCompare(b.row.date)))
+      : 0;
+
+    // Best night
+    const bestNight = allDjNights.reduce((best, l) => (!best || l.total > best.total ? l : best), null);
+
+    // Trend in their performances
+    const djTrend = allDjNights.length >= 3
+      ? computeLinearTrend([...allDjNights].sort((a, b) => a.row.date.localeCompare(b.row.date)))
+      : null;
+
+    return {
+      dj, role,
+      allNights: allDjNights.length,
+      allAvgSales, allAvgNett,
+      seriesNights: seriesNights.length,
+      seriesAvgSales, seriesAvgNett,
+      djAdjustedForecast, djRecentForecast,
+      bestNight, djTrend,
+      isVeteran: seriesNights.length > 0,
+    };
+  });
+}
+
 function buildSalesEventLinks(events, salesRows) {
   const eventsByDate = new Map();
   for (const event of events || []) {
@@ -5567,6 +5617,117 @@ function EventNightAnalytics({ insights }) {
           targetDate={selectedForecast.event.date}
           eventName={selectedForecast.event.name}
         />
+      )}
+    </div>
+  );
+}
+
+function LineupProjectionPanel({ djInsights, seriesAvg }) {
+  if (!djInsights || !djInsights.length) return null;
+
+  const maxSales = Math.max(...djInsights.map((d) => d.djAdjustedForecast || 0), seriesAvg || 0, 1);
+
+  return (
+    <div className="border-t border-white/10 px-4 pb-4 pt-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] font-black uppercase tracking-widest text-purple-200/60">Lineup Projection</div>
+        <div className="text-[9px] font-bold text-white/25">{djInsights.length} DJ{djInsights.length !== 1 ? "s" : ""} booked</div>
+      </div>
+
+      <div className="space-y-2">
+        {djInsights.map((dj) => {
+          const barPct = maxSales > 0 ? Math.round((dj.djAdjustedForecast / maxSales) * 100) : 0;
+          const trendDir = dj.djTrend ? (dj.djTrend.slopePerMonth >= 1000 ? "▲" : dj.djTrend.slopePerMonth <= -1000 ? "▼" : "→") : null;
+          const trendColor = trendDir === "▲" ? "text-emerald-400" : trendDir === "▼" ? "text-red-400" : "text-white/30";
+
+          return (
+            <div key={dj.dj} className={`rounded-xl border px-3 py-2.5 ${dj.isVeteran ? "border-purple-400/20 bg-purple-400/[0.05]" : "border-white/10 bg-white/[0.03]"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-sm font-black text-white">{dj.dj}</span>
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${dj.role === "Headliner" ? "border-amber-300/30 bg-amber-400/10 text-amber-200" : "border-white/10 bg-white/5 text-white/35"}`}>
+                      {dj.role}
+                    </span>
+                    {dj.isVeteran ? (
+                      <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-1.5 py-0.5 text-[9px] font-black text-purple-200">
+                        {dj.seriesNights}× series vet
+                      </span>
+                    ) : dj.allNights > 0 ? (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-black text-white/35">
+                        Series debut · {dj.allNights} other nights
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-amber-300/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] font-black text-amber-300/60">
+                        No history
+                      </span>
+                    )}
+                    {trendDir && (
+                      <span className={`text-[9px] font-black ${trendColor}`}>{trendDir} {trendDir !== "→" ? salesFmtRMFull(Math.abs(dj.djTrend.slopePerMonth)) + "/mo" : "flat"}</span>
+                    )}
+                  </div>
+
+                  {/* Bar */}
+                  {dj.djAdjustedForecast > 0 && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className={`h-full rounded-full transition-all ${dj.isVeteran ? "bg-purple-400" : "bg-white/25"}`}
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                      <span className="w-20 text-right text-[10px] font-black text-white/60">{salesFmtRMFull(dj.djAdjustedForecast)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Stats */}
+                <div className="flex shrink-0 gap-3 text-right">
+                  {dj.isVeteran && dj.seriesAvgSales != null && (
+                    <div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-purple-300/50">Series avg</div>
+                      <div className="text-xs font-black text-purple-200">{salesFmtRMFull(dj.seriesAvgSales)}</div>
+                    </div>
+                  )}
+                  {dj.allNights > 0 && (
+                    <div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-white/25">All nights</div>
+                      <div className="text-xs font-black text-white/60">{salesFmtRMFull(dj.allAvgSales)}</div>
+                    </div>
+                  )}
+                  {dj.bestNight && (
+                    <div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Best night</div>
+                      <div className="text-xs font-black text-emerald-300">{salesFmtRMFull(dj.bestNight.total)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* DJ-adjusted forecast summary */}
+      {djInsights.some((d) => d.djAdjustedForecast > 0) && (
+        <div className="rounded-xl border border-purple-400/20 bg-purple-400/[0.06] px-3 py-2.5">
+          <div className="text-[9px] font-black uppercase tracking-wider text-purple-200/50">DJ-Adjusted Forecast</div>
+          <div className="mt-1 flex flex-wrap gap-4">
+            {djInsights.filter((d) => d.djAdjustedForecast > 0).map((d) => (
+              <div key={d.dj} className="text-center">
+                <div className="text-[9px] font-bold text-white/35">{d.dj}</div>
+                <div className="text-sm font-black text-purple-100">{salesFmtRMFull(d.djAdjustedForecast)}</div>
+                <div className="text-[9px] text-white/25">{d.isVeteran ? `${d.seriesNights}× series` : `${d.allNights} nights`}</div>
+              </div>
+            ))}
+            {seriesAvg > 0 && (
+              <div className="border-l border-white/10 pl-4 text-center">
+                <div className="text-[9px] font-bold text-white/35">Series avg</div>
+                <div className="text-sm font-black text-white/60">{salesFmtRMFull(seriesAvg)}</div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -11822,7 +11983,8 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
         const forecastNett = average(basis.map((l) => l.pl.nett));
         const isBrandMatch = !exactLinks.length && brandLinks.length > 0;
         const confidence = exactLinks.length ? "High" : brandLinks.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
-        return { event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, basis, naiveForecast, recencyForecast, trendProjection, trend, forecastSales, forecastNett, confidence };
+        const djInsights = buildDjLineupInsights(event, sameEventLinks, historical);
+        return { event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, basis, naiveForecast, recencyForecast, trendProjection, trend, forecastSales, forecastNett, confidence, djInsights };
       });
       if (weekEvents.length) {
         const confirmedRevenue = weekEvents.filter((e) => e.event.status === "Confirmed").reduce((s, e) => s + e.forecastSales, 0);
@@ -11871,7 +12033,7 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
               </div>
             </div>
             <div className="space-y-2 px-5 pb-4">
-              {week.weekEvents.map(({ event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, naiveForecast, recencyForecast, trendProjection, trend, forecastNett, confidence }) => {
+              {week.weekEvents.map(({ event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, naiveForecast, recencyForecast, trendProjection, trend, forecastNett, confidence, djInsights }) => {
                 const isConfirmed = event.status === "Confirmed";
                 const isExpanded = expandedEventId === event.id;
                 const trendDir = trend ? (trend.slopePerMonth >= 1500 ? "▲" : trend.slopePerMonth <= -1500 ? "▼" : "→") : null;
@@ -11961,6 +12123,11 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
                             )}
                           </div>
                         )}
+                        {/* DJ Lineup Projections */}
+                        <LineupProjectionPanel
+                          djInsights={djInsights}
+                          seriesAvg={naiveForecast}
+                        />
                         <div className="flex justify-end border-t border-white/10 px-4 py-2">
                           <button
                             type="button"
