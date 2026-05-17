@@ -4782,6 +4782,40 @@ function quantile(numbers, q) {
   return valid[lo] * (1 - weight) + valid[hi] * weight;
 }
 
+function recencyWeightedAvg(sortedLinks, halfLifeDays = 180) {
+  let wSum = 0, wTotal = 0;
+  const now = Date.now();
+  for (const link of sortedLinks) {
+    const days = (now - isoToDate(link.row.date).getTime()) / 86400000;
+    const w = Math.exp(-days * Math.LN2 / halfLifeDays);
+    wSum += link.total * w;
+    wTotal += w;
+  }
+  return wTotal > 0 ? wSum / wTotal : 0;
+}
+
+function computeLinearTrend(sortedLinks) {
+  if (sortedLinks.length < 2) return null;
+  const t0 = isoToDate(sortedLinks[0].row.date).getTime();
+  const pts = sortedLinks.map((l) => ({
+    x: (isoToDate(l.row.date).getTime() - t0) / 86400000,
+    y: l.total,
+  }));
+  const n = pts.length;
+  const sx = pts.reduce((s, p) => s + p.x, 0);
+  const sy = pts.reduce((s, p) => s + p.y, 0);
+  const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
+  const sx2 = pts.reduce((s, p) => s + p.x * p.x, 0);
+  const d = n * sx2 - sx * sx;
+  if (Math.abs(d) < 1e-9) return null;
+  const slope = (n * sxy - sx * sy) / d;
+  const intercept = (sy - slope * sx) / n;
+  const valueAtDays = (days) => slope * days + intercept;
+  const projectToDate = (iso) => Math.max(0, valueAtDays((isoToDate(iso).getTime() - t0) / 86400000));
+  const valueAt = (iso) => valueAtDays((isoToDate(iso).getTime() - t0) / 86400000);
+  return { slope, intercept, t0, slopePerMonth: slope * 30, projectToDate, valueAt };
+}
+
 function buildSalesEventLinks(events, salesRows) {
   const eventsByDate = new Map();
   for (const event of events || []) {
@@ -5244,6 +5278,8 @@ function EventNightAnalytics({ insights }) {
     return comparisonOptions.find((link) => link.sameEvent) || null;
   }, [comparisonOptions]);
 
+  const sameEventLinks = useMemo(() => comparisonOptions.filter((link) => link.sameEvent), [comparisonOptions]);
+
   const toggleManualNight = (id) => {
     const key = String(id);
     setCompareMode("manual");
@@ -5471,6 +5507,235 @@ function EventNightAnalytics({ insights }) {
             </div>
           </div>
         </div>
+      </div>
+      {sameEventLinks.length >= 1 && selectedForecast && (
+        <ForecastDetailPanel
+          links={sameEventLinks}
+          targetDate={selectedForecast.event.date}
+          eventName={selectedForecast.event.name}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForecastDetailPanel({ links, targetDate, eventName }) {
+  const sorted = useMemo(() => [...links].sort((a, b) => a.row.date.localeCompare(b.row.date)), [links]);
+  const sales = useMemo(() => sorted.map((l) => l.total), [sorted]);
+
+  const avg    = average(sales);
+  const med    = median(sales);
+  const p25    = quantile(sales, 0.25);
+  const p75    = quantile(sales, 0.75);
+  const minVal = Math.min(...sales);
+  const maxVal = Math.max(...sales);
+
+  const recencyForecast = useMemo(() => recencyWeightedAvg(sorted), [sorted]);
+  const trend           = useMemo(() => computeLinearTrend(sorted), [sorted]);
+  const trendProjection = useMemo(() => trend && targetDate ? trend.projectToDate(targetDate) : null, [trend, targetDate]);
+
+  // ── SVG chart ──────────────────────────────────────────────────────────────
+  const W = 900, H = 220;
+  const pL = 56, pR = 76, pT = 20, pB = 36;
+  const iW = W - pL - pR, iH = H - pT - pB;
+
+  const t0   = isoToDate(sorted[0].row.date).getTime();
+  const tEnd = targetDate ? isoToDate(targetDate).getTime() : Date.now();
+  const tRange = Math.max(1, tEnd - t0);
+
+  const dateToX    = (iso) => pL + ((isoToDate(iso).getTime() - t0) / tRange) * iW;
+  const targetX    = pL + iW;
+
+  const yPad    = (maxVal - minVal) * 0.18 || maxVal * 0.18 || 5000;
+  const yMin    = Math.max(0, minVal - yPad);
+  const yMax    = maxVal + yPad;
+  const yRange  = Math.max(1, yMax - yMin);
+  const valueToY = (v) => pT + (1 - (v - yMin) / yRange) * iH;
+
+  const fmtK = (v) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}K` : String(Math.round(v));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => yMin + t * yRange);
+
+  const now = Date.now();
+  const maxAgeMs = Math.max(1, now - t0);
+
+  // X-axis labels: first + last + up to 4 middle points
+  const xLabelIdxs = (() => {
+    const set = new Set([0, sorted.length - 1]);
+    if (sorted.length > 2) {
+      const step = Math.max(1, Math.floor((sorted.length - 1) / 4));
+      for (let i = step; i < sorted.length - 1; i += step) set.add(i);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  })();
+
+  // Trend line coords
+  const trendCoords = trend && sorted.length >= 2 ? (() => {
+    const x1 = dateToX(sorted[0].row.date);
+    const y1 = valueToY(trend.valueAt(sorted[0].row.date));
+    const xLast = dateToX(sorted[sorted.length - 1].row.date);
+    const yLast = valueToY(trend.valueAt(sorted[sorted.length - 1].row.date));
+    const x2 = targetDate ? targetX : xLast;
+    const y2 = targetDate ? valueToY(Math.max(yMin, trendProjection)) : yLast;
+    return { x1, y1, xLast, yLast, x2, y2 };
+  })() : null;
+
+  const trendDir = trend ? (trend.slopePerMonth >= 1500 ? "growing" : trend.slopePerMonth <= -1500 ? "declining" : "flat") : null;
+
+  return (
+    <div className="border-t border-white/10 p-4 space-y-3">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Event Trend Analysis — {eventName}</div>
+          <div className="mt-0.5 text-xs font-bold text-white/35">
+            {sorted.length} historical runs · {targetDate ? `next run ${salesFmtDate(targetDate)}` : "no upcoming run selected"}
+          </div>
+        </div>
+        {trend && (
+          <div className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${trendDir === "growing" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300" : trendDir === "declining" ? "border-red-400/30 bg-red-400/10 text-red-300" : "border-white/10 bg-white/5 text-white/40"}`}>
+            {trend.slopePerMonth >= 0 ? "▲" : "▼"} {salesFmtRMFull(Math.abs(trend.slopePerMonth))}/month
+          </div>
+        )}
+      </div>
+
+      {/* Chart */}
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: "block" }}>
+          {/* P25–P75 band */}
+          <rect
+            x={pL} y={valueToY(p75)} width={iW}
+            height={Math.max(0, valueToY(p25) - valueToY(p75))}
+            fill="rgba(139,92,246,0.09)"
+          />
+          {/* Grid lines */}
+          {yTicks.map((v, i) => (
+            <g key={i}>
+              <line x1={pL} y1={valueToY(v)} x2={pL + iW} y2={valueToY(v)} stroke="rgba(255,255,255,0.05)" strokeWidth={1} />
+              <text x={pL - 5} y={valueToY(v) + 3.5} textAnchor="end" fontSize={9} fill="rgba(255,255,255,0.28)" fontFamily="monospace">{fmtK(v)}</text>
+            </g>
+          ))}
+          {/* Mean line */}
+          <line x1={pL} y1={valueToY(avg)} x2={pL + iW} y2={valueToY(avg)} stroke="rgba(103,232,249,0.40)" strokeWidth={1.5} strokeDasharray="5 4" />
+          <text x={pL + iW + 4} y={valueToY(avg) + 3.5} fontSize={9} fill="rgba(103,232,249,0.65)" fontFamily="monospace">avg</text>
+          {/* Median line */}
+          <line x1={pL} y1={valueToY(med)} x2={pL + iW} y2={valueToY(med)} stroke="rgba(167,139,250,0.40)" strokeWidth={1.5} strokeDasharray="2 4" />
+          <text x={pL + iW + 4} y={valueToY(med) + 3.5} fontSize={9} fill="rgba(167,139,250,0.65)" fontFamily="monospace">med</text>
+          {/* Trend line — solid historical part */}
+          {trendCoords && (
+            <>
+              <line x1={trendCoords.x1} y1={trendCoords.y1} x2={trendCoords.xLast} y2={trendCoords.yLast}
+                stroke="rgba(251,191,36,0.55)" strokeWidth={1.5} />
+              {targetDate && (
+                <line x1={trendCoords.xLast} y1={trendCoords.yLast} x2={trendCoords.x2} y2={trendCoords.y2}
+                  stroke="rgba(251,191,36,0.30)" strokeWidth={1.5} strokeDasharray="6 5" />
+              )}
+            </>
+          )}
+          {/* Historical dots — faded for old, bright for recent */}
+          {sorted.map((link, i) => {
+            const x = dateToX(link.row.date);
+            const y = valueToY(link.total);
+            const ageMs = now - isoToDate(link.row.date).getTime();
+            const recency = Math.max(0, 1 - ageMs / maxAgeMs);
+            const opacity = 0.25 + recency * 0.75;
+            return (
+              <g key={String(link.row.id)}>
+                <circle cx={x} cy={y} r={5.5} fill={`rgba(103,232,249,${opacity})`} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
+                <title>{salesFmtDate(link.row.date)}: {salesFmtRMFull(link.total)}</title>
+              </g>
+            );
+          })}
+          {/* Target date vertical + projected points */}
+          {targetDate && (
+            <g>
+              <line x1={targetX} y1={pT} x2={targetX} y2={pT + iH} stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="3 4" />
+              {trendProjection != null && (
+                <circle cx={targetX} cy={valueToY(trendProjection)} r={5} fill="none" stroke="rgba(251,191,36,0.85)" strokeWidth={2} />
+              )}
+              <circle cx={targetX} cy={valueToY(recencyForecast)} r={5} fill="none" stroke="rgba(103,232,249,0.85)" strokeWidth={2} />
+              <text x={targetX} y={pT + iH + 16} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.25)">target</text>
+            </g>
+          )}
+          {/* X-axis labels */}
+          {xLabelIdxs.map((idx) => (
+            <text key={idx} x={dateToX(sorted[idx].row.date)} y={pT + iH + 16} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.22)">
+              {salesFmtDate(sorted[idx].row.date)}
+            </text>
+          ))}
+        </svg>
+        {/* Legend */}
+        <div className="flex flex-wrap items-center gap-4 border-t border-white/10 px-4 py-2">
+          <div className="flex items-center gap-1.5">
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="rgba(103,232,249,0.55)" strokeWidth="1.5" strokeDasharray="5 4" /></svg>
+            <span className="text-[9px] font-black text-white/30">Mean</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="rgba(167,139,250,0.55)" strokeWidth="1.5" strokeDasharray="2 4" /></svg>
+            <span className="text-[9px] font-black text-white/30">Median</span>
+          </div>
+          {trend && <div className="flex items-center gap-1.5">
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="rgba(251,191,36,0.65)" strokeWidth="1.5" /></svg>
+            <span className="text-[9px] font-black text-white/30">Trend</span>
+          </div>}
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-5 rounded" style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)" }} />
+            <span className="text-[9px] font-black text-white/30">P25–P75 band</span>
+          </div>
+          {targetDate && <div className="flex items-center gap-1.5">
+            <svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="rgba(103,232,249,0.85)" strokeWidth="1.5" /></svg>
+            <span className="text-[9px] font-black text-white/30">Recency proj.</span>
+          </div>}
+          {targetDate && trend && <div className="flex items-center gap-1.5">
+            <svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="rgba(251,191,36,0.85)" strokeWidth="1.5" /></svg>
+            <span className="text-[9px] font-black text-white/30">Trend proj.</span>
+          </div>}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        {[
+          { label: "Min",    value: minVal, cls: "text-red-300" },
+          { label: "P25",    value: p25,    cls: "text-white/55" },
+          { label: "Median", value: med,    cls: "text-purple-300" },
+          { label: "Mean",   value: avg,    cls: "text-cyan-200" },
+          { label: "P75",    value: p75,    cls: "text-white/55" },
+          { label: "Max",    value: maxVal, cls: "text-emerald-300" },
+        ].map(({ label, value, cls }) => (
+          <div key={label} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/25">{label}</div>
+            <div className={`mt-1 text-xs font-black ${cls}`}>{salesFmtRMFull(value)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Three forecast methods */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2.5">
+          <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Naive Average</div>
+          <div className="mt-1 text-sm font-black text-white">{salesFmtRMFull(avg)}</div>
+          <div className="mt-0.5 text-[10px] font-bold text-white/30">All {sorted.length} runs, equal weight</div>
+        </div>
+        <div className="rounded-xl border border-cyan-300/20 bg-cyan-400/[0.08] px-3 py-2.5">
+          <div className="text-[9px] font-black uppercase tracking-wider text-cyan-200/50">Recency-Weighted</div>
+          <div className="mt-1 text-sm font-black text-cyan-100">{salesFmtRMFull(recencyForecast)}</div>
+          <div className="mt-0.5 text-[10px] font-bold text-white/30">180-day half-life · recent runs weigh more</div>
+        </div>
+        {trendProjection != null ? (
+          <div className={`rounded-xl border px-3 py-2.5 ${trendProjection >= avg ? "border-emerald-300/20 bg-emerald-400/[0.06]" : "border-red-400/20 bg-red-400/[0.06]"}`}>
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Trend Projection</div>
+            <div className={`mt-1 text-sm font-black ${trendProjection >= avg ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(trendProjection)}</div>
+            <div className="mt-0.5 text-[10px] font-bold text-white/30">
+              Linear · {trend.slopePerMonth >= 0 ? "+" : ""}{salesFmtRMFull(trend.slopePerMonth)}/month
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+            <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Trend Projection</div>
+            <div className="mt-1 text-sm font-black text-white/25">Need ≥ 2 runs</div>
+            <div className="mt-0.5 text-[10px] font-bold text-white/20">Not enough history</div>
+          </div>
+        )}
       </div>
     </div>
   );
