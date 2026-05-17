@@ -11628,10 +11628,8 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
     if (!isSupabaseConfigured) return;
     (async () => {
       setLoadingRows(true);
-      const today = new Date();
-      const from = new Date(today); from.setDate(today.getDate() - 28);
-      const fromISO = isoFromDate(from);
-      const { data, error } = await supabase.from("weekly_sales").select("*").gte("date", fromISO).order("date");
+      // Load ALL historical sales so forecast engine has full history to work with
+      const { data, error } = await supabase.from("weekly_sales").select("*").order("date");
       if (!error) setSalesRows(data || []);
       setLoadingRows(false);
     })();
