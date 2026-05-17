@@ -218,6 +218,7 @@ const dashboardViewRoutes = {
   Finance: "/finance",
   DJPayments: "/payments",
   Sales: "/sales",
+  Planning: "/planning",
 };
 
 const routeDashboardViews = Object.fromEntries(Object.entries(dashboardViewRoutes).map(([view, path]) => [path, view]));
@@ -11274,6 +11275,386 @@ function ActivityMonitorPage({ userRole }) {
 }
 
 
+// ─── Planning & Forecasting Page ─────────────────────────────────────────────
+
+const NIGHT_PRESETS = {
+  friday:   { label: "Friday",    utilities: 1500, manPower: 13100, localDj: 1500,  bottleRate: 0.40, intlArtist: 0 },
+  saturday: { label: "Saturday",  utilities: 1500, manPower: 13100, localDj: 2300,  bottleRate: 0.40, intlArtist: 0 },
+  wednesday:{ label: "Wednesday", utilities: 1500, manPower: 9500,  localDj: 1500,  bottleRate: 0.40, intlArtist: 0 },
+  thursday: { label: "Thursday",  utilities: 1500, manPower: 9500,  localDj: 2000,  bottleRate: 0.40, intlArtist: 0 },
+  custom:   { label: "Custom",    utilities: 1500, manPower: 9500,  localDj: 2000,  bottleRate: 0.40, intlArtist: 0 },
+};
+
+function computeBreakEven({ utilities, manPower, localDj, bottleRate, intlArtist, misc = 0, otherIncome = 0 }) {
+  const fixed = utilities + manPower + localDj + intlArtist + misc;
+  const variableRate = bottleRate;
+  const contributionMargin = 1 - variableRate;
+  if (contributionMargin <= 0) return null;
+  const needed = Math.max(0, (fixed - otherIncome) / contributionMargin);
+  return { needed, fixed, variable: needed * variableRate, contributionMargin };
+}
+
+function ragStatus(actual, target) {
+  if (!target) return "none";
+  const ratio = actual / target;
+  if (ratio >= 1) return "green";
+  if (ratio >= 0.8) return "amber";
+  return "red";
+}
+
+function ragClasses(status) {
+  if (status === "green") return { border: "border-emerald-400/30", bg: "bg-emerald-400/10", text: "text-emerald-300", dot: "bg-emerald-400" };
+  if (status === "amber") return { border: "border-amber-400/30", bg: "bg-amber-400/10", text: "text-amber-300", dot: "bg-amber-400" };
+  if (status === "red")   return { border: "border-red-400/30",   bg: "bg-red-400/10",   text: "text-red-300",   dot: "bg-red-500" };
+  return { border: "border-white/10", bg: "bg-white/5", text: "text-white/40", dot: "bg-white/20" };
+}
+
+function PlanningPage({ events = [], onToast, onOpenEvent }) {
+  const [salesRows, setSalesRows] = useState([]);
+  const [loadingRows, setLoadingRows] = useState(isSupabaseConfigured);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    (async () => {
+      setLoadingRows(true);
+      const today = new Date();
+      const from = new Date(today); from.setDate(today.getDate() - 28);
+      const fromISO = isoFromDate(from);
+      const { data, error } = await supabase.from("weekly_sales").select("*").gte("date", fromISO).order("date");
+      if (!error) setSalesRows(data || []);
+      setLoadingRows(false);
+    })();
+  }, []);
+
+  // ── Break-even calculator ─────────────────────────────────────────────────
+  const [preset, setPreset] = useState("friday");
+  const [beFields, setBeFields] = useState({});
+  const [beOtherIncome, setBeOtherIncome] = useState(0);
+
+  const activePreset = NIGHT_PRESETS[preset] || NIGHT_PRESETS.friday;
+  const beValues = { ...activePreset, ...beFields };
+  const beResult = computeBreakEven({ ...beValues, otherIncome: Number(beOtherIncome) || 0 });
+  const setBeField = (k, v) => setBeFields((prev) => ({ ...prev, [k]: Number(v) || 0 }));
+
+  // ── Budget vs actual (past 4 weeks) ───────────────────────────────────────
+  const budgetWeeks = useMemo(() => {
+    const today = new Date();
+    const weeks = [];
+    for (let w = 3; w >= 0; w--) {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() - w * 7);
+      const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+      const startISO = isoFromDate(weekStart);
+      const endISO = isoFromDate(weekEnd);
+      const rows = salesRows.filter((r) => r.date >= startISO && r.date <= endISO);
+      const actual = rows.reduce((s, r) => s + (Number(r.pos_total) || 0) + (Number(r.ticketmelon_total) || 0), 0);
+      const target = rows.reduce((s, r) => s + (Number(r.weekly_target) || salesDefaultsForISO(r.date).weekly_target || 0), 0);
+      const status = ragStatus(actual, target);
+      weeks.push({ startISO, endISO, rows, actual, target, status, label: weekStart.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) + " – " + weekEnd.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) });
+    }
+    return weeks;
+  }, [salesRows]);
+
+  // ── Forward pipeline (next 4 weeks) ──────────────────────────────────────
+  const allLinks = useMemo(() => buildSalesEventLinks(events, salesRows), [events, salesRows]);
+  const historical = useMemo(() => allLinks.filter((l) => l.total > 0 || l.pl.incomeTotal > 0), [allLinks]);
+
+  const pipeline = useMemo(() => {
+    const today = new Date();
+    const todayISO = isoFromDate(today);
+    const in28 = new Date(today); in28.setDate(today.getDate() + 28);
+    const endISO = isoFromDate(in28);
+
+    const upcoming = events
+      .filter((e) => e?.date && e.date >= todayISO && e.date <= endISO)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const weeks = [];
+    for (let w = 0; w < 4; w++) {
+      const weekStart = new Date(today); weekStart.setDate(today.getDate() + w * 7);
+      const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+      const startISO = isoFromDate(weekStart);
+      const endISO2 = isoFromDate(weekEnd);
+      const weekEvents = upcoming.filter((e) => e.date >= startISO && e.date <= endISO2).map((event) => {
+        const eventKey = eventNameKey(event.name);
+        const djNames = eventDjNames(event);
+        const eventMatches = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
+        const djMatches = historical.filter((l) => l.row.date < event.date && l.djNames.some((n) => djNames.includes(n)));
+        const dayMatches = historical.filter((l) => isoToDate(l.row.date).getDay() === isoToDate(event.date).getDay() && l.row.date < event.date);
+        const basis = eventMatches.length ? eventMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
+        const forecastSales = average(basis.map((l) => l.total));
+        const forecastNett = average(basis.map((l) => l.pl.nett));
+        const confidence = eventMatches.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
+        return { event, forecastSales, forecastNett, confidence };
+      });
+      if (weekEvents.length) {
+        const confirmedEvents = weekEvents.filter((e) => e.event.status === "Confirmed");
+        const tentativeEvents = weekEvents.filter((e) => e.event.status !== "Confirmed");
+        const confirmedRevenue = confirmedEvents.reduce((s, e) => s + e.forecastSales, 0);
+        const tentativeRevenue = tentativeEvents.reduce((s, e) => s + e.forecastSales, 0);
+        weeks.push({ startISO, endISO: endISO2, weekEvents, confirmedEvents, tentativeEvents, confirmedRevenue, tentativeRevenue, label: weekStart.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) + " – " + weekEnd.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) });
+      }
+    }
+    return weeks;
+  }, [events, historical]);
+
+  const confidenceColors = { High: "text-emerald-300 border-emerald-300/30 bg-emerald-400/10", Med: "text-amber-300 border-amber-300/30 bg-amber-400/10", Low: "text-white/40 border-white/10 bg-white/5", None: "text-white/25 border-white/10 bg-white/5" };
+
+  return (
+    <div className="space-y-5 px-4 py-5 md:px-6 xl:px-8">
+      <div>
+        <h2 className="text-lg font-black text-white">Planning & Forecasting</h2>
+        <p className="mt-0.5 text-xs font-bold text-white/35">Break-even targets · Budget vs actual · Forward booking pipeline</p>
+      </div>
+
+      {/* ── Forward pipeline ──────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-purple-400/20 bg-purple-400/[0.04]">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-purple-300/60">Forward Booking Pipeline</div>
+            <div className="mt-0.5 text-sm font-black text-white">Next 4 weeks</div>
+          </div>
+          <div className="flex gap-3 text-right">
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Confirmed proj.</div>
+              <div className="text-sm font-black text-emerald-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.confirmedRevenue, 0))}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Tentative proj.</div>
+              <div className="text-sm font-black text-amber-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.tentativeRevenue, 0))}</div>
+            </div>
+          </div>
+        </div>
+        {pipeline.length ? pipeline.map((week) => (
+          <div key={week.startISO} className="border-b border-white/[0.06] last:border-0">
+            <div className="flex items-center justify-between px-5 py-2.5">
+              <div className="text-[10px] font-black uppercase tracking-wider text-white/35">{week.label}</div>
+              <div className="flex gap-4 text-right">
+                {week.confirmedRevenue > 0 && <div className="text-[10px] font-black text-emerald-300">{salesFmtRMFull(week.confirmedRevenue)} confirmed</div>}
+                {week.tentativeRevenue > 0 && <div className="text-[10px] font-black text-amber-300">{salesFmtRMFull(week.tentativeRevenue)} tentative</div>}
+              </div>
+            </div>
+            <div className="space-y-1.5 px-5 pb-3">
+              {week.weekEvents.map(({ event, forecastSales, forecastNett, confidence }) => {
+                const isConfirmed = event.status === "Confirmed";
+                return (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => onOpenEvent?.(event)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left transition hover:brightness-110 ${isConfirmed ? "border-emerald-300/20 bg-emerald-400/[0.06]" : "border-amber-300/15 bg-amber-400/[0.04]"}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isConfirmed ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-200" : "border-amber-300/30 bg-amber-400/10 text-amber-200"}`}>
+                            {isConfirmed ? "Confirmed" : "Tentative"}
+                          </span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${confidenceColors[confidence] || confidenceColors.None}`}>{confidence} conf.</span>
+                        </div>
+                        <div className="mt-1 text-xs font-black text-white">{event.name || "Untitled"}</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-white/35">{salesFmtDate(event.date)} · {event.stage || ""}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-black text-white">{forecastSales ? salesFmtRMFull(forecastSales) : <span className="text-white/25">No forecast</span>}</div>
+                        {forecastNett !== 0 && forecastSales > 0 && (
+                          <div className={`text-[10px] font-black ${forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(forecastNett)} nett</div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )) : (
+          <div className="px-5 py-10 text-center text-sm font-bold text-white/30">No events booked in the next 4 weeks.</div>
+        )}
+      </div>
+
+      {/* ── Budget vs actual RAG ──────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+        <div className="border-b border-white/10 px-5 py-4">
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Weekly Budget vs Actual</div>
+          <div className="mt-0.5 text-sm font-black text-white">Last 4 weeks</div>
+        </div>
+        {loadingRows ? (
+          <div className="px-5 py-8 text-center text-xs font-bold text-white/30">Loading…</div>
+        ) : (
+          <div className="divide-y divide-white/[0.06]">
+            {budgetWeeks.map((week) => {
+              const rag = ragClasses(week.status);
+              const pct = week.target > 0 ? Math.min(100, Math.round((week.actual / week.target) * 100)) : 0;
+              return (
+                <div key={week.startISO} className={`px-5 py-3 ${rag.bg}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2.5 w-2.5 rounded-full ${rag.dot}`} />
+                      <span className="text-xs font-black text-white">{week.label}</span>
+                      <span className={`text-[10px] font-black ${rag.text}`}>{week.status !== "none" ? pct + "% of target" : "No target set"}</span>
+                    </div>
+                    <div className="flex gap-5 text-right">
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Actual</div>
+                        <div className="text-sm font-black text-white">{salesFmtRMFull(week.actual)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Target</div>
+                        <div className="text-sm font-black text-white/60">{week.target ? salesFmtRMFull(week.target) : "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Gap</div>
+                        <div className={`text-sm font-black ${week.actual >= week.target ? "text-emerald-300" : "text-red-300"}`}>
+                          {week.target ? salesFmtRMFull(week.actual - week.target) : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {week.target > 0 && (
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div className={`h-full rounded-full transition-all ${week.status === "green" ? "bg-emerald-400" : week.status === "amber" ? "bg-amber-400" : "bg-red-500"}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                  {week.rows.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {week.rows.map((r) => {
+                        const rowTotal = (Number(r.pos_total) || 0) + (Number(r.ticketmelon_total) || 0);
+                        const rowTarget = Number(r.weekly_target) || salesDefaultsForISO(r.date).weekly_target || 0;
+                        const rowRag = ragClasses(ragStatus(rowTotal, rowTarget));
+                        return (
+                          <div key={r.id} className={`rounded-lg border px-2 py-1 text-[10px] font-black ${rowRag.border} ${rowRag.bg}`}>
+                            <span className="text-white/70">{salesFmtDate(r.date)}</span>
+                            <span className={`ml-2 ${rowRag.text}`}>{salesFmtRMFull(rowTotal)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Break-even calculator ─────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04]">
+        <div className="border-b border-white/10 px-5 py-4">
+          <div className="text-[10px] font-black uppercase tracking-widest text-cyan-300/60">Break-Even Calculator</div>
+          <div className="mt-0.5 text-sm font-black text-white">Minimum POS total to hit before the night turns profitable</div>
+        </div>
+        <div className="p-5 space-y-5">
+          {/* Preset picker */}
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(NIGHT_PRESETS).map(([key, p]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setPreset(key); setBeFields({}); }}
+                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${preset === key ? "border-cyan-300/40 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/35 hover:text-white"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Cost fields */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { key: "utilities",  label: "Utilities" },
+              { key: "manPower",   label: "Manpower" },
+              { key: "localDj",    label: "Local DJ" },
+              { key: "intlArtist", label: "Intl Artist" },
+              { key: "misc",       label: "Miscellaneous" },
+            ].map(({ key, label }) => (
+              <label key={key}>
+                <span className="block text-[9px] font-black uppercase tracking-wider text-white/30">{label}</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={beValues[key] ?? 0}
+                  onChange={(e) => { setPreset("custom"); setBeField(key, e.target.value); }}
+                  className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white outline-none focus:border-cyan-300/40"
+                />
+              </label>
+            ))}
+            <label>
+              <span className="block text-[9px] font-black uppercase tracking-wider text-white/30">Bottle cost %</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round((beValues.bottleRate ?? 0.40) * 100)}
+                onChange={(e) => { setPreset("custom"); setBeFields((prev) => ({ ...prev, bottleRate: Math.min(0.99, Math.max(0, Number(e.target.value) / 100)) })); }}
+                className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white outline-none focus:border-cyan-300/40"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="block text-[9px] font-black uppercase tracking-wider text-white/30">Other income (tickets, sponsorship…)</span>
+              <input
+                type="number"
+                min="0"
+                value={beOtherIncome}
+                onChange={(e) => setBeOtherIncome(e.target.value)}
+                className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white outline-none focus:border-cyan-300/40"
+              />
+            </label>
+          </div>
+
+          {/* Result */}
+          {beResult ? (
+            <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-cyan-300/60">Break-Even POS Total</div>
+                  <div className="mt-1 text-3xl font-black text-cyan-100">{salesFmtRMFull(beResult.needed)}</div>
+                  <div className="mt-1 text-xs font-bold text-white/40">
+                    Every RM above this is profit &middot; {Math.round(beResult.contributionMargin * 100)}% contribution margin
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-3">
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Fixed costs</div>
+                    <div className="text-sm font-black text-white">{salesFmtRMFull(beResult.fixed)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Variable (at BE)</div>
+                    <div className="text-sm font-black text-white">{salesFmtRMFull(beResult.variable)}</div>
+                  </div>
+                  {Number(beOtherIncome) > 0 && (
+                    <div>
+                      <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Other income</div>
+                      <div className="text-sm font-black text-emerald-300">{salesFmtRMFull(Number(beOtherIncome))}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 space-y-1 text-xs font-bold text-white/35">
+                {[
+                  [1.0, "Break-even"],
+                  [1.25, "25% above B/E"],
+                  [1.5, "50% above B/E"],
+                ].map(([mult, label]) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span>{label}</span>
+                    <span className="font-black text-white/60">{salesFmtRMFull(beResult.needed * mult)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-xs font-bold text-white/30">Enter costs to calculate break-even.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardApp({ onLogout, userRole, currentUser }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
@@ -12972,6 +13353,19 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <span className={headerIconsOnly ? "sr-only" : ""}>Payments</span>
               </Button>
             ) : null}
+            {canAccessSales ? (
+              <Button
+                onClick={() => navigateView("Planning")}
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                  view === "Planning"
+                    ? "bg-purple-400 text-black hover:bg-purple-300"
+                    : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <Target className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className={headerIconsOnly ? "sr-only" : ""}>Planning</span>
+              </Button>
+            ) : null}
             </div>
           </div>
           <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:items-center md:justify-end md:gap-2 md:overflow-visible md:pb-0">
@@ -13437,6 +13831,8 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <FinancePage events={events} onToast={showToast} />
           ) : view === "Sales" && canAccessSales ? (
             <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openSingleEvent} onOpenDj={openDjFromName} />
+          ) : view === "Planning" && canAccessSales ? (
+            <PlanningPage events={events} onToast={showToast} onOpenEvent={openSingleEvent} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
               events={events}
