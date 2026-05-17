@@ -513,14 +513,31 @@ function canonicalDjName(value) {
     .toUpperCase();
 }
 
+// Split a DJ slot string on B2B / F2F / B3B / B4B / VS / & concepts.
+// "Mr Yang B2B Tchuno"   → ["MR YANG", "TCHUNO"]
+// "DJ A F2F DJ B"        → ["DJ A", "DJ B"]
+// "DJ A B3B DJ B B3B C"  → ["DJ A", "DJ B", "C"]
+// "Single DJ"            → ["SINGLE DJ"]
+const DJ_SPLIT_RE = /\s+(?:b[2-9]b|f2f|back\s*2\s*back|face\s*2\s*face|vs\.?|versus|&)\s+/i;
+
+function splitDjSlot(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  return raw.split(DJ_SPLIT_RE).map(canonicalDjName).filter((n) => n && !n.includes("TBD"));
+}
+
+// Detect the collab format label from a slot string
+function djSlotConnector(value) {
+  const m = String(value || "").match(/\b(b[2-9]b|f2f|back\s*2\s*back|face\s*2\s*face|vs\.?|versus)\b/i);
+  return m ? m[1].toUpperCase() : "";
+}
+
 function parseDjLineup(value) {
   const displayName = canonicalDjName(value);
   if (!displayName) return { displayName: "", connector: "", participants: [] };
-  return {
-    displayName,
-    connector: "",
-    participants: [displayName],
-  };
+  const connector = djSlotConnector(value);
+  const participants = splitDjSlot(value);
+  return { displayName, connector, participants };
 }
 
 function slotLineupForSave(slot) {
@@ -4723,9 +4740,10 @@ function eventDjNames(event) {
   const names = new Set();
   for (const slot of event?.slots || []) {
     if (slot?.role === "MC") continue;
-    const canonical = canonicalDjName(slot?.dj);
-    if (!canonical || canonical.includes("TBD")) continue;
-    names.add(canonical);
+    // Split B2B / F2F / B3B so each individual DJ is tracked separately
+    for (const dj of splitDjSlot(slot?.dj)) {
+      names.add(dj);
+    }
   }
   return Array.from(names);
 }
@@ -4862,10 +4880,22 @@ function buildDjLineupInsights(event, sameEventLinks, allLinks) {
   const slots = (event?.slots || []).filter((s) => s?.dj && !String(s.dj).includes("TBD") && normalizeSlotRole(s.role) !== "MC");
   if (!slots.length) return [];
 
+  // Expand B2B / F2F / B3B slots into individual DJs, keeping track of the collab format
+  const expandedSlots = [];
+  for (const slot of slots) {
+    const individuals = splitDjSlot(slot.dj);
+    const connector = djSlotConnector(slot.dj);
+    if (individuals.length <= 1) {
+      expandedSlots.push({ dj: individuals[0] || canonicalDjName(slot.dj), role: slot.role || "DJ", collab: null, collabPartners: [] });
+    } else {
+      for (const dj of individuals) {
+        expandedSlots.push({ dj, role: slot.role || "DJ", collab: connector || "B2B", collabPartners: individuals.filter((n) => n !== dj) });
+      }
+    }
+  }
+
   const now = Date.now();
-  return slots.map((slot) => {
-    const dj = canonicalDjName(slot.dj) || slot.dj;
-    const role = slot.role || "DJ";
+  return expandedSlots.map(({ dj, role, collab, collabPartners }) => {
 
     // All historical nights this DJ appeared
     const allDjNights = allLinks.filter((l) => l.djNames.some((n) => canonicalDjName(n) === dj || n === dj));
@@ -4894,7 +4924,7 @@ function buildDjLineupInsights(event, sameEventLinks, allLinks) {
       : null;
 
     return {
-      dj, role,
+      dj, role, collab, collabPartners,
       allNights: allDjNights.length,
       allAvgSales, allAvgNett,
       seriesNights: seriesNights.length,
@@ -5649,13 +5679,19 @@ function LineupProjectionPanel({ djInsights, seriesAvg }) {
                     <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${dj.role === "Headliner" ? "border-amber-300/30 bg-amber-400/10 text-amber-200" : "border-white/10 bg-white/5 text-white/35"}`}>
                       {dj.role}
                     </span>
+                    {/* B2B / F2F / B3B collab badge */}
+                    {dj.collab && (
+                      <span className="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-black text-cyan-200">
+                        {dj.collab} w/ {dj.collabPartners.join(", ")}
+                      </span>
+                    )}
                     {dj.isVeteran ? (
                       <span className="rounded-full border border-purple-300/30 bg-purple-400/10 px-1.5 py-0.5 text-[9px] font-black text-purple-200">
                         {dj.seriesNights}× series vet
                       </span>
                     ) : dj.allNights > 0 ? (
                       <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-black text-white/35">
-                        Series debut · {dj.allNights} other nights
+                        Series debut · {dj.allNights} nights
                       </span>
                     ) : (
                       <span className="rounded-full border border-amber-300/20 bg-amber-400/5 px-1.5 py-0.5 text-[9px] font-black text-amber-300/60">
