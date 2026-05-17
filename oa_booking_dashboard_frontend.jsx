@@ -23,6 +23,7 @@ import {
   Moon,
   X,
   Zap,
+  Shuffle,
   Trash2,
   Pencil,
   Sun,
@@ -563,7 +564,7 @@ function timeFromMinutes(totalMinutes) {
   return `${String(displayHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-function buildSmartSlots({ djCount = 3, start = "22:30", end = "03:00" }) {
+function buildSmartSlots({ djCount = 3, start = "23:00", end = "03:00", randomize = false }) {
   const startM = minutesFromTime(start);
   const endM = minutesFromTime(end);
   const duration = endM - startM;
@@ -571,34 +572,40 @@ function buildSmartSlots({ djCount = 3, start = "22:30", end = "03:00" }) {
   const maxSlots = Math.max(1, Math.floor(duration / 15));
   const count = Math.max(1, Math.min(8, maxSlots, Number(djCount) || 3));
 
+  // Build even cut-points first
   const totalSteps = Math.floor(duration / 15);
   const baseSteps = Math.floor(totalSteps / count);
   const remainder = totalSteps % count;
-  const middle = (count - 1) / 2;
-  const slots = [];
+  const midOffset = Math.floor((count - remainder) / 2);
+  const cuts = [startM];
   let cursor = startM;
-
   for (let i = 0; i < count; i += 1) {
-    const extraStep = i >= Math.floor((count - remainder) / 2) && i < Math.floor((count - remainder) / 2) + remainder ? 1 : 0;
+    const extraStep = i >= midOffset && i < midOffset + remainder ? 1 : 0;
     const steps = Math.max(1, baseSteps + extraStep);
-    const slotStart = cursor;
-    const slotEnd = i === count - 1 ? endM : Math.min(endM, cursor + steps * 15);
+    cursor = i === count - 1 ? endM : Math.min(endM, cursor + steps * 15);
+    cuts.push(cursor);
+  }
+
+  // Optionally jitter interior cut-points by ±15 or ±30 min
+  if (randomize && count > 1) {
+    for (let i = 1; i < cuts.length - 1; i += 1) {
+      const maxJitter = 2; // up to ±30 min (2 steps)
+      const jitter = (Math.floor(Math.random() * (maxJitter * 2 + 1)) - maxJitter) * 15;
+      const candidate = cuts[i] + jitter;
+      if (candidate - cuts[i - 1] >= 15 && cuts[i + 1] - candidate >= 15) {
+        cuts[i] = candidate;
+      }
+    }
+  }
+
+  const middle = (count - 1) / 2;
+  return cuts.slice(0, -1).map((slotStart, i) => {
+    const slotEnd = cuts[i + 1];
     const role = count === 1 ? "Main" : i === 0 ? "Warm-up" : i === count - 1 ? "Closer" : "Main";
     const distanceFromMiddle = Math.abs(i - middle);
     const energy = role === "Warm-up" ? 2 : role === "Closer" ? 4 : distanceFromMiddle < 0.75 ? 5 : 4;
-
-    slots.push({
-      dj: "",
-      role,
-      start: timeFromMinutes(slotStart),
-      end: timeFromMinutes(slotEnd),
-      energy,
-    });
-
-    cursor = slotEnd;
-  }
-
-  return slots.filter((slot) => minutesFromTime(slot.end) > minutesFromTime(slot.start));
+    return { dj: "", role, start: timeFromMinutes(slotStart), end: timeFromMinutes(slotEnd), energy };
+  }).filter((slot) => minutesFromTime(slot.end) > minutesFromTime(slot.start));
 }
 
 function validateScheduleDays(days) {
@@ -706,7 +713,19 @@ function buildTimeOptions() {
   return options;
 }
 
+function buildExtendedTimeOptions() {
+  const options = [];
+  for (let minutes = 18 * 60; minutes <= 36 * 60; minutes += 15) {
+    const displayHour = Math.floor(minutes / 60) % 24;
+    const m = minutes % 60;
+    const label = `${String(displayHour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    options.push(label);
+  }
+  return options;
+}
+
 const timeOptions = buildTimeOptions();
+const extendedTimeOptions = buildExtendedTimeOptions();
 const roleOptions = ["Warm-up", "Main", "Closer", "MC"];
 const stageOptions = ["Centre Stage", "Main Stage"];
 const icNotePattern = /\[dashboard:ic=([^\]]*)\]/;
@@ -1766,13 +1785,14 @@ function AddEventDayModal({
     );
   };
 
-  const getSmartSchedule = (isoDate) => smartSchedules[isoDate] ?? { djCount: 3, start: "22:30", end: "03:00" };
+  const defaultSmartSchedule = { djCount: 3, start: "23:00", end: "03:00", extendedHours: false };
+  const getSmartSchedule = (isoDate) => smartSchedules[isoDate] ?? defaultSmartSchedule;
 
   const setSmartScheduleField = (isoDate, patch) => {
     setSmartSchedules((prev) => ({
       ...prev,
       [isoDate]: {
-        ...(prev[isoDate] ?? { djCount: 3, start: "22:30", end: "03:00" }),
+        ...(prev[isoDate] ?? defaultSmartSchedule),
         ...patch,
       },
     }));
@@ -1782,21 +1802,17 @@ function AddEventDayModal({
     setDays((prev) =>
       prev.map((d) => {
         if (d.isoDate !== isoDate) return d;
+        const smartSchedule = getSmartSchedule(isoDate);
+        const opts = smartSchedule.extendedHours ? extendedTimeOptions : timeOptions;
         const nextRole = roleOptions[Math.min(d.slots.length, roleOptions.length - 1)];
-        const start = d.slots.length ? d.slots[d.slots.length - 1].end : "22:30";
-        const startIndex = Math.max(0, timeOptions.indexOf(start));
-        const end = timeOptions[Math.min(timeOptions.length - 1, startIndex + 6)] ?? "00:00";
+        const start = d.slots.length ? d.slots[d.slots.length - 1].end : "23:00";
+        const startIndex = Math.max(0, opts.indexOf(start));
+        const end = opts[Math.min(opts.length - 1, startIndex + 6)] ?? "00:00";
         return {
           ...d,
           slots: [
             ...d.slots,
-            {
-              dj: "",
-              role: nextRole,
-              start,
-              end,
-              energy: 3,
-            },
+            { dj: "", role: nextRole, start, end, energy: 3 },
           ],
         };
       }),
@@ -1824,20 +1840,39 @@ function AddEventDayModal({
     );
   };
 
+  const updateSlots = (isoDate, updates) => {
+    setDays((prev) =>
+      prev.map((d) => {
+        if (d.isoDate !== isoDate) return d;
+        const slots = d.slots.map((s, i) => {
+          const update = updates.find((u) => u.idx === i);
+          if (!update) return s;
+          const next = { ...s, ...update.patch };
+          if (Object.prototype.hasOwnProperty.call(update.patch, "dj")) {
+            return { ...next, dj: String(next.dj ?? "") };
+          }
+          return next;
+        });
+        return { ...d, slots };
+      }),
+    );
+  };
+
   const normalizeSlotTimes = (isoDate, idx, nextStart, nextEnd) => {
     const startM = minutesFromTime(nextStart);
     const endM = minutesFromTime(nextEnd);
     if (endM > startM) return nextEnd;
-    const startIndex = timeOptions.indexOf(nextStart);
-    return timeOptions[Math.min(timeOptions.length - 1, Math.max(0, startIndex + 6))] ?? nextEnd;
+    const opts = getSmartSchedule(isoDate).extendedHours ? extendedTimeOptions : timeOptions;
+    const startIndex = opts.indexOf(nextStart);
+    return opts[Math.min(opts.length - 1, Math.max(0, startIndex + 6))] ?? nextEnd;
   };
 
-  const applyQuickSchedule = (isoDate) => {
+  const applyQuickSchedule = (isoDate, randomize = false) => {
     const smartSchedule = getSmartSchedule(isoDate);
     setDays((prev) =>
       prev.map((d) => {
         if (d.isoDate !== isoDate) return d;
-        const nextSlots = buildSmartSlots(smartSchedule);
+        const nextSlots = buildSmartSlots({ ...smartSchedule, randomize });
         const existingNames = d.slots.map((slot) => slot.dj).filter(Boolean);
         return {
           ...d,
@@ -2150,61 +2185,82 @@ function AddEventDayModal({
                       <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">DJs & Timings</div>
                     </div>
 
-                    <div className="mt-2 grid gap-2 rounded-xl border border-white/10 bg-black/20 p-2 sm:grid-cols-[90px_1fr_1fr_auto_auto] sm:items-end">
-                      <label>
-                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">DJs</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="8"
-                          value={smartSchedule.djCount}
-                          onChange={(e) => setSmartScheduleField(day.isoDate, { djCount: Math.max(1, Math.min(8, Number(e.target.value) || 1)) })}
-                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
-                        />
-                      </label>
-                      <label>
-                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">From</span>
-                        <select
-                          value={smartSchedule.start}
-                          onChange={(e) => setSmartScheduleField(day.isoDate, { start: e.target.value })}
-                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                    <div className="mt-2 space-y-2">
+                      <div className="grid gap-2 rounded-xl border border-white/10 bg-black/20 p-2 sm:grid-cols-[90px_1fr_1fr_auto_auto_auto] sm:items-end">
+                        <label>
+                          <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">DJs</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="8"
+                            value={smartSchedule.djCount}
+                            onChange={(e) => setSmartScheduleField(day.isoDate, { djCount: Math.max(1, Math.min(8, Number(e.target.value) || 1)) })}
+                            className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/80 outline-none focus:border-purple-300/60"
+                          />
+                        </label>
+                        <label>
+                          <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">From</span>
+                          <select
+                            value={smartSchedule.start}
+                            onChange={(e) => setSmartScheduleField(day.isoDate, { start: e.target.value })}
+                            className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                          >
+                            {(smartSchedule.extendedHours ? extendedTimeOptions : timeOptions).map((t) => (
+                              <option key={t} value={t}>{formatClockTime(t, timeFormat)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">To</span>
+                          <select
+                            value={smartSchedule.end}
+                            onChange={(e) => setSmartScheduleField(day.isoDate, { end: e.target.value })}
+                            className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                          >
+                            {(smartSchedule.extendedHours ? extendedTimeOptions : timeOptions).map((t) => (
+                              <option key={t} value={t}>{formatClockTime(t, timeFormat)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => applyQuickSchedule(day.isoDate)}
+                          disabled={smartScheduleInvalid}
+                          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-purple-300/30 bg-purple-400/10 px-3 text-[10px] font-black text-purple-100 hover:bg-purple-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {timeOptions.map((t) => (
-                            <option key={t} value={t}>
-                              {formatClockTime(t, timeFormat)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-white/30">To</span>
-                        <select
-                          value={smartSchedule.end}
-                          onChange={(e) => setSmartScheduleField(day.isoDate, { end: e.target.value })}
-                          className="mt-1 h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/70 outline-none focus:border-purple-300/60"
+                          <Zap className="h-3.5 w-3.5" /> Suggest
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyQuickSchedule(day.isoDate, true)}
+                          disabled={smartScheduleInvalid}
+                          title="Randomize set times"
+                          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 text-[10px] font-black text-amber-100 hover:bg-amber-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {timeOptions.map((t) => (
-                            <option key={t} value={t}>
-                              {formatClockTime(t, timeFormat)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickSchedule(day.isoDate)}
-                        disabled={smartScheduleInvalid}
-                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-purple-300/30 bg-purple-400/10 px-3 text-[10px] font-black text-purple-100 hover:bg-purple-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <Zap className="h-3.5 w-3.5" /> Suggest slots
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => addSlot(day.isoDate)}
-                        className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add slot
-                      </button>
+                          <Shuffle className="h-3.5 w-3.5" /> Randomize
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addSlot(day.isoDate)}
+                          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[10px] font-black text-white/60 hover:bg-white/10 hover:text-white"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add slot
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-3 px-1">
+                        <button
+                          type="button"
+                          onClick={() => setSmartScheduleField(day.isoDate, { extendedHours: !smartSchedule.extendedHours })}
+                          className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider transition ${
+                            smartSchedule.extendedHours
+                              ? "border-orange-300/40 bg-orange-400/15 text-orange-100"
+                              : "border-white/10 bg-white/5 text-white/30 hover:text-white"
+                          }`}
+                        >
+                          <Clock className="h-3 w-3" />
+                          {smartSchedule.extendedHours ? "Extended hours on (6 PM – 12 PM)" : "Extended hours"}
+                        </button>
+                      </div>
                     </div>
                     {smartScheduleInvalid ? (
                       <div className="mt-2 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">
@@ -2239,34 +2295,40 @@ function AddEventDayModal({
                             ) : (
                               <>
                                 <select
-                                  value={slot.start}
+                                  value={slot.start || "23:00"}
                                   onChange={(e) => {
                                     const nextStart = e.target.value;
                                     const nextEnd = normalizeSlotTimes(day.isoDate, idx, nextStart, slot.end);
-                                    updateSlot(day.isoDate, idx, { start: nextStart, end: nextEnd });
+                                    const updates = [{ idx, patch: { start: nextStart, end: nextEnd } }];
+                                    const nextSlot = day.slots[idx + 1];
+                                    if (nextSlot && nextSlot.role !== "MC" && (!nextSlot.start || nextSlot.start === slot.start)) {
+                                      updates.push({ idx: idx + 1, patch: { start: nextEnd } });
+                                    }
+                                    updateSlots(day.isoDate, updates);
                                   }}
                                   className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
                                 >
-                                  {timeOptions.map((t) => (
-                                    <option key={t} value={t}>
-                                      {formatClockTime(t, timeFormat)}
-                                    </option>
+                                  {(smartSchedule.extendedHours ? extendedTimeOptions : timeOptions).map((t) => (
+                                    <option key={t} value={t}>{formatClockTime(t, timeFormat)}</option>
                                   ))}
                                 </select>
 
                                 <select
-                                  value={slot.end}
+                                  value={slot.end || "00:00"}
                                   onChange={(e) => {
                                     const nextEnd = e.target.value;
                                     const fixedEnd = normalizeSlotTimes(day.isoDate, idx, slot.start, nextEnd);
-                                    updateSlot(day.isoDate, idx, { end: fixedEnd });
+                                    const updates = [{ idx, patch: { end: fixedEnd } }];
+                                    const nextSlot = day.slots[idx + 1];
+                                    if (nextSlot && nextSlot.role !== "MC" && (!nextSlot.start || nextSlot.start === slot.end)) {
+                                      updates.push({ idx: idx + 1, patch: { start: fixedEnd } });
+                                    }
+                                    updateSlots(day.isoDate, updates);
                                   }}
                                   className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/70 outline-none focus:border-purple-300/60 sm:px-2 sm:py-2 sm:text-xs"
                                 >
-                                  {timeOptions.map((t) => (
-                                    <option key={t} value={t}>
-                                      {formatClockTime(t, timeFormat)}
-                                    </option>
+                                  {(smartSchedule.extendedHours ? extendedTimeOptions : timeOptions).map((t) => (
+                                    <option key={t} value={t}>{formatClockTime(t, timeFormat)}</option>
                                   ))}
                                 </select>
                               </>
@@ -2281,7 +2343,7 @@ function AddEventDayModal({
                                   idx,
                                   nextRole === "MC"
                                     ? { role: nextRole, start: "", end: "" }
-                                    : { role: nextRole, start: slot.start || "22:30", end: slot.end || "00:00" },
+                                    : { role: nextRole, start: slot.start || "23:00", end: slot.end || "00:00" },
                                 );
                               }}
                               className="col-span-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-black text-white/50 outline-none focus:border-purple-300/60 sm:col-span-1 sm:px-2 sm:py-2 sm:text-xs"
@@ -5176,6 +5238,11 @@ function EventNightAnalytics({ insights }) {
   const comparisonSales = average(activeComparison.map((link) => link.total));
   const comparisonNett = average(activeComparison.map((link) => link.pl.nett));
   const comparisonPax = average(activeComparison.map((link) => Number(String(link.row.pax || "").match(/\d+/)?.[0] || 0)));
+
+  const lastSameEventNight = useMemo(() => {
+    return comparisonOptions.find((link) => link.sameEvent) || null;
+  }, [comparisonOptions]);
+
   const toggleManualNight = (id) => {
     const key = String(id);
     setCompareMode("manual");
@@ -5241,6 +5308,47 @@ function EventNightAnalytics({ insights }) {
                   </div>
                 </div>
               </div>
+
+              {lastSameEventNight && (() => {
+                const last = lastSameEventNight;
+                const lastPax = Number(String(last.row.pax || "").match(/\d+/)?.[0] || 0);
+                const salesDelta = comparisonSales && last.total ? ((comparisonSales - last.total) / last.total) : null;
+                return (
+                  <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="h-3 w-3 shrink-0 text-amber-300/70" />
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-300/70">Last time you ran this</span>
+                        </div>
+                        <div className="mt-1 text-xs font-black text-white">{salesFmtDate(last.row.date)}</div>
+                        <div className="mt-0.5 truncate text-[10px] font-bold text-white/40">{last.djNames.slice(0, 4).join(" / ") || "No lineup"}</div>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="text-right">
+                          <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Sales</div>
+                          <div className="text-sm font-black text-amber-200">{salesFmtRMFull(last.total)}</div>
+                          {salesDelta !== null && (
+                            <div className={`text-[9px] font-black ${salesDelta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {salesDelta >= 0 ? "▲" : "▼"} {Math.abs(salesDelta * 100).toFixed(0)}% vs target
+                            </div>
+                          )}
+                        </div>
+                        {lastPax > 0 && (
+                          <div className="text-right">
+                            <div className="text-[9px] font-black uppercase tracking-wider text-white/30">PAX</div>
+                            <div className="text-sm font-black text-white">{lastPax.toLocaleString("en-MY")}</div>
+                          </div>
+                        )}
+                        <div className="text-right">
+                          <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Nett</div>
+                          <div className={`text-sm font-black ${last.pl.nett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(last.pl.nett)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {[
@@ -7010,6 +7118,29 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
     return yearlySummaryRows.reduce((best, row) => (!best || row.sales > best.sales ? row : best), null);
   }, [yearlySummaryRows]);
 
+  const seasonalTrends = useMemo(() => {
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const map = new Map();
+    for (const link of salesFilteredLinks) {
+      const date = link.row?.date;
+      if (!date) continue;
+      const d = isoToDate(date);
+      const m = d.getMonth();
+      const yr = d.getFullYear();
+      const current = map.get(m) || { month: m, label: MONTHS[m], nights: 0, sales: 0, nett: 0, years: new Set() };
+      current.nights += 1;
+      current.sales += Number(link.total) || 0;
+      current.nett += Number(link.pl?.nett) || 0;
+      current.years.add(yr);
+      map.set(m, current);
+    }
+    const rows = Array.from(map.values())
+      .map((r) => ({ ...r, avgSales: r.nights ? r.sales / r.nights : 0, avgNett: r.nights ? r.nett / r.nights : 0, yearCount: r.years.size }))
+      .sort((a, b) => a.month - b.month);
+    const maxAvg = rows.reduce((m, r) => Math.max(m, r.avgSales), 0);
+    return { rows, maxAvg };
+  }, [salesFilteredLinks]);
+
   async function handleDelete(id) {
     if (!window.confirm("Delete this night? This cannot be undone.")) return;
     const { error: err } = await supabase.from("weekly_sales").delete().eq("id", id);
@@ -7598,6 +7729,55 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
             </table>
           </div>
           </div>
+
+          {seasonalTrends.rows.length >= 2 && (() => {
+            const best = seasonalTrends.rows.reduce((b, r) => (!b || r.avgSales > b.avgSales ? r : b), null);
+            return (
+              <div className="overflow-hidden rounded-2xl border border-purple-400/20 bg-purple-400/[0.04]">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-purple-300/60">Seasonal Trends</div>
+                    <div className="mt-0.5 text-xs font-bold text-white/40">Average per night · all years combined</div>
+                  </div>
+                  {best && (
+                    <div className="text-right">
+                      <div className="text-[9px] font-black uppercase tracking-wider text-white/30">Strongest month</div>
+                      <div className="text-sm font-black text-purple-200">{best.label}</div>
+                      <div className="text-[10px] font-bold text-white/40">{salesFmtRMFull(best.avgSales)} avg/night</div>
+                    </div>
+                  )}
+                </div>
+                <div className="px-4 pb-4 pt-3">
+                  <div className="flex items-end gap-1.5">
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((label, idx) => {
+                      const row = seasonalTrends.rows.find((r) => r.month === idx);
+                      const ratio = row && seasonalTrends.maxAvg > 0 ? row.avgSales / seasonalTrends.maxAvg : 0;
+                      const isBest = best && row && row.month === best.month;
+                      return (
+                        <div key={label} className="flex flex-1 flex-col items-center gap-1" title={row ? `${label}: ${salesFmtRMFull(row.avgSales)} avg/night · ${row.nights} nights` : `${label}: no data`}>
+                          <div className="w-full" style={{ height: "72px", display: "flex", alignItems: "flex-end" }}>
+                            <div
+                              className={`w-full rounded-t-md transition-all ${isBest ? "bg-purple-400/70" : row ? "bg-white/20" : "bg-white/5"}`}
+                              style={{ height: row ? `${Math.max(6, ratio * 100)}%` : "6%" }}
+                            />
+                          </div>
+                          <div className={`text-[9px] font-black ${isBest ? "text-purple-200" : "text-white/30"}`}>{label}</div>
+                          {row ? (
+                            <div className="text-center">
+                              <div className={`text-[9px] font-black ${isBest ? "text-purple-100" : "text-white/50"}`}>{salesFmtRMFull(row.avgSales)}</div>
+                              <div className="text-[8px] font-bold text-white/25">{row.nights}n</div>
+                            </div>
+                          ) : (
+                            <div className="text-[9px] font-bold text-white/15">—</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
