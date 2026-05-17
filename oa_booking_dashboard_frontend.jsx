@@ -11878,6 +11878,10 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   }, [canAccessSales, navigateView, view]);
 
   useEffect(() => {
+    if (!canEdit && view === "Planning") navigateView("List", { replace: true });
+  }, [canEdit, navigateView, view]);
+
+  useEffect(() => {
     if (!canAccessDjs && view === "DJs") navigateView("List", { replace: true });
   }, [canAccessDjs, navigateView, view]);
 
@@ -13353,7 +13357,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                 <span className={headerIconsOnly ? "sr-only" : ""}>Payments</span>
               </Button>
             ) : null}
-            {canAccessSales ? (
+            {canEdit ? (
               <Button
                 onClick={() => navigateView("Planning")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
@@ -13831,7 +13835,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
             <FinancePage events={events} onToast={showToast} />
           ) : view === "Sales" && canAccessSales ? (
             <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openSingleEvent} onOpenDj={openDjFromName} />
-          ) : view === "Planning" && canAccessSales ? (
+          ) : view === "Planning" && canEdit ? (
             <PlanningPage events={events} onToast={showToast} onOpenEvent={openSingleEvent} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
