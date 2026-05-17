@@ -2289,11 +2289,14 @@ function AddEventDayModal({
                     {day.slots.length ? (
                       <div className="mt-2 space-y-2">
                         {day.slots.map((slot, idx) => {
+                          const slotDjs = splitDjSlot(slot.dj);
+                          const isCollab = slotDjs.length > 1;
+                          const collabConnector = isCollab ? djSlotConnector(slot.dj) || "B2B" : null;
                           return (
                           <div
                             key={`${day.isoDate}-${idx}`}
                             className={`grid grid-cols-2 items-center gap-2 rounded-xl border bg-black/20 p-2 sm:grid-cols-[minmax(180px,1fr)_110px_110px_120px_40px_40px] ${
-                              dayConflictSlots.has(idx) ? "border-rose-300/50" : "border-white/10"
+                              dayConflictSlots.has(idx) ? "border-rose-300/50" : isCollab ? "border-cyan-400/35 bg-cyan-400/[0.03]" : "border-white/10"
                             }`}
                           >
                             <div className="col-span-2 sm:col-span-1">
@@ -2304,6 +2307,19 @@ function AddEventDayModal({
                                 placeholder="Select DJ"
                                 inputClassName="h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-black text-white/85 outline-none focus:border-purple-300/60 sm:h-9 sm:px-2 sm:text-xs"
                               />
+                              {/* B2B / F2F / B3B split preview */}
+                              {isCollab && (
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                  {slotDjs.map((djName, di) => (
+                                    <span key={di} className="flex items-center gap-1">
+                                      <span className="rounded-md border border-cyan-300/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-black text-cyan-100">{djName}</span>
+                                      {di < slotDjs.length - 1 && (
+                                        <span className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-white/40">{collabConnector}</span>
+                                      )}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             {slot.role === "MC" ? (
@@ -2535,7 +2551,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
+function EventCard({ event, holidays, timeFormat, canEdit, forecast, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -2597,25 +2613,42 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {event.slots.length ? (
-                  event.slots.map((slot, idx) => (
+                  event.slots.map((slot, idx) => {
+                    const cardSlotDjs = splitDjSlot(slot.dj);
+                    const cardIsCollab = cardSlotDjs.length > 1;
+                    const cardConnector = cardIsCollab ? djSlotConnector(slot.dj) || "B2B" : null;
+                    return (
                     <span
                       key={idx}
                       className={`inline-flex min-w-[46%] flex-1 flex-col gap-1.5 rounded-lg border px-2 py-2 text-[11px] font-black sm:min-w-[150px] sm:flex-none sm:text-xs md:px-3 md:py-2.5 ${
-                        conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : "border-white/10 bg-white/5 text-white/85"
+                        conflictSlots.has(idx) ? "border-rose-300/50 bg-rose-500/15 text-rose-50" : cardIsCollab ? "border-cyan-400/30 bg-cyan-400/[0.06] text-white/85" : "border-white/10 bg-white/5 text-white/85"
                       }`}
                     >
-                      <span
-                        className={`w-fit rounded-md border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] ${
-                          slot.role === "MC"
-                            ? "border-purple-300/30 bg-purple-400/15 text-purple-100"
-                            : "border-white/10 bg-black/20 text-white/45"
-                        }`}
-                      >
-                        {slot.role}
+                      <span className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={`w-fit rounded-md border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] ${
+                            slot.role === "MC"
+                              ? "border-purple-300/30 bg-purple-400/15 text-purple-100"
+                              : "border-white/10 bg-black/20 text-white/45"
+                          }`}
+                        >
+                          {slot.role}
+                        </span>
+                        {cardIsCollab && (
+                          <span className="rounded border border-cyan-300/25 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-cyan-300/70">
+                            {cardConnector}
+                          </span>
+                        )}
                       </span>
-                      <span className="min-w-0 truncate text-sm leading-tight text-white sm:text-base">
-                        {slot.dj}
-                      </span>
+                      {cardIsCollab ? (
+                        <span className="flex flex-wrap gap-1">
+                          {cardSlotDjs.map((djName, di) => (
+                            <span key={di} className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] font-black text-white sm:text-xs">{djName}</span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="min-w-0 truncate text-sm leading-tight text-white sm:text-base">{slot.dj}</span>
+                      )}
                       {slotNeedsTime(slot) && slot.start && slot.end ? (
                         <span
                           className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-black leading-none sm:text-xs ${
@@ -2634,7 +2667,8 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                         </span>
                       ) : null}
                     </span>
-                  ))
+                    );
+                  })
                 ) : (
                   <span className="text-xs font-bold text-rose-300">No lineup</span>
                 )}
@@ -2644,6 +2678,35 @@ function EventCard({ event, holidays, timeFormat, canEdit, mentionUsers, comment
                   <MentionText text={event.notes} users={mentionUsers} />
                 </div>
               ) : null}
+              {/* ── Admin forecast strip ─────────────────────────────────── */}
+              {canEdit && forecast && (forecast.forecastSales > 0 || forecast.confidence !== "None") && (
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-purple-400/20 bg-purple-400/[0.06] px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-purple-300/60">Forecast</span>
+                  </div>
+                  {forecast.forecastSales > 0 && (
+                    <span className="text-xs font-black text-white">{salesFmtRMFull(forecast.forecastSales)}</span>
+                  )}
+                  {forecast.forecastNett !== 0 && (
+                    <span className={`text-[10px] font-black ${forecast.forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                      {salesFmtRMFull(forecast.forecastNett)} nett
+                    </span>
+                  )}
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                    forecast.confidence === "High" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
+                    : forecast.confidence === "Medium" ? "border-amber-300/25 bg-amber-400/10 text-amber-300"
+                    : "border-white/10 bg-white/5 text-white/30"
+                  }`}>
+                    {forecast.confidence}
+                  </span>
+                  {forecast.trend && (
+                    <span className={`text-[9px] font-black ${forecast.trend.slopePerMonth >= 1500 ? "text-emerald-400" : forecast.trend.slopePerMonth <= -1500 ? "text-red-400" : "text-white/30"}`}>
+                      {forecast.trend.slopePerMonth >= 1500 ? "▲" : forecast.trend.slopePerMonth <= -1500 ? "▼" : "→"} {salesFmtRMFull(Math.abs(forecast.trend.slopePerMonth))}/mo
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">Comments</div>
@@ -12421,6 +12484,20 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
   });
   const isLightTheme = theme === "light";
   const canEdit = userRole === "admin" || userRole === "superadmin";
+
+  // ── Forecast lookup for EventCard (admin only) ───────────────────────────
+  const [appSalesRows, setAppSalesRows] = useState([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured || !canEdit) return;
+    supabase.from("weekly_sales").select("*").order("date").then(({ data }) => {
+      if (data) setAppSalesRows(data);
+    });
+  }, [canEdit]);
+  const forecastByEventId = useMemo(() => {
+    if (!canEdit || !appSalesRows.length) return new Map();
+    const insights = buildEventNightInsights(events, appSalesRows);
+    return new Map(insights.forecasts.map((f) => [f.event.id, f]));
+  }, [canEdit, appSalesRows, events]);
   const canAccessFinance = userRole === "admin" || userRole === "superadmin";
   const canAccessSales = userRole === "admin" || userRole === "superadmin";
   const canAccessDjs = userRole === "admin" || userRole === "superadmin";
@@ -14515,6 +14592,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                   holidays={holidaysByDate.get(focusedEvent.date) ?? []}
                   timeFormat={timeFormat}
                   canEdit={canEdit}
+                  forecast={canEdit ? forecastByEventId.get(focusedEvent.id) : undefined}
                   mentionUsers={mentionUsers}
                   comments={commentsByEventId.get(focusedEvent.id) ?? []}
                   currentUser={currentUser}
@@ -14631,6 +14709,7 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
                         holidays={holidaysByDate.get(event.date) ?? []}
                         timeFormat={timeFormat}
                         canEdit={canEdit}
+                        forecast={canEdit ? forecastByEventId.get(event.id) : undefined}
                         mentionUsers={mentionUsers}
                         comments={commentsByEventId.get(event.id) ?? []}
                         currentUser={currentUser}
