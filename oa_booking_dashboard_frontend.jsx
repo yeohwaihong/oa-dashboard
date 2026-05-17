@@ -11643,91 +11643,168 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
       const weekEvents = upcoming.filter((e) => e.date >= startISO && e.date <= endISO2).map((event) => {
         const eventKey = eventNameKey(event.name);
         const djNames = eventDjNames(event);
-        const eventMatches = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
+        const sameEventLinks = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
         const djMatches = historical.filter((l) => l.row.date < event.date && l.djNames.some((n) => djNames.includes(n)));
         const dayMatches = historical.filter((l) => isoToDate(l.row.date).getDay() === isoToDate(event.date).getDay() && l.row.date < event.date);
-        const basis = eventMatches.length ? eventMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
-        const forecastSales = average(basis.map((l) => l.total));
+        const basis = sameEventLinks.length ? sameEventLinks : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
+        const naiveForecast = average(basis.map((l) => l.total));
+        const recencyForecast = sameEventLinks.length ? recencyWeightedAvg(sameEventLinks) : naiveForecast;
+        const trend = sameEventLinks.length >= 2 ? computeLinearTrend(sameEventLinks) : null;
+        const trendProjection = trend ? trend.projectToDate(event.date) : null;
+        const forecastSales = recencyForecast || naiveForecast;
         const forecastNett = average(basis.map((l) => l.pl.nett));
-        const confidence = eventMatches.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
-        return { event, forecastSales, forecastNett, confidence };
+        const confidence = sameEventLinks.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
+        return { event, sameEventLinks, basis, naiveForecast, recencyForecast, trendProjection, trend, forecastSales, forecastNett, confidence };
       });
       if (weekEvents.length) {
-        const confirmedEvents = weekEvents.filter((e) => e.event.status === "Confirmed");
-        const tentativeEvents = weekEvents.filter((e) => e.event.status !== "Confirmed");
-        const confirmedRevenue = confirmedEvents.reduce((s, e) => s + e.forecastSales, 0);
-        const tentativeRevenue = tentativeEvents.reduce((s, e) => s + e.forecastSales, 0);
-        weeks.push({ startISO, endISO: endISO2, weekEvents, confirmedEvents, tentativeEvents, confirmedRevenue, tentativeRevenue, label: weekStart.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) + " – " + weekEnd.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) });
+        const confirmedRevenue = weekEvents.filter((e) => e.event.status === "Confirmed").reduce((s, e) => s + e.forecastSales, 0);
+        const tentativeRevenue = weekEvents.filter((e) => e.event.status !== "Confirmed").reduce((s, e) => s + e.forecastSales, 0);
+        weeks.push({ startISO, endISO: endISO2, weekEvents, confirmedRevenue, tentativeRevenue, label: weekStart.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) + " – " + weekEnd.toLocaleDateString("en-MY", { day: "2-digit", month: "short" }) });
       }
     }
     return weeks;
   }, [events, historical]);
 
-  const confidenceColors = { High: "text-emerald-300 border-emerald-300/30 bg-emerald-400/10", Med: "text-amber-300 border-amber-300/30 bg-amber-400/10", Low: "text-white/40 border-white/10 bg-white/5", None: "text-white/25 border-white/10 bg-white/5" };
+  const [expandedEventId, setExpandedEventId] = useState(null);
+
+  const confStyle = {
+    High: "border-emerald-300/30 bg-emerald-400/10 text-emerald-300",
+    Med:  "border-amber-300/30 bg-amber-400/10 text-amber-300",
+    Low:  "border-white/15 bg-white/5 text-white/40",
+    None: "border-white/10 bg-white/[0.03] text-white/25",
+  };
 
   return (
     <div className="space-y-5 px-4 py-5 md:px-6 xl:px-8">
       <div>
         <h2 className="text-lg font-black text-white">Planning & Forecasting</h2>
-        <p className="mt-0.5 text-xs font-bold text-white/35">Break-even targets · Budget vs actual · Forward booking pipeline</p>
+        <p className="mt-0.5 text-xs font-bold text-white/35">Click any event to see its full forecast breakdown</p>
       </div>
 
       {/* ── Forward pipeline ──────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-2xl border border-purple-400/20 bg-purple-400/[0.04]">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-purple-300/60">Forward Booking Pipeline</div>
-            <div className="mt-0.5 text-sm font-black text-white">Next 4 weeks</div>
-          </div>
-          <div className="flex gap-3 text-right">
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Confirmed proj.</div>
-              <div className="text-sm font-black text-emerald-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.confirmedRevenue, 0))}</div>
-            </div>
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Tentative proj.</div>
-              <div className="text-sm font-black text-amber-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.tentativeRevenue, 0))}</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-purple-300/60">Forward Booking Pipeline · Next 4 weeks</div>
+            <div className="mt-0.5 flex gap-4">
+              <span className="text-sm font-black text-emerald-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.confirmedRevenue, 0))} confirmed</span>
+              <span className="text-sm font-black text-amber-300">{salesFmtRMFull(pipeline.reduce((s, w) => s + w.tentativeRevenue, 0))} tentative</span>
             </div>
           </div>
         </div>
+
         {pipeline.length ? pipeline.map((week) => (
           <div key={week.startISO} className="border-b border-white/[0.06] last:border-0">
             <div className="flex items-center justify-between px-5 py-2.5">
               <div className="text-[10px] font-black uppercase tracking-wider text-white/35">{week.label}</div>
-              <div className="flex gap-4 text-right">
-                {week.confirmedRevenue > 0 && <div className="text-[10px] font-black text-emerald-300">{salesFmtRMFull(week.confirmedRevenue)} confirmed</div>}
-                {week.tentativeRevenue > 0 && <div className="text-[10px] font-black text-amber-300">{salesFmtRMFull(week.tentativeRevenue)} tentative</div>}
+              <div className="flex gap-4 text-right text-[10px] font-black">
+                {week.confirmedRevenue > 0 && <span className="text-emerald-300">{salesFmtRMFull(week.confirmedRevenue)} confirmed</span>}
+                {week.tentativeRevenue > 0 && <span className="text-amber-300">{salesFmtRMFull(week.tentativeRevenue)} tentative</span>}
               </div>
             </div>
-            <div className="space-y-1.5 px-5 pb-3">
-              {week.weekEvents.map(({ event, forecastSales, forecastNett, confidence }) => {
+            <div className="space-y-2 px-5 pb-4">
+              {week.weekEvents.map(({ event, sameEventLinks, naiveForecast, recencyForecast, trendProjection, trend, forecastNett, confidence }) => {
                 const isConfirmed = event.status === "Confirmed";
+                const isExpanded = expandedEventId === event.id;
+                const trendDir = trend ? (trend.slopePerMonth >= 1500 ? "▲" : trend.slopePerMonth <= -1500 ? "▼" : "→") : null;
+
                 return (
-                  <button
+                  <div
                     key={event.id}
-                    type="button"
-                    onClick={() => onOpenEvent?.(event)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left transition hover:brightness-110 ${isConfirmed ? "border-emerald-300/20 bg-emerald-400/[0.06]" : "border-amber-300/15 bg-amber-400/[0.04]"}`}
+                    className={`overflow-hidden rounded-xl border transition-all ${isConfirmed ? "border-emerald-300/20 bg-emerald-400/[0.04]" : "border-amber-300/15 bg-amber-400/[0.03]"} ${isExpanded ? "ring-1 ring-purple-400/30" : ""}`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isConfirmed ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-200" : "border-amber-300/30 bg-amber-400/10 text-amber-200"}`}>
-                            {isConfirmed ? "Confirmed" : "Tentative"}
-                          </span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${confidenceColors[confidence] || confidenceColors.None}`}>{confidence} conf.</span>
+                    {/* Card header — click to expand */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedEventId(isExpanded ? null : event.id)}
+                      className="w-full px-4 py-3 text-left"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isConfirmed ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-200" : "border-amber-300/30 bg-amber-400/10 text-amber-200"}`}>
+                              {isConfirmed ? "Confirmed" : "Tentative"}
+                            </span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${confStyle[confidence]}`}>
+                              {confidence === "High" ? "Same event" : confidence === "Med" ? "Same DJ" : confidence === "Low" ? "Same weekday" : "No history"} · {confidence}
+                            </span>
+                            {trendDir && (
+                              <span className={`text-[9px] font-black ${trendDir === "▲" ? "text-emerald-400" : trendDir === "▼" ? "text-red-400" : "text-white/30"}`}>
+                                {trendDir} {salesFmtRMFull(Math.abs(trend.slopePerMonth))}/mo
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1.5 text-sm font-black text-white">{event.name || "Untitled"}</div>
+                          <div className="mt-0.5 text-[10px] font-bold text-white/35">{salesFmtDate(event.date)} · {event.stage || ""}</div>
                         </div>
-                        <div className="mt-1 text-xs font-black text-white">{event.name || "Untitled"}</div>
-                        <div className="mt-0.5 text-[10px] font-bold text-white/35">{salesFmtDate(event.date)} · {event.stage || ""}</div>
+                        <div className="flex items-start gap-4">
+                          <div className="text-right">
+                            {recencyForecast > 0 ? (
+                              <>
+                                <div className="text-[9px] font-black uppercase tracking-wider text-white/25">{sameEventLinks.length ? "Recency-weighted" : "Avg forecast"}</div>
+                                <div className="text-sm font-black text-white">{salesFmtRMFull(recencyForecast)}</div>
+                                {trendProjection != null && (
+                                  <div className={`text-[9px] font-black ${trendProjection > recencyForecast ? "text-emerald-400" : "text-red-400"}`}>
+                                    Trend: {salesFmtRMFull(trendProjection)}
+                                  </div>
+                                )}
+                                {forecastNett !== 0 && (
+                                  <div className={`text-[10px] font-black ${forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(forecastNett)} nett</div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-xs font-bold text-white/25">No history</div>
+                            )}
+                          </div>
+                          <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-white/30 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs font-black text-white">{forecastSales ? salesFmtRMFull(forecastSales) : <span className="text-white/25">No forecast</span>}</div>
-                        {forecastNett !== 0 && forecastSales > 0 && (
-                          <div className={`text-[10px] font-black ${forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>{salesFmtRMFull(forecastNett)} nett</div>
+                    </button>
+
+                    {/* Expanded forecast detail */}
+                    {isExpanded && (
+                      <div className="border-t border-white/10">
+                        {sameEventLinks.length >= 1 ? (
+                          <ForecastDetailPanel
+                            links={sameEventLinks}
+                            targetDate={event.date}
+                            eventName={event.name}
+                          />
+                        ) : (
+                          <div className="space-y-3 p-4">
+                            <div className="text-[10px] font-black uppercase tracking-wider text-white/30">No same-event history yet</div>
+                            <p className="text-xs font-bold text-white/40">
+                              This event hasn't been run before. Forecast is based on {confidence === "Med" ? "nights with the same DJs" : confidence === "Low" ? "past nights on the same day of week" : "no data"}.
+                              Once you've run this event and linked a sales row, the full trend analysis will appear here.
+                            </p>
+                            {naiveForecast > 0 && (
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                                  <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Basis forecast ({confidence})</div>
+                                  <div className="mt-1 text-sm font-black text-white">{salesFmtRMFull(naiveForecast)}</div>
+                                  <div className="mt-0.5 text-[10px] font-bold text-white/30">Average of similar nights</div>
+                                </div>
+                                <div className="rounded-xl border border-cyan-300/15 bg-cyan-400/[0.06] px-3 py-2">
+                                  <div className="text-[9px] font-black uppercase tracking-wider text-white/25">Break-even target</div>
+                                  <div className="mt-1 text-sm font-black text-white">{salesFmtRMFull(salesDefaultsForISO(event.date).weekly_target)}</div>
+                                  <div className="mt-0.5 text-[10px] font-bold text-white/30">{isoToDate(event.date).toLocaleDateString("en-MY", { weekday: "long" })} default</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
+                        <div className="flex justify-end border-t border-white/10 px-4 py-2">
+                          <button
+                            type="button"
+                            onClick={() => onOpenEvent?.(event)}
+                            className="text-[10px] font-black text-purple-300 hover:text-purple-100"
+                          >
+                            Open event →
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
