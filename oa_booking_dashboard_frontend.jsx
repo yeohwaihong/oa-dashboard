@@ -4744,30 +4744,37 @@ function eventNameKey(value) {
 //      "City Flow Evo Pres"              → "city flow"
 //      "Jugaad x GuestBrand"             → "jugaad"
 //      "Neon Vol. 3"                     → "neon"
-function eventBrandKey(value) {
-  let s = String(value || "")
+// Words that are too generic to count as "series identifiers"
+const SERIES_STOP_WORDS = new Set([
+  "the","a","an","and","or","of","in","at","by","for","with","is","on","to",
+  // collab / presenter markers
+  "ft","feat","x","vs","versus","pres","presents","presented","oa","evo","kl",
+  // generic club/event words
+  "night","nights","day","live","special","presents","edition","vol","volume",
+  "ep","pt","part","session","series","event","show","club","bar","lounge",
+  // numbers
+  "1","2","3","4","5","6","7","8","9","0",
+]);
+
+// Extract meaningful tokens from an event name (filters noise/stop words)
+function eventTokens(name) {
+  return String(name || "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]+/g, " ")
-    .trim();
-  s = s
-    // "X - Theme" / "X – Theme" / "X : Theme"
-    .replace(/\s*[-–—:]\s*.+$/, "")
-    // "X x Collab" (collaboration marker)
-    .replace(/\s+x\s+.+$/, "")
-    // "X OA Pres", "X Evo Pres", "X KL Pres", "X The Pres"
-    .replace(/\s+(?:oa|evo|kl|the|kl oa|oa kl)\s+pres(?:ents?)?\b.*$/, "")
-    // "X Presents Theme" / "X Pres Theme"
-    .replace(/\s+pres(?:ents?)?\s+.+$/, "")
-    // standalone trailing "Presents"
-    .replace(/\s+pres(?:ents?)?$/, "")
-    // "X ft. DJ" / "X feat. DJ"
-    .replace(/\s+(?:ft|feat)\.?\s+.+$/, "")
-    // "X w/ Guest"
-    .replace(/\s+w\/\s*.+$/, "")
-    // trailing edition/volume tags: "X Night", "X Vol 3", "X Vol. 3", "X Edition"
-    .replace(/\s+(?:vol\.?\s*\d+|night|edition|ep\s*\d+|pt\.?\s*\d+|part\s*\d+)\s*$/, "")
-    .trim();
-  return s.replace(/\s+/g, " ");
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !SERIES_STOP_WORDS.has(t));
+}
+
+// Returns true if two events are the same series based on shared significant tokens.
+// "City Flow - MJ Night" and "City Flow OA Pres" both token to ["city","flow"] → match
+// Requires shared tokens to cover ≥60% of the shorter name's meaningful tokens.
+function areSameSeries(tokensA, tokensB) {
+  if (!tokensA.length || !tokensB.length) return false;
+  const setA = new Set(tokensA);
+  const shared = tokensB.filter((t) => setA.has(t));
+  const minLen = Math.min(tokensA.length, tokensB.length);
+  return shared.length >= 1 && shared.length >= Math.ceil(minLen * 0.6);
 }
 
 function salesTotalForRow(row) {
@@ -4877,7 +4884,7 @@ function buildSalesEventLinks(events, salesRows) {
       pl: calcNightPL(row),
       djNames,
       eventKey: eventNameKey(primaryEvent?.name || row.event_name),
-      brandKey: eventBrandKey(primaryEvent?.name || row.event_name),
+      tokens: eventTokens(primaryEvent?.name || row.event_name),
     };
   });
 }
@@ -4894,17 +4901,17 @@ function buildEventNightInsights(events, salesRows) {
 
   const forecasts = upcomingEvents.map((event) => {
     const eventKey = eventNameKey(event.name);
-    const brandKey = eventBrandKey(event.name);
-    const djNames = eventDjNames(event);
+    const toks     = eventTokens(event.name);
+    const djNames  = eventDjNames(event);
     // Tier 1: exact name match
     const eventMatches = historical.filter((link) => link.eventKey && link.eventKey === eventKey && link.row.date < event.date);
-    // Tier 2: same brand/series (e.g. "City Flow" matches "City Flow OA Pres", "City Flow - MJ Night")
-    const brandMatches = brandKey.length >= 3
-      ? historical.filter((link) => link.brandKey && link.brandKey === brandKey && link.row.date < event.date)
+    // Tier 2: same series — token intersection (catches "City Flow - MJ Night" ↔ "City Flow OA Pres")
+    const brandMatches = toks.length
+      ? historical.filter((link) => link.row.date < event.date && !link.eventKey !== eventKey && areSameSeries(link.tokens, toks))
       : [];
     const djMatches = historical.filter((link) => link.row.date < event.date && link.djNames.some((name) => djNames.includes(name)));
     const dayMatches = historical.filter((link) => isoToDate(link.row.date).getDay() === isoToDate(event.date).getDay() && link.row.date < event.date);
-    // Best basis: exact > series/brand > DJ > weekday
+    // Best basis: exact > series > DJ > weekday
     const seriesMatches = eventMatches.length ? eventMatches : brandMatches;
     const basis = seriesMatches.length ? seriesMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
     const forecastSales = average(basis.map((link) => link.total));
@@ -5261,13 +5268,13 @@ function EventNightAnalytics({ insights }) {
   const comparisonOptions = useMemo(() => {
     if (!selectedForecast) return [];
     const eventKey = eventNameKey(selectedForecast.event.name);
-    const brandKey = eventBrandKey(selectedForecast.event.name);
+    const toks     = eventTokens(selectedForecast.event.name);
     const targetDay = isoToDate(selectedForecast.event.date).getDay();
     return insights.historical
       .filter((link) => link.row.date < selectedForecast.event.date)
       .map((link) => {
         const exactMatch = link.eventKey && link.eventKey === eventKey;
-        const brandMatch = brandKey.length >= 3 && link.brandKey && link.brandKey === brandKey;
+        const brandMatch = !exactMatch && toks.length > 0 && areSameSeries(link.tokens, toks);
         const sameEvent = exactMatch || brandMatch;
         const sameDj = link.djNames.some((name) => selectedForecast.djNames.includes(name));
         const sameDay = isoToDate(link.row.date).getDay() === targetDay;
@@ -11794,13 +11801,13 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
       const endISO2 = isoFromDate(weekEnd);
       const weekEvents = upcoming.filter((e) => e.date >= startISO && e.date <= endISO2).map((event) => {
         const eventKey = eventNameKey(event.name);
-        const brandKey = eventBrandKey(event.name);
-        const djNames = eventDjNames(event);
+        const toks     = eventTokens(event.name);
+        const djNames  = eventDjNames(event);
         // Tier 1: exact name match
         const exactLinks = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
-        // Tier 2: same brand/series (e.g. "City Flow OA Pres" + "City Flow - MJ Night" → brand "city flow")
-        const brandLinks = brandKey.length >= 3
-          ? historical.filter((l) => l.brandKey === brandKey && l.row.date < event.date)
+        // Tier 2: token-based series match — catches "City Flow - MJ Night" ↔ "City Flow OA Pres" ↔ "F2F" etc.
+        const brandLinks = toks.length
+          ? historical.filter((l) => l.row.date < event.date && areSameSeries(l.tokens, toks))
           : [];
         // Best same-event pool: prefer exact, fall back to series
         const sameEventLinks = exactLinks.length ? exactLinks : brandLinks;
