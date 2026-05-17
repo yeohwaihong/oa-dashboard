@@ -223,6 +223,45 @@ const dashboardViewRoutes = {
 
 const routeDashboardViews = Object.fromEntries(Object.entries(dashboardViewRoutes).map(([view, path]) => [path, view]));
 
+// ─── Permission System ────────────────────────────────────────────────────────
+// Each permission key has a label, category, and which roles get it by default.
+// Custom per-user grants (stored in user_permissions table) are ADDED on top of role defaults.
+const ALL_PERMISSIONS = [
+  // Views
+  { key: "view_list",      label: "Event List",         category: "Views",   defaultRoles: ["staff","dj","admin","superadmin"] },
+  { key: "view_calendar",  label: "Calendar",           category: "Views",   defaultRoles: ["staff","dj","admin","superadmin"] },
+  { key: "view_sales",     label: "Sales & Analytics",  category: "Views",   defaultRoles: ["admin","superadmin"] },
+  { key: "view_finance",   label: "Finance / P&L",      category: "Views",   defaultRoles: ["admin","superadmin"] },
+  { key: "view_djs",       label: "DJ Profiles",        category: "Views",   defaultRoles: ["admin","superadmin"] },
+  { key: "view_payments",  label: "DJ Payments",        category: "Views",   defaultRoles: ["admin","superadmin"] },
+  { key: "view_planning",  label: "Planning & Forecast",category: "Views",   defaultRoles: ["admin","superadmin"] },
+  { key: "view_activity",  label: "Activity Log",       category: "Views",   defaultRoles: ["superadmin"] },
+  // Actions
+  { key: "can_edit",       label: "Edit & Confirm Events", category: "Actions", defaultRoles: ["admin","superadmin"] },
+  { key: "can_manage_users",label: "Manage Users",      category: "Actions", defaultRoles: ["superadmin"] },
+  { key: "can_export",     label: "Export / Share",     category: "Actions", defaultRoles: ["admin","superadmin"] },
+  { key: "view_forecast",  label: "Forecast Strip",     category: "Actions", defaultRoles: ["admin","superadmin"] },
+  { key: "view_notifications", label: "Notifications",  category: "Actions", defaultRoles: ["staff","dj","admin","superadmin"] },
+];
+
+const PERMISSION_CATEGORIES = ["Views", "Actions"];
+
+// Default permissions for each role (derived from ALL_PERMISSIONS)
+const ROLE_DEFAULT_PERMISSIONS = {};
+for (const perm of ALL_PERMISSIONS) {
+  for (const role of perm.defaultRoles) {
+    if (!ROLE_DEFAULT_PERMISSIONS[role]) ROLE_DEFAULT_PERMISSIONS[role] = new Set();
+    ROLE_DEFAULT_PERMISSIONS[role].add(perm.key);
+  }
+}
+
+// Build the can() checker: role defaults + custom grants
+function buildCanFn(userRole, customGrants = []) {
+  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[userRole] || new Set();
+  const custom = new Set(Array.isArray(customGrants) ? customGrants : []);
+  return (key) => roleDefaults.has(key) || custom.has(key);
+}
+
 function normalizeDashboardPath(pathname) {
   const path = String(pathname || "/").replace(/\/+$/, "") || "/";
   return path.toLowerCase();
@@ -10670,6 +10709,91 @@ function LoginScreen() {
   );
 }
 
+// Per-user permission grant editor (shown inside each user row)
+function PermissionsEditor({ userId, userRole: targetRole, onSaved, onToast }) {
+  const [grants, setGrants] = useState(null); // null = loading
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !userId) return;
+    supabase.from("user_permissions").select("permissions").eq("user_id", userId).maybeSingle().then(({ data }) => {
+      setGrants(Array.isArray(data?.permissions) ? data.permissions : []);
+    });
+  }, [userId]);
+
+  const toggle = (key) => {
+    setGrants((prev) => {
+      const set = new Set(prev || []);
+      if (set.has(key)) set.delete(key); else set.add(key);
+      return Array.from(set);
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("user_permissions").upsert({ user_id: userId, permissions: grants, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    setSaving(false);
+    if (error) { onToast?.("Failed: " + error.message); return; }
+    onToast?.("Permissions saved");
+    onSaved?.();
+  };
+
+  if (grants === null) return <div className="py-3 text-xs font-bold text-white/30">Loading permissions…</div>;
+
+  const roleDefaults = ROLE_DEFAULT_PERMISSIONS[targetRole] || new Set();
+
+  return (
+    <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+      <div className="text-[10px] font-black uppercase tracking-widest text-white/35">Custom Permission Grants</div>
+      <div className="text-[10px] font-bold text-white/25">
+        Role <span className="font-black text-white/50">{targetRole || "unassigned"}</span> already grants:{" "}
+        {ALL_PERMISSIONS.filter((p) => roleDefaults.has(p.key)).map((p) => p.label).join(", ") || "none"}
+      </div>
+      {PERMISSION_CATEGORIES.map((cat) => (
+        <div key={cat}>
+          <div className="mb-1.5 text-[9px] font-black uppercase tracking-widest text-white/20">{cat}</div>
+          <div className="flex flex-wrap gap-2">
+            {ALL_PERMISSIONS.filter((p) => p.category === cat).map((perm) => {
+              const fromRole = roleDefaults.has(perm.key);
+              const granted = fromRole || (grants || []).includes(perm.key);
+              const isCustom = (grants || []).includes(perm.key);
+              return (
+                <button
+                  key={perm.key}
+                  type="button"
+                  onClick={() => !fromRole && toggle(perm.key)}
+                  disabled={fromRole}
+                  title={fromRole ? `Included in ${targetRole} role` : isCustom ? "Click to revoke" : "Click to grant"}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black transition-colors ${
+                    fromRole
+                      ? "cursor-default border-white/10 bg-white/5 text-white/30"
+                      : isCustom
+                      ? "border-purple-300/40 bg-purple-400/15 text-purple-100 hover:bg-purple-400/25"
+                      : "border-white/10 bg-white/[0.03] text-white/25 hover:border-white/20 hover:text-white/50"
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${fromRole ? "bg-white/25" : isCustom ? "bg-purple-400" : "bg-white/15"}`} />
+                  {perm.label}
+                  {fromRole && <span className="text-[8px] text-white/20">role</span>}
+                  {isCustom && !fromRole && <span className="text-[8px] text-purple-300/60">+grant</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={save}
+        disabled={saving}
+        className="h-8 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300 disabled:opacity-50"
+      >
+        {saving ? "Saving…" : "Save permissions"}
+      </button>
+    </div>
+  );
+}
+
 function UserManagementPage({ onToast, onLogActivity }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -10679,6 +10803,7 @@ function UserManagementPage({ onToast, onLogActivity }) {
   const [passwordDraft, setPasswordDraft] = useState("");
   const [showPasswordDraft, setShowPasswordDraft] = useState(false);
   const [roleByUserId, setRoleByUserId] = useState({});
+  const [expandedPermsUserId, setExpandedPermsUserId] = useState(null);
 
   const adminApiRequest = useCallback(async (path, { method = "GET", body } = {}) => {
     return dashboardApiRequest(path, { method, body });
@@ -10831,7 +10956,7 @@ function UserManagementPage({ onToast, onLogActivity }) {
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_88px_132px]">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_88px_132px_44px]">
                   <select
                     value={currentRole}
                     onChange={(e) => setRoleByUserId((prev) => ({ ...prev, [u.id]: e.target.value }))}
@@ -10857,8 +10982,25 @@ function UserManagementPage({ onToast, onLogActivity }) {
                   >
                     Set Password
                   </Button>
+                  <button
+                    type="button"
+                    title="Edit permissions"
+                    onClick={() => setExpandedPermsUserId(expandedPermsUserId === u.id ? null : u.id)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xs font-black transition-colors ${expandedPermsUserId === u.id ? "border-purple-300/40 bg-purple-400/15 text-purple-100" : "border-white/10 bg-white/5 text-white/40 hover:border-purple-300/30 hover:text-purple-200"}`}
+                  >
+                    🔑
+                  </button>
                 </div>
               </div>
+              {/* Permissions editor */}
+              {expandedPermsUserId === u.id && (
+                <PermissionsEditor
+                  userId={u.id}
+                  userRole={currentRole}
+                  onToast={onToast}
+                  onSaved={() => {}}
+                />
+              )}
             </div>
           );
         })}
@@ -12531,7 +12673,11 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const isLightTheme = theme === "light";
-  const canEdit = userRole === "admin" || userRole === "superadmin";
+
+  // ── Permission system ────────────────────────────────────────────────────
+  // can(key) = role defaults + any custom grants assigned via the Users tab
+  const can = useMemo(() => buildCanFn(userRole, userCustomPerms), [userRole, userCustomPerms]);
+  const canEdit = can("can_edit");
 
   // ── Forecast lookup for EventCard (admin only) ───────────────────────────
   const [appSalesRows, setAppSalesRows] = useState([]);
@@ -12571,14 +12717,14 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     }
     return map;
   }, [canEdit, appSalesRows, events]);
-  const canAccessFinance = userRole === "admin" || userRole === "superadmin";
-  const canAccessSales = userRole === "admin" || userRole === "superadmin";
-  const canAccessDjs = userRole === "admin" || userRole === "superadmin";
-  const canAccessDjPayments = userRole === "admin" || userRole === "superadmin";
-  const canManageUsers = userRole === "superadmin";
-  const canViewActivity = userRole === "superadmin";
+  const canAccessFinance = can("view_finance");
+  const canAccessSales = can("view_sales");
+  const canAccessDjs = can("view_djs");
+  const canAccessDjPayments = can("view_payments");
+  const canManageUsers = can("can_manage_users");
+  const canViewActivity = can("view_activity");
   const headerIconsOnly = userRole === "superadmin";
-  const canUseNotificationCenter = userRole === "staff" || userRole === "dj" || canEdit;
+  const canUseNotificationCenter = can("view_notifications");
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
     const matched = mentionUsers.find((user) => user.id === currentUser?.id || String(user.email || "").toLowerCase() === String(currentUser?.email || "").toLowerCase());
@@ -14912,11 +15058,13 @@ export default function OABookingDashboard() {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [userCustomPerms, setUserCustomPerms] = useState([]);
   const [roleError, setRoleError] = useState("");
 
   const loadUserRole = useCallback(async (user) => {
     if (!isSupabaseConfigured || !user?.id) {
       setUserRole(null);
+      setUserCustomPerms([]);
       setRoleError("");
       return;
     }
@@ -14924,18 +15072,25 @@ export default function OABookingDashboard() {
     const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
     if (error) {
       setUserRole(null);
+      setUserCustomPerms([]);
       setRoleError(error.message || "Could not load user role.");
       return;
     }
 
     if (!data?.role) {
       setUserRole(null);
+      setUserCustomPerms([]);
       setRoleError("Please contact the admin to approve your email.");
       return;
     }
 
     setUserRole(data.role);
     setRoleError("");
+
+    // Load custom permission grants for this user (table may not exist yet — ignore errors)
+    supabase.from("user_permissions").select("permissions").eq("user_id", user.id).maybeSingle().then(({ data: pd }) => {
+      setUserCustomPerms(Array.isArray(pd?.permissions) ? pd.permissions : []);
+    });
   }, []);
 
   useEffect(() => {
