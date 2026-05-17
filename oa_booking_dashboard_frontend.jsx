@@ -12621,7 +12621,7 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
   );
 }
 
-function DashboardApp({ onLogout, userRole, currentUser }) {
+function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser }) {
   const [activeFilter, setActiveFilter] = useState("All");
   const [dateScope, setDateScope] = useState("Upcoming");
   const [dateSort, setDateSort] = useState("asc");
@@ -15162,7 +15162,7 @@ export default function OABookingDashboard() {
     );
   }
 
-  return <DashboardApp onLogout={logout} userRole={userRole} currentUser={session.user} />;
+  return <DashboardApp onLogout={logout} userRole={userRole} userCustomPerms={userCustomPerms} currentUser={session.user} />;
 }
 
 function Stat({ number, label, tone = "text-white" }) {
