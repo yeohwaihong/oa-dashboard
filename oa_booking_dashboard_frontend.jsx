@@ -1758,9 +1758,12 @@ function AddEventDayModal({
   );
 
   const openWhatsAppForDaySlot = useCallback(
-    (day, slot) => {
-      const phone = slot?.dj ? djPhoneByName.get(normalizeDjLookupKey(slot.dj)) : "";
-      const url = whatsappLink(phone, whatsappTextForDaySlot(day, slot));
+    (day, slot, overrideDjName = null) => {
+      const djName = overrideDjName || slot?.dj;
+      const phone = djName ? djPhoneByName.get(normalizeDjLookupKey(djName)) : "";
+      // Build message with the individual DJ's name even if slot has "A B2B B"
+      const msgSlot = overrideDjName ? { ...slot, dj: overrideDjName } : slot;
+      const url = whatsappLink(phone, whatsappTextForDaySlot(day, msgSlot));
       if (!url) return;
       window.open(url, "_blank", "noopener,noreferrer");
     },
@@ -2389,16 +2392,39 @@ function AddEventDayModal({
                               ))}
                             </select>
 
-                            <button
-                              type="button"
-                              onClick={() => openWhatsAppForDaySlot(day, slot)}
-                              disabled={!whatsappDigits(slot?.dj ? djPhoneByName.get(normalizeDjLookupKey(slot.dj)) : "")}
-                              title="Send WhatsApp (needs DJ phone in DJ profile)"
-                              className="col-span-1 flex h-10 w-full items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-70 sm:h-9 sm:w-9"
-                            >
-                              <MessageCircle className="h-4 w-4" />
-                              <span className="sr-only">Send WhatsApp</span>
-                            </button>
+                            {isCollab ? (
+                              /* B2B/F2F: one WhatsApp button per individual DJ */
+                              <div className="col-span-1 flex gap-1">
+                                {slotDjs.map((djName) => {
+                                  const phone = djPhoneByName.get(normalizeDjLookupKey(djName));
+                                  const hasPhone = !!whatsappDigits(phone);
+                                  return (
+                                    <button
+                                      key={djName}
+                                      type="button"
+                                      onClick={() => openWhatsAppForDaySlot(day, slot, djName)}
+                                      disabled={!hasPhone}
+                                      title={hasPhone ? `WhatsApp ${djName}` : `No phone for ${djName}`}
+                                      className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border border-emerald-300/25 bg-emerald-400/10 px-1 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40 sm:h-9"
+                                    >
+                                      <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                                      <span className="truncate text-[9px] font-black">{djName.split(" ")[0]}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openWhatsAppForDaySlot(day, slot)}
+                                disabled={!whatsappDigits(slot?.dj ? djPhoneByName.get(normalizeDjLookupKey(slot.dj)) : "")}
+                                title="Send WhatsApp (needs DJ phone in DJ profile)"
+                                className="col-span-1 flex h-10 w-full items-center justify-center rounded-lg border border-emerald-300/25 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-70 sm:h-9 sm:w-9"
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                                <span className="sr-only">Send WhatsApp</span>
+                              </button>
+                            )}
 
                             <button
                               onClick={() => removeSlot(day.isoDate, idx)}
@@ -2552,6 +2578,7 @@ function AddEventDayModal({
 }
 
 function EventCard({ event, holidays, timeFormat, canEdit, forecast, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
+  const [forecastExpanded, setForecastExpanded] = useState(false);
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
   const confirmationBlockers = getConfirmationBlockers(event);
@@ -2678,32 +2705,53 @@ function EventCard({ event, holidays, timeFormat, canEdit, forecast, mentionUser
                   <MentionText text={event.notes} users={mentionUsers} />
                 </div>
               ) : null}
-              {/* ── Admin forecast strip ─────────────────────────────────── */}
+              {/* ── Admin forecast strip (clickable) ─────────────────────── */}
               {canEdit && forecast && (forecast.forecastSales > 0 || forecast.confidence !== "None") && (
-                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-purple-400/20 bg-purple-400/[0.06] px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-purple-300/60">Forecast</span>
-                  </div>
-                  {forecast.forecastSales > 0 && (
-                    <span className="text-xs font-black text-white">{salesFmtRMFull(forecast.forecastSales)}</span>
-                  )}
-                  {forecast.forecastNett !== 0 && (
-                    <span className={`text-[10px] font-black ${forecast.forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                      {salesFmtRMFull(forecast.forecastNett)} nett
+                <div className="mt-2 overflow-hidden rounded-xl border border-purple-400/20 bg-purple-400/[0.06]">
+                  {/* Summary row — click to expand */}
+                  <button
+                    type="button"
+                    onClick={() => setForecastExpanded((v) => !v)}
+                    className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left hover:bg-purple-400/10 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-purple-400" />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-purple-300/60">Forecast</span>
+                    </div>
+                    {forecast.forecastSales > 0 && (
+                      <span className="text-xs font-black text-white">{salesFmtRMFull(forecast.forecastSales)}</span>
+                    )}
+                    {forecast.forecastNett !== 0 && (
+                      <span className={`text-[10px] font-black ${forecast.forecastNett >= 0 ? "text-emerald-300" : "text-red-300"}`}>
+                        {salesFmtRMFull(forecast.forecastNett)} nett
+                      </span>
+                    )}
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                      forecast.confidence === "High" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
+                      : forecast.confidence === "Medium" ? "border-amber-300/25 bg-amber-400/10 text-amber-300"
+                      : "border-white/10 bg-white/5 text-white/30"
+                    }`}>
+                      {forecast.confidence}
                     </span>
+                    {forecast.trend && (
+                      <span className={`text-[9px] font-black ${forecast.trend.slopePerMonth >= 1500 ? "text-emerald-400" : forecast.trend.slopePerMonth <= -1500 ? "text-red-400" : "text-white/30"}`}>
+                        {forecast.trend.slopePerMonth >= 1500 ? "▲" : forecast.trend.slopePerMonth <= -1500 ? "▼" : "→"} {salesFmtRMFull(Math.abs(forecast.trend.slopePerMonth))}/mo
+                      </span>
+                    )}
+                    <ChevronDown className={`ml-auto h-3.5 w-3.5 shrink-0 text-purple-300/40 transition-transform ${forecastExpanded ? "rotate-180" : ""}`} />
+                  </button>
+                  {/* Expanded detail panel */}
+                  {forecastExpanded && forecast.basis?.length >= 1 && (
+                    <ForecastDetailPanel
+                      links={forecast.basis}
+                      targetDate={event.date}
+                      eventName={event.name}
+                    />
                   )}
-                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                    forecast.confidence === "High" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-300"
-                    : forecast.confidence === "Medium" ? "border-amber-300/25 bg-amber-400/10 text-amber-300"
-                    : "border-white/10 bg-white/5 text-white/30"
-                  }`}>
-                    {forecast.confidence}
-                  </span>
-                  {forecast.trend && (
-                    <span className={`text-[9px] font-black ${forecast.trend.slopePerMonth >= 1500 ? "text-emerald-400" : forecast.trend.slopePerMonth <= -1500 ? "text-red-400" : "text-white/30"}`}>
-                      {forecast.trend.slopePerMonth >= 1500 ? "▲" : forecast.trend.slopePerMonth <= -1500 ? "▼" : "→"} {salesFmtRMFull(Math.abs(forecast.trend.slopePerMonth))}/mo
-                    </span>
+                  {forecastExpanded && (!forecast.basis || forecast.basis.length === 0) && (
+                    <div className="border-t border-white/10 px-3 py-3 text-xs font-bold text-white/35">
+                      No historical runs to chart yet — forecast based on similar nights.
+                    </div>
                   )}
                 </div>
               )}
