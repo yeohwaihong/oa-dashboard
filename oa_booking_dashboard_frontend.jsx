@@ -4737,6 +4737,39 @@ function eventNameKey(value) {
     .trim();
 }
 
+// Extracts the brand/series name from an event name by stripping theme suffixes,
+// presenter labels, collab markers, and edition tags.
+// e.g. "City Flow - Michael Jackson Night" → "city flow"
+//      "City Flow OA Pres"               → "city flow"
+//      "City Flow Evo Pres"              → "city flow"
+//      "Jugaad x GuestBrand"             → "jugaad"
+//      "Neon Vol. 3"                     → "neon"
+function eventBrandKey(value) {
+  let s = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .trim();
+  s = s
+    // "X - Theme" / "X – Theme" / "X : Theme"
+    .replace(/\s*[-–—:]\s*.+$/, "")
+    // "X x Collab" (collaboration marker)
+    .replace(/\s+x\s+.+$/, "")
+    // "X OA Pres", "X Evo Pres", "X KL Pres", "X The Pres"
+    .replace(/\s+(?:oa|evo|kl|the|kl oa|oa kl)\s+pres(?:ents?)?\b.*$/, "")
+    // "X Presents Theme" / "X Pres Theme"
+    .replace(/\s+pres(?:ents?)?\s+.+$/, "")
+    // standalone trailing "Presents"
+    .replace(/\s+pres(?:ents?)?$/, "")
+    // "X ft. DJ" / "X feat. DJ"
+    .replace(/\s+(?:ft|feat)\.?\s+.+$/, "")
+    // "X w/ Guest"
+    .replace(/\s+w\/\s*.+$/, "")
+    // trailing edition/volume tags: "X Night", "X Vol 3", "X Vol. 3", "X Edition"
+    .replace(/\s+(?:vol\.?\s*\d+|night|edition|ep\s*\d+|pt\.?\s*\d+|part\s*\d+)\s*$/, "")
+    .trim();
+  return s.replace(/\s+/g, " ");
+}
+
 function salesTotalForRow(row) {
   return (Number(row?.pos_total) || 0) + (Number(row?.ticketmelon_total) || 0);
 }
@@ -4844,6 +4877,7 @@ function buildSalesEventLinks(events, salesRows) {
       pl: calcNightPL(row),
       djNames,
       eventKey: eventNameKey(primaryEvent?.name || row.event_name),
+      brandKey: eventBrandKey(primaryEvent?.name || row.event_name),
     };
   });
 }
@@ -4860,22 +4894,31 @@ function buildEventNightInsights(events, salesRows) {
 
   const forecasts = upcomingEvents.map((event) => {
     const eventKey = eventNameKey(event.name);
+    const brandKey = eventBrandKey(event.name);
     const djNames = eventDjNames(event);
+    // Tier 1: exact name match
     const eventMatches = historical.filter((link) => link.eventKey && link.eventKey === eventKey && link.row.date < event.date);
+    // Tier 2: same brand/series (e.g. "City Flow" matches "City Flow OA Pres", "City Flow - MJ Night")
+    const brandMatches = brandKey.length >= 3
+      ? historical.filter((link) => link.brandKey && link.brandKey === brandKey && link.row.date < event.date)
+      : [];
     const djMatches = historical.filter((link) => link.row.date < event.date && link.djNames.some((name) => djNames.includes(name)));
     const dayMatches = historical.filter((link) => isoToDate(link.row.date).getDay() === isoToDate(event.date).getDay() && link.row.date < event.date);
-    const basis = eventMatches.length ? eventMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
+    // Best basis: exact > series/brand > DJ > weekday
+    const seriesMatches = eventMatches.length ? eventMatches : brandMatches;
+    const basis = seriesMatches.length ? seriesMatches : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
     const forecastSales = average(basis.map((link) => link.total));
     const forecastNett = average(basis.map((link) => link.pl.nett));
     return {
       event,
       djNames,
       eventMatches,
+      brandMatches,
       djMatches,
       basis,
       forecastSales,
       forecastNett,
-      confidence: eventMatches.length ? "High" : djMatches.length ? "Medium" : dayMatches.length ? "Low" : "None",
+      confidence: eventMatches.length ? "High" : brandMatches.length ? "High" : djMatches.length ? "Medium" : dayMatches.length ? "Low" : "None",
     };
   });
 
@@ -5218,16 +5261,19 @@ function EventNightAnalytics({ insights }) {
   const comparisonOptions = useMemo(() => {
     if (!selectedForecast) return [];
     const eventKey = eventNameKey(selectedForecast.event.name);
+    const brandKey = eventBrandKey(selectedForecast.event.name);
     const targetDay = isoToDate(selectedForecast.event.date).getDay();
     return insights.historical
       .filter((link) => link.row.date < selectedForecast.event.date)
       .map((link) => {
-        const sameEvent = link.eventKey && link.eventKey === eventKey;
+        const exactMatch = link.eventKey && link.eventKey === eventKey;
+        const brandMatch = brandKey.length >= 3 && link.brandKey && link.brandKey === brandKey;
+        const sameEvent = exactMatch || brandMatch;
         const sameDj = link.djNames.some((name) => selectedForecast.djNames.includes(name));
         const sameDay = isoToDate(link.row.date).getDay() === targetDay;
         const score = (sameEvent ? 4 : 0) + (sameDj ? 2 : 0) + (sameDay ? 1 : 0);
-        const reason = sameEvent ? "Same event" : sameDj ? "Same DJ" : sameDay ? "Same weekday" : "Other";
-        return { ...link, sameEvent, sameDj, sameDay, score, reason };
+        const reason = exactMatch ? "Same event" : brandMatch ? "Same series" : sameDj ? "Same DJ" : sameDay ? "Same weekday" : "Other";
+        return { ...link, sameEvent, exactMatch, brandMatch, sameDj, sameDay, score, reason };
       })
       .sort((a, b) => b.score - a.score || b.row.date.localeCompare(a.row.date))
       .slice(0, 60);
@@ -11642,8 +11688,16 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
       const endISO2 = isoFromDate(weekEnd);
       const weekEvents = upcoming.filter((e) => e.date >= startISO && e.date <= endISO2).map((event) => {
         const eventKey = eventNameKey(event.name);
+        const brandKey = eventBrandKey(event.name);
         const djNames = eventDjNames(event);
-        const sameEventLinks = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
+        // Tier 1: exact name match
+        const exactLinks = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
+        // Tier 2: same brand/series (e.g. "City Flow OA Pres" + "City Flow - MJ Night" → brand "city flow")
+        const brandLinks = brandKey.length >= 3
+          ? historical.filter((l) => l.brandKey === brandKey && l.row.date < event.date)
+          : [];
+        // Best same-event pool: prefer exact, fall back to series
+        const sameEventLinks = exactLinks.length ? exactLinks : brandLinks;
         const djMatches = historical.filter((l) => l.row.date < event.date && l.djNames.some((n) => djNames.includes(n)));
         const dayMatches = historical.filter((l) => isoToDate(l.row.date).getDay() === isoToDate(event.date).getDay() && l.row.date < event.date);
         const basis = sameEventLinks.length ? sameEventLinks : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
@@ -11653,8 +11707,9 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
         const trendProjection = trend ? trend.projectToDate(event.date) : null;
         const forecastSales = recencyForecast || naiveForecast;
         const forecastNett = average(basis.map((l) => l.pl.nett));
-        const confidence = sameEventLinks.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
-        return { event, sameEventLinks, basis, naiveForecast, recencyForecast, trendProjection, trend, forecastSales, forecastNett, confidence };
+        const isBrandMatch = !exactLinks.length && brandLinks.length > 0;
+        const confidence = exactLinks.length ? "High" : brandLinks.length ? "High" : djMatches.length ? "Med" : dayMatches.length ? "Low" : "None";
+        return { event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, basis, naiveForecast, recencyForecast, trendProjection, trend, forecastSales, forecastNett, confidence };
       });
       if (weekEvents.length) {
         const confirmedRevenue = weekEvents.filter((e) => e.event.status === "Confirmed").reduce((s, e) => s + e.forecastSales, 0);
@@ -11703,7 +11758,7 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
               </div>
             </div>
             <div className="space-y-2 px-5 pb-4">
-              {week.weekEvents.map(({ event, sameEventLinks, naiveForecast, recencyForecast, trendProjection, trend, forecastNett, confidence }) => {
+              {week.weekEvents.map(({ event, sameEventLinks, exactLinks, brandLinks, isBrandMatch, naiveForecast, recencyForecast, trendProjection, trend, forecastNett, confidence }) => {
                 const isConfirmed = event.status === "Confirmed";
                 const isExpanded = expandedEventId === event.id;
                 const trendDir = trend ? (trend.slopePerMonth >= 1500 ? "▲" : trend.slopePerMonth <= -1500 ? "▼" : "→") : null;
@@ -11726,7 +11781,7 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
                               {isConfirmed ? "Confirmed" : "Tentative"}
                             </span>
                             <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${confStyle[confidence]}`}>
-                              {confidence === "High" ? "Same event" : confidence === "Med" ? "Same DJ" : confidence === "Low" ? "Same weekday" : "No history"} · {confidence}
+                              {confidence === "High" ? (isBrandMatch ? `Series (${brandLinks.length})` : `Same event (${exactLinks.length})`) : confidence === "Med" ? "Same DJ" : confidence === "Low" ? "Same weekday" : "No history"} · {confidence}
                             </span>
                             {trendDir && (
                               <span className={`text-[9px] font-black ${trendDir === "▲" ? "text-emerald-400" : trendDir === "▼" ? "text-red-400" : "text-white/30"}`}>
@@ -11741,7 +11796,7 @@ function PlanningPage({ events = [], onToast, onOpenEvent }) {
                           <div className="text-right">
                             {recencyForecast > 0 ? (
                               <>
-                                <div className="text-[9px] font-black uppercase tracking-wider text-white/25">{sameEventLinks.length ? "Recency-weighted" : "Avg forecast"}</div>
+                                <div className="text-[9px] font-black uppercase tracking-wider text-white/25">{sameEventLinks.length ? (isBrandMatch ? "Series avg" : "Recency-weighted") : "Avg forecast"}</div>
                                 <div className="text-sm font-black text-white">{salesFmtRMFull(recencyForecast)}</div>
                                 {trendProjection != null && (
                                   <div className={`text-[9px] font-black ${trendProjection > recencyForecast ? "text-emerald-400" : "text-red-400"}`}>
