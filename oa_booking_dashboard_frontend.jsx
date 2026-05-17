@@ -12494,9 +12494,34 @@ function DashboardApp({ onLogout, userRole, currentUser }) {
     });
   }, [canEdit]);
   const forecastByEventId = useMemo(() => {
-    if (!canEdit || !appSalesRows.length) return new Map();
-    const insights = buildEventNightInsights(events, appSalesRows);
-    return new Map(insights.forecasts.map((f) => [f.event.id, f]));
+    if (!canEdit || !appSalesRows.length || !events.length) return new Map();
+    const links = buildSalesEventLinks(events, appSalesRows);
+    const historical = links.filter((l) => l.total > 0 || l.pl.incomeTotal > 0);
+    const todayISO = isoFromDate(new Date());
+    const map = new Map();
+    for (const event of events) {
+      if (!event?.date || event.date < todayISO) continue; // only upcoming
+      const eventKey = eventNameKey(event.name);
+      const toks     = eventTokens(event.name);
+      const djNames  = eventDjNames(event);
+      const exactLinks  = historical.filter((l) => l.eventKey === eventKey && l.row.date < event.date);
+      const brandLinks  = toks.length ? historical.filter((l) => l.row.date < event.date && areSameSeries(l.tokens, toks)) : [];
+      const sameLinks   = exactLinks.length ? exactLinks : brandLinks;
+      const djMatches   = historical.filter((l) => l.row.date < event.date && l.djNames.some((n) => djNames.includes(n)));
+      const dayMatches  = historical.filter((l) => isoToDate(l.row.date).getDay() === isoToDate(event.date).getDay() && l.row.date < event.date);
+      const basis       = sameLinks.length ? sameLinks : djMatches.length ? djMatches.slice(0, 6) : dayMatches.slice(0, 6);
+      const naiveForecast   = average(basis.map((l) => l.total));
+      const recencyForecast = sameLinks.length ? recencyWeightedAvg(sameLinks) : naiveForecast;
+      const trend           = sameLinks.length >= 2 ? computeLinearTrend(sameLinks) : null;
+      const trendProjection = trend ? trend.projectToDate(event.date) : null;
+      const forecastSales   = recencyForecast || naiveForecast;
+      const forecastNett    = average(basis.map((l) => l.pl.nett));
+      const confidence      = exactLinks.length ? "High" : brandLinks.length ? "High" : djMatches.length ? "Medium" : dayMatches.length ? "Low" : "None";
+      if (forecastSales > 0 || confidence !== "None") {
+        map.set(event.id, { event, forecastSales, forecastNett, confidence, trend, trendProjection, basis });
+      }
+    }
+    return map;
   }, [canEdit, appSalesRows, events]);
   const canAccessFinance = userRole === "admin" || userRole === "superadmin";
   const canAccessSales = userRole === "admin" || userRole === "superadmin";
