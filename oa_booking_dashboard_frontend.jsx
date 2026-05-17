@@ -5566,66 +5566,116 @@ function EventNightAnalytics({ insights }) {
 }
 
 function ForecastDetailPanel({ links, targetDate, eventName }) {
-  const sorted = useMemo(() => [...links].sort((a, b) => a.row.date.localeCompare(b.row.date)), [links]);
-  const sales = useMemo(() => sorted.map((l) => l.total), [sorted]);
+  const [scale, setScale] = useState("all"); // "3m" | "6m" | "1y" | "all"
+  const [hoveredIdx, setHoveredIdx] = useState(null);
 
-  const avg    = average(sales);
-  const med    = median(sales);
-  const p25    = quantile(sales, 0.25);
-  const p75    = quantile(sales, 0.75);
-  const minVal = Math.min(...sales);
-  const maxVal = Math.max(...sales);
+  const sorted = useMemo(() => [...links].sort((a, b) => a.row.date.localeCompare(b.row.date)), [links]);
+
+  // Filtered set for chart view (scale controls x-window)
+  const chartLinks = useMemo(() => {
+    if (scale === "all") return sorted;
+    const now = new Date();
+    const cut = new Date(now);
+    if (scale === "3m") cut.setMonth(now.getMonth() - 3);
+    else if (scale === "6m") cut.setMonth(now.getMonth() - 6);
+    else if (scale === "1y") cut.setFullYear(now.getFullYear() - 1);
+    const cutISO = isoFromDate(cut);
+    const filtered = sorted.filter((l) => l.row.date >= cutISO);
+    return filtered.length ? filtered : sorted;
+  }, [sorted, scale]);
+
+  // Stats always use full history
+  const allSales = useMemo(() => sorted.map((l) => l.total), [sorted]);
+  const avg    = average(allSales);
+  const med    = median(allSales);
+  const p25    = quantile(allSales, 0.25);
+  const p75    = quantile(allSales, 0.75);
+  const minVal = Math.min(...allSales);
+  const maxVal = Math.max(...allSales);
 
   const recencyForecast = useMemo(() => recencyWeightedAvg(sorted), [sorted]);
   const trend           = useMemo(() => computeLinearTrend(sorted), [sorted]);
   const trendProjection = useMemo(() => trend && targetDate ? trend.projectToDate(targetDate) : null, [trend, targetDate]);
 
   // ── SVG chart ──────────────────────────────────────────────────────────────
-  const W = 900, H = 220;
-  const pL = 56, pR = 76, pT = 20, pB = 36;
+  const W = 900, H = 240;
+  const pL = 60, pR = 80, pT = 20, pB = 44;
   const iW = W - pL - pR, iH = H - pT - pB;
 
-  const t0   = isoToDate(sorted[0].row.date).getTime();
-  const tEnd = targetDate ? isoToDate(targetDate).getTime() : Date.now();
+  const t0   = isoToDate(chartLinks[0].row.date).getTime();
+  const tEnd = targetDate ? isoToDate(targetDate).getTime() : isoToDate(chartLinks[chartLinks.length - 1].row.date).getTime() + 86400000 * 14;
   const tRange = Math.max(1, tEnd - t0);
 
-  const dateToX    = (iso) => pL + ((isoToDate(iso).getTime() - t0) / tRange) * iW;
-  const targetX    = pL + iW;
+  const dateToX  = (iso) => pL + ((isoToDate(iso).getTime() - t0) / tRange) * iW;
+  const msToX    = (ms)  => pL + ((ms - t0) / tRange) * iW;
+  const targetX  = pL + iW;
 
-  const yPad    = (maxVal - minVal) * 0.18 || maxVal * 0.18 || 5000;
-  const yMin    = Math.max(0, minVal - yPad);
-  const yMax    = maxVal + yPad;
+  // Y scale based on chart window data
+  const chartSales = chartLinks.map((l) => l.total);
+  const chartMax = Math.max(...chartSales, recencyForecast, trendProjection || 0);
+  const chartMin = Math.min(...chartSales);
+  const yPad    = (chartMax - chartMin) * 0.2 || chartMax * 0.2 || 10000;
+  const yMin    = Math.max(0, chartMin - yPad);
+  const yMax    = chartMax + yPad;
   const yRange  = Math.max(1, yMax - yMin);
   const valueToY = (v) => pT + (1 - (v - yMin) / yRange) * iH;
 
   const fmtK = (v) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}K` : String(Math.round(v));
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => yMin + t * yRange);
 
-  const now = Date.now();
-  const maxAgeMs = Math.max(1, now - t0);
-
-  // X-axis labels: first + last + up to 4 middle points
-  const xLabelIdxs = (() => {
-    const set = new Set([0, sorted.length - 1]);
-    if (sorted.length > 2) {
-      const step = Math.max(1, Math.floor((sorted.length - 1) / 4));
-      for (let i = step; i < sorted.length - 1; i += step) set.add(i);
+  // X-axis: calendar month markers
+  const monthMarkers = useMemo(() => {
+    const markers = [];
+    const start = new Date(t0);
+    const end   = new Date(tEnd);
+    // Start from first day of next month after t0
+    const cur = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    while (cur <= end) {
+      const ms = cur.getTime();
+      const x  = msToX(ms);
+      if (x > pL + 20 && x < pL + iW - 20) {
+        const label = cur.toLocaleDateString("en-MY", { month: "short", year: cur.getMonth() === 0 ? "2-digit" : undefined });
+        markers.push({ x, label });
+      }
+      cur.setMonth(cur.getMonth() + 1);
     }
-    return Array.from(set).sort((a, b) => a - b);
-  })();
+    // Thin out if too many
+    if (markers.length > 12) return markers.filter((_, i) => i % Math.ceil(markers.length / 12) === 0);
+    return markers;
+  }, [t0, tEnd, iW, pL]);
 
-  // Trend line coords
-  const trendCoords = trend && sorted.length >= 2 ? (() => {
-    const x1 = dateToX(sorted[0].row.date);
-    const y1 = valueToY(trend.valueAt(sorted[0].row.date));
+  const now = Date.now();
+  const maxAgeMs = Math.max(1, now - isoToDate(sorted[0].row.date).getTime());
+
+  // Trend line across full chart window (not just visible dots)
+  const trendCoords = trend ? (() => {
+    const x1   = pL;
+    const y1   = valueToY(trend.valueAt(isoFromDate(new Date(t0))));
+    const xEnd = targetDate ? targetX : pL + iW;
+    const yEnd = targetDate
+      ? valueToY(Math.max(yMin, trendProjection))
+      : valueToY(Math.max(yMin, trend.valueAt(isoFromDate(new Date(tEnd)))));
+    // Split: solid up to last data point, dashed to target
     const xLast = dateToX(sorted[sorted.length - 1].row.date);
     const yLast = valueToY(trend.valueAt(sorted[sorted.length - 1].row.date));
-    const x2 = targetDate ? targetX : xLast;
-    const y2 = targetDate ? valueToY(Math.max(yMin, trendProjection)) : yLast;
-    return { x1, y1, xLast, yLast, x2, y2 };
+    return { x1, y1, xLast, yLast, xEnd, yEnd };
   })() : null;
 
   const trendDir = trend ? (trend.slopePerMonth >= 1500 ? "growing" : trend.slopePerMonth <= -1500 ? "declining" : "flat") : null;
+
+  // Tooltip
+  const hoveredLink = hoveredIdx != null ? chartLinks[hoveredIdx] : null;
+  const tooltipW = 200, tooltipH = 82;
+  const tooltipX = hoveredLink ? (() => {
+    const x = dateToX(hoveredLink.row.date);
+    return x + tooltipW + 10 > W ? x - tooltipW - 10 : x + 10;
+  })() : 0;
+  const tooltipY = hoveredLink ? (() => {
+    const y = valueToY(hoveredLink.total);
+    return y - tooltipH / 2 < pT ? pT + 2 : y + tooltipH / 2 > pT + iH ? pT + iH - tooltipH - 2 : y - tooltipH / 2;
+  })() : 0;
+
+  const SCALES = [["3m","3M"],["6m","6M"],["1y","1Y"],["all","All"]];
 
   return (
     <div className="border-t border-white/10 p-4 space-y-3">
@@ -5635,79 +5685,137 @@ function ForecastDetailPanel({ links, targetDate, eventName }) {
           <div className="text-[10px] font-black uppercase tracking-widest text-cyan-100/65">Event Trend Analysis — {eventName}</div>
           <div className="mt-0.5 text-xs font-bold text-white/35">
             {sorted.length} historical runs · {targetDate ? `next run ${salesFmtDate(targetDate)}` : "no upcoming run selected"}
+            {scale !== "all" && chartLinks.length < sorted.length && <span className="ml-2 text-white/25">(showing {chartLinks.length} in window)</span>}
           </div>
         </div>
-        {trend && (
-          <div className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${trendDir === "growing" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300" : trendDir === "declining" ? "border-red-400/30 bg-red-400/10 text-red-300" : "border-white/10 bg-white/5 text-white/40"}`}>
-            {trend.slopePerMonth >= 0 ? "▲" : "▼"} {salesFmtRMFull(Math.abs(trend.slopePerMonth))}/month
+        <div className="flex items-center gap-2">
+          {trend && (
+            <div className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${trendDir === "growing" ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-300" : trendDir === "declining" ? "border-red-400/30 bg-red-400/10 text-red-300" : "border-white/10 bg-white/5 text-white/40"}`}>
+              {trend.slopePerMonth >= 0 ? "▲" : "▼"} {salesFmtRMFull(Math.abs(trend.slopePerMonth))}/month
+            </div>
+          )}
+          {/* Scale tabs */}
+          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            {SCALES.map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setScale(key)}
+                className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition-colors ${scale === key ? "bg-white/15 text-white" : "bg-transparent text-white/30 hover:text-white/60"}`}
+              >{label}</button>
+            ))}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Chart */}
       <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: "block" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: "block" }} onMouseLeave={() => setHoveredIdx(null)}>
+          {/* Month grid lines */}
+          {monthMarkers.map((m, i) => (
+            <line key={i} x1={m.x} y1={pT} x2={m.x} y2={pT + iH} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+          ))}
           {/* P25–P75 band */}
           <rect
             x={pL} y={valueToY(p75)} width={iW}
             height={Math.max(0, valueToY(p25) - valueToY(p75))}
             fill="rgba(139,92,246,0.09)"
           />
-          {/* Grid lines */}
+          {/* Y grid lines + labels */}
           {yTicks.map((v, i) => (
             <g key={i}>
-              <line x1={pL} y1={valueToY(v)} x2={pL + iW} y2={valueToY(v)} stroke="rgba(255,255,255,0.05)" strokeWidth={1} />
-              <text x={pL - 5} y={valueToY(v) + 3.5} textAnchor="end" fontSize={9} fill="rgba(255,255,255,0.28)" fontFamily="monospace">{fmtK(v)}</text>
+              <line x1={pL} y1={valueToY(v)} x2={pL + iW} y2={valueToY(v)} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+              <text x={pL - 6} y={valueToY(v) + 3.5} textAnchor="end" fontSize={9} fill="rgba(255,255,255,0.30)" fontFamily="monospace">{fmtK(v)}</text>
             </g>
           ))}
           {/* Mean line */}
           <line x1={pL} y1={valueToY(avg)} x2={pL + iW} y2={valueToY(avg)} stroke="rgba(103,232,249,0.40)" strokeWidth={1.5} strokeDasharray="5 4" />
-          <text x={pL + iW + 4} y={valueToY(avg) + 3.5} fontSize={9} fill="rgba(103,232,249,0.65)" fontFamily="monospace">avg</text>
+          <text x={pL + iW + 5} y={valueToY(avg) + 3.5} fontSize={9} fill="rgba(103,232,249,0.65)" fontFamily="monospace">avg</text>
           {/* Median line */}
           <line x1={pL} y1={valueToY(med)} x2={pL + iW} y2={valueToY(med)} stroke="rgba(167,139,250,0.40)" strokeWidth={1.5} strokeDasharray="2 4" />
-          <text x={pL + iW + 4} y={valueToY(med) + 3.5} fontSize={9} fill="rgba(167,139,250,0.65)" fontFamily="monospace">med</text>
-          {/* Trend line — solid historical part */}
+          <text x={pL + iW + 5} y={valueToY(med) + 3.5} fontSize={9} fill="rgba(167,139,250,0.65)" fontFamily="monospace">med</text>
+          {/* Trend line */}
           {trendCoords && (
             <>
               <line x1={trendCoords.x1} y1={trendCoords.y1} x2={trendCoords.xLast} y2={trendCoords.yLast}
                 stroke="rgba(251,191,36,0.55)" strokeWidth={1.5} />
               {targetDate && (
-                <line x1={trendCoords.xLast} y1={trendCoords.yLast} x2={trendCoords.x2} y2={trendCoords.y2}
-                  stroke="rgba(251,191,36,0.30)" strokeWidth={1.5} strokeDasharray="6 5" />
+                <line x1={trendCoords.xLast} y1={trendCoords.yLast} x2={trendCoords.xEnd} y2={trendCoords.yEnd}
+                  stroke="rgba(251,191,36,0.28)" strokeWidth={1.5} strokeDasharray="6 5" />
               )}
             </>
           )}
-          {/* Historical dots — faded for old, bright for recent */}
-          {sorted.map((link, i) => {
+          {/* Historical dots */}
+          {chartLinks.map((link, i) => {
             const x = dateToX(link.row.date);
             const y = valueToY(link.total);
             const ageMs = now - isoToDate(link.row.date).getTime();
             const recency = Math.max(0, 1 - ageMs / maxAgeMs);
             const opacity = 0.25 + recency * 0.75;
+            const isHovered = hoveredIdx === i;
             return (
-              <g key={String(link.row.id)}>
-                <circle cx={x} cy={y} r={5.5} fill={`rgba(103,232,249,${opacity})`} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
-                <title>{salesFmtDate(link.row.date)}: {salesFmtRMFull(link.total)}</title>
+              <g key={String(link.row.id)} style={{ cursor: "pointer" }}>
+                {/* Large invisible hit area */}
+                <circle cx={x} cy={y} r={14} fill="transparent"
+                  onMouseEnter={() => setHoveredIdx(i)}
+                />
+                {/* Outer glow on hover */}
+                {isHovered && <circle cx={x} cy={y} r={10} fill={`rgba(103,232,249,0.15)`} />}
+                {/* Dot */}
+                <circle
+                  cx={x} cy={y}
+                  r={isHovered ? 7 : 5.5}
+                  fill={`rgba(103,232,249,${isHovered ? 1 : opacity})`}
+                  stroke={isHovered ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.35)"}
+                  strokeWidth={isHovered ? 1.5 : 1}
+                />
+                {/* Vertical drop line on hover */}
+                {isHovered && <line x1={x} y1={y + 8} x2={x} y2={pT + iH} stroke="rgba(103,232,249,0.25)" strokeWidth={1} strokeDasharray="3 3" />}
               </g>
             );
           })}
-          {/* Target date vertical + projected points */}
+          {/* Target date line + projected points */}
           {targetDate && (
             <g>
-              <line x1={targetX} y1={pT} x2={targetX} y2={pT + iH} stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="3 4" />
+              <line x1={targetX} y1={pT} x2={targetX} y2={pT + iH} stroke="rgba(255,255,255,0.10)" strokeWidth={1} strokeDasharray="3 4" />
               {trendProjection != null && (
-                <circle cx={targetX} cy={valueToY(trendProjection)} r={5} fill="none" stroke="rgba(251,191,36,0.85)" strokeWidth={2} />
+                <>
+                  <circle cx={targetX} cy={valueToY(trendProjection)} r={6} fill="rgba(251,191,36,0.15)" stroke="rgba(251,191,36,0.85)" strokeWidth={2} />
+                  <text x={targetX + 8} y={valueToY(trendProjection) + 3.5} fontSize={9} fill="rgba(251,191,36,0.65)" fontFamily="monospace">{fmtK(trendProjection)}</text>
+                </>
               )}
-              <circle cx={targetX} cy={valueToY(recencyForecast)} r={5} fill="none" stroke="rgba(103,232,249,0.85)" strokeWidth={2} />
-              <text x={targetX} y={pT + iH + 16} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.25)">target</text>
+              <circle cx={targetX} cy={valueToY(recencyForecast)} r={6} fill="rgba(103,232,249,0.15)" stroke="rgba(103,232,249,0.85)" strokeWidth={2} />
+              <text x={targetX + 8} y={valueToY(recencyForecast) + 3.5} fontSize={9} fill="rgba(103,232,249,0.65)" fontFamily="monospace">{fmtK(recencyForecast)}</text>
+              <text x={targetX} y={pT + iH + 16} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.28)" fontFamily="monospace">next</text>
             </g>
           )}
-          {/* X-axis labels */}
-          {xLabelIdxs.map((idx) => (
-            <text key={idx} x={dateToX(sorted[idx].row.date)} y={pT + iH + 16} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.22)">
-              {salesFmtDate(sorted[idx].row.date)}
-            </text>
+          {/* X-axis month labels */}
+          {monthMarkers.map((m, i) => (
+            <text key={i} x={m.x} y={pT + iH + 14} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.22)" fontFamily="monospace">{m.label}</text>
           ))}
+          {/* Hover tooltip */}
+          {hoveredLink && (
+            <g>
+              <rect x={tooltipX} y={tooltipY} width={tooltipW} height={tooltipH} rx={6}
+                fill="rgba(10,10,20,0.92)" stroke="rgba(103,232,249,0.35)" strokeWidth={1} />
+              <text x={tooltipX + 10} y={tooltipY + 16} fontSize={10} fontWeight="bold" fill="rgba(255,255,255,0.9)" fontFamily="sans-serif">
+                {(hoveredLink.event?.name || hoveredLink.row.event_name || "–").slice(0, 26)}
+              </text>
+              <text x={tooltipX + 10} y={tooltipY + 30} fontSize={9} fill="rgba(255,255,255,0.40)" fontFamily="monospace">
+                {salesFmtDate(hoveredLink.row.date)}
+              </text>
+              <text x={tooltipX + 10} y={tooltipY + 46} fontSize={10} fontWeight="bold" fill="rgba(103,232,249,0.9)" fontFamily="monospace">
+                {salesFmtRMFull(hoveredLink.total)}
+              </text>
+              <text x={tooltipX + 10} y={tooltipY + 60} fontSize={9} fill={hoveredLink.pl.nett >= 0 ? "rgba(52,211,153,0.85)" : "rgba(248,113,113,0.85)"} fontFamily="monospace">
+                nett {salesFmtRMFull(hoveredLink.pl.nett)}
+              </text>
+              {hoveredLink.row.event_name && hoveredLink.event?.name && hoveredLink.event.name !== hoveredLink.row.event_name && (
+                <text x={tooltipX + 10} y={tooltipY + 74} fontSize={8} fill="rgba(255,255,255,0.25)" fontFamily="sans-serif">
+                  {hoveredLink.row.event_name.slice(0, 28)}
+                </text>
+              )}
+            </g>
+          )}
         </svg>
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-4 border-t border-white/10 px-4 py-2">
@@ -5725,15 +5833,15 @@ function ForecastDetailPanel({ links, targetDate, eventName }) {
           </div>}
           <div className="flex items-center gap-1.5">
             <div className="h-3 w-5 rounded" style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.25)" }} />
-            <span className="text-[9px] font-black text-white/30">P25–P75 band</span>
+            <span className="text-[9px] font-black text-white/30">P25–P75</span>
           </div>
           {targetDate && <div className="flex items-center gap-1.5">
             <svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="rgba(103,232,249,0.85)" strokeWidth="1.5" /></svg>
-            <span className="text-[9px] font-black text-white/30">Recency proj.</span>
+            <span className="text-[9px] font-black text-white/30">Recency fcst</span>
           </div>}
           {targetDate && trend && <div className="flex items-center gap-1.5">
             <svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="rgba(251,191,36,0.85)" strokeWidth="1.5" /></svg>
-            <span className="text-[9px] font-black text-white/30">Trend proj.</span>
+            <span className="text-[9px] font-black text-white/30">Trend fcst</span>
           </div>}
         </div>
       </div>
