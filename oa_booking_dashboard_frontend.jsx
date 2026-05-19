@@ -2616,7 +2616,7 @@ function AddEventDayModal({
   );
 }
 
-function EventCard({ event, holidays, timeFormat, canEdit, forecast, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
+function EventCard({ event, holidays, timeFormat, canEdit, canViewForecast = false, forecast, mentionUsers, comments = [], currentUser, commentsError, onEdit, onAssignIC, onConfirm, onShare, onOpenDetails, onAddComment, onDeleteComment }) {
   const [forecastExpanded, setForecastExpanded] = useState(false);
   const scheduleValidation = validateScheduleDays([{ isoDate: event.date, slots: event.slots }]);
   const conflictSlots = scheduleValidation.conflictSlots[event.date] ?? new Set();
@@ -2745,7 +2745,7 @@ function EventCard({ event, holidays, timeFormat, canEdit, forecast, mentionUser
                 </div>
               ) : null}
               {/* ── Admin forecast strip (clickable) ─────────────────────── */}
-              {canEdit && forecast && (forecast.forecastSales > 0 || forecast.confidence !== "None") && (
+              {canViewForecast && forecast && (forecast.forecastSales > 0 || forecast.confidence !== "None") && (
                 <div className="mt-2 overflow-hidden rounded-xl border border-purple-400/20 bg-purple-400/[0.06]">
                   {/* Summary row — click to expand */}
                   <button
@@ -12678,17 +12678,19 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   // can(key) = role defaults + any custom grants assigned via the Users tab
   const can = useMemo(() => buildCanFn(userRole, userCustomPerms), [userRole, userCustomPerms]);
   const canEdit = can("can_edit");
+  const canAccessPlanning = can("view_planning");
+  const canViewForecast = can("view_forecast");
 
-  // ── Forecast lookup for EventCard (admin only) ───────────────────────────
+  // ── Forecast lookup for EventCard (admin/superadmin only) ────────────────
   const [appSalesRows, setAppSalesRows] = useState([]);
   useEffect(() => {
-    if (!isSupabaseConfigured || !canEdit) return;
+    if (!isSupabaseConfigured || !canViewForecast) return;
     supabase.from("weekly_sales").select("*").order("date").then(({ data }) => {
       if (data) setAppSalesRows(data);
     });
-  }, [canEdit]);
+  }, [canViewForecast]);
   const forecastByEventId = useMemo(() => {
-    if (!canEdit || !appSalesRows.length || !events.length) return new Map();
+    if (!canViewForecast || !appSalesRows.length || !events.length) return new Map();
     const links = buildSalesEventLinks(events, appSalesRows);
     const historical = links.filter((l) => l.total > 0 || l.pl.incomeTotal > 0);
     const todayISO = isoFromDate(new Date());
@@ -12716,7 +12718,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
       }
     }
     return map;
-  }, [canEdit, appSalesRows, events]);
+  }, [canViewForecast, appSalesRows, events]);
   const canAccessFinance = can("view_finance");
   const canAccessSales = can("view_sales");
   const canAccessDjs = can("view_djs");
@@ -12887,8 +12889,8 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   }, [canAccessSales, navigateView, view]);
 
   useEffect(() => {
-    if (!canEdit && view === "Planning") navigateView("List", { replace: true });
-  }, [canEdit, navigateView, view]);
+    if (!canAccessPlanning && view === "Planning") navigateView("List", { replace: true });
+  }, [canAccessPlanning, navigateView, view]);
 
   useEffect(() => {
     if (!canAccessDjs && view === "DJs") navigateView("List", { replace: true });
@@ -14366,7 +14368,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                 <span className={headerIconsOnly ? "sr-only" : ""}>Payments</span>
               </Button>
             ) : null}
-            {canEdit ? (
+            {canAccessPlanning ? (
               <Button
                 onClick={() => navigateView("Planning")}
                 className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
@@ -14811,7 +14813,8 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                   holidays={holidaysByDate.get(focusedEvent.date) ?? []}
                   timeFormat={timeFormat}
                   canEdit={canEdit}
-                  forecast={canEdit ? forecastByEventId.get(focusedEvent.id) : undefined}
+                  canViewForecast={canViewForecast}
+                  forecast={canViewForecast ? forecastByEventId.get(focusedEvent.id) : undefined}
                   mentionUsers={mentionUsers}
                   comments={commentsByEventId.get(focusedEvent.id) ?? []}
                   currentUser={currentUser}
@@ -14845,7 +14848,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
             <FinancePage events={events} onToast={showToast} />
           ) : view === "Sales" && canAccessSales ? (
             <WeeklySalesPage userRole={userRole} onToast={showToast} events={events} onOpenEvent={openSingleEvent} onOpenDj={openDjFromName} />
-          ) : view === "Planning" && canEdit ? (
+          ) : view === "Planning" && canAccessPlanning ? (
             <PlanningPage events={events} onToast={showToast} onOpenEvent={openSingleEvent} />
           ) : view === "DJPayments" && canAccessDjPayments ? (
             <DjPaymentsPage
@@ -14928,7 +14931,8 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                         holidays={holidaysByDate.get(event.date) ?? []}
                         timeFormat={timeFormat}
                         canEdit={canEdit}
-                        forecast={canEdit ? forecastByEventId.get(event.id) : undefined}
+                        canViewForecast={canViewForecast}
+                        forecast={canViewForecast ? forecastByEventId.get(event.id) : undefined}
                         mentionUsers={mentionUsers}
                         comments={commentsByEventId.get(event.id) ?? []}
                         currentUser={currentUser}
