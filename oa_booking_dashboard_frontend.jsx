@@ -12734,7 +12734,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   const canAccessDjPayments = can("view_payments");
   const canManageUsers = can("can_manage_users");
   const canViewActivity = can("view_activity");
-  const headerIconsOnly = userRole === "superadmin";
+  const headerIconsOnly = false;
   const currentUserName = useMemo(() => {
     const metadata = currentUser?.user_metadata || {};
     const raw = metadata.display_name || metadata.full_name || currentUser?.email || "there";
