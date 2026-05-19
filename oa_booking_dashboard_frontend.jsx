@@ -7724,7 +7724,6 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
   const salesFilteredLinks = useMemo(() => {
     const needle = salesQuery.trim().toLowerCase();
     const eventNeedleKey = eventNameKey(salesEvent);
-    const todayISO = isoFromDate(new Date());
     return buildSalesEventLinks(events, view === "weekly" ? data : allRows)
       .filter((link) => {
         const row = link.row || {};
@@ -7735,8 +7734,7 @@ function WeeklySalesPage({ userRole, onToast, events = [], onOpenEvent, onOpenDj
         const djNames = Array.isArray(link.djNames) ? link.djNames : [];
         const linked = Array.isArray(link.linkedEvents) && link.linkedEvents.length > 0;
         if (!date) return false;
-        const isFuture = String(date) >= todayISO;
-        if (!salesIncludeZero && total <= 0 && !isFuture) return false;
+        if (!salesIncludeZero && total <= 0 && view !== "weekly") return false;
         if (salesOnlyLinked && !linked) return false;
         if (salesDj && !djNames.includes(salesDj)) return false;
         if (eventNeedleKey) {
