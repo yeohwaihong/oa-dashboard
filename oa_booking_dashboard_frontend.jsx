@@ -14469,10 +14469,11 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
           <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:items-center md:justify-end md:gap-2 md:overflow-visible md:pb-0">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-cyan-300/25 bg-cyan-400/10 text-[11px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-9 ${headerIconsOnly ? "w-9 px-0" : "px-2.5 md:px-3"}`}
+              title="Holidays"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20 sm:h-9 sm:w-9"
             >
               <CalendarDays className="h-4 w-4 shrink-0" />
-              <span className={headerIconsOnly ? "sr-only" : ""}>Holidays</span>
+              <span className="sr-only">Holidays</span>
             </Button>
             {canUseNotificationCenter ? (
             <div className="relative">
@@ -14483,11 +14484,11 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                   setActiveNotificationsTab(bookingRequestCount ? "bookings" : mentionCount || !canEdit ? "mentions" : "pending");
                   setNotificationsOpen(true);
                 }}
-                className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-yellow-300/25 bg-yellow-400/10 text-[11px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-9 ${headerIconsOnly ? "w-9 px-0" : "px-2.5 md:px-3"}`}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-yellow-300/25 bg-yellow-400/10 text-yellow-100 hover:bg-yellow-400/20 sm:h-9 sm:w-9"
                 title={canEdit ? "Notification center" : "Mentions notification center"}
               >
                 <Bell className="h-4 w-4 shrink-0" />
-                <span className={headerIconsOnly ? "sr-only" : ""}>{notificationButtonLabel}</span>
+                <span className="sr-only">{notificationButtonLabel}</span>
               </Button>
               {notificationBadgeCount ? (
                 <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-rose-300/40 bg-rose-500/30 px-1 text-[10px] font-black text-rose-50">
