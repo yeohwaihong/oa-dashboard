@@ -14357,112 +14357,112 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
             >
             <Button
               onClick={() => navigateView("List")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+              className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                 view === "List" ? "bg-purple-400 text-black hover:bg-purple-300" : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <List className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <List className="h-3.5 w-3.5" />
               <span className={headerIconsOnly ? "sr-only" : ""}>List</span>
             </Button>
             <Button
               onClick={() => navigateView("Calendar")}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+              className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                 view === "Calendar"
                   ? "bg-purple-400 text-black hover:bg-purple-300"
                   : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
               }`}
             >
-              <CalendarDays className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <CalendarDays className="h-3.5 w-3.5" />
               <span className={headerIconsOnly ? "sr-only" : ""}>Calendar</span>
             </Button>
             {canAccessDjs ? (
               <Button
                 onClick={() => navigateView("DJs")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "DJs"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Music className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Music className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>DJs</span>
               </Button>
             ) : null}
             {canManageUsers ? (
               <Button
                 onClick={() => navigateView("Users")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "Users"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Users className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Users</span>
               </Button>
             ) : null}
             {canViewActivity ? (
               <Button
                 onClick={() => navigateView("Activity")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "Activity"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Receipt className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Receipt className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Activity</span>
               </Button>
             ) : null}
             {canAccessFinance ? (
               <Button
                 onClick={() => navigateView("Finance")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "Finance"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Calculator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Calculator className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Finance</span>
               </Button>
             ) : null}
             {canAccessSales ? (
               <Button
                 onClick={() => navigateView("Sales")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "Sales"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <TrendingUp className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Sales</span>
               </Button>
             ) : null}
             {canAccessDjPayments ? (
               <Button
                 onClick={() => navigateView("DJPayments")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "DJPayments"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Banknote className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Banknote className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Payments</span>
               </Button>
             ) : null}
             {canAccessPlanning ? (
               <Button
                 onClick={() => navigateView("Planning")}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-black sm:h-10 sm:gap-2 sm:text-sm ${headerIconsOnly ? "w-10 px-0" : "px-2 md:px-4"} ${
+                className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg text-[10px] font-black sm:h-8 sm:gap-1.5 sm:text-xs ${headerIconsOnly ? "w-8 px-0" : "px-2 md:px-2.5"} ${
                   view === "Planning"
                     ? "bg-purple-400 text-black hover:bg-purple-300"
                     : "bg-white/5 text-white/45 hover:bg-white/10 hover:text-white"
                 }`}
               >
-                <Target className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <Target className="h-3.5 w-3.5" />
                 <span className={headerIconsOnly ? "sr-only" : ""}>Planning</span>
               </Button>
             ) : null}
@@ -14471,7 +14471,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
           <div className="flex w-full items-stretch gap-1.5 overflow-x-auto pb-1.5 md:ml-auto md:w-auto md:flex-wrap md:items-center md:justify-end md:gap-2 md:overflow-visible md:pb-0">
             <Button
               onClick={() => setHolidaysModalOpen(true)}
-              className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-300/25 bg-cyan-400/10 text-xs font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
+              className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-cyan-300/25 bg-cyan-400/10 text-[11px] font-black text-cyan-100 hover:bg-cyan-400/20 sm:h-9 ${headerIconsOnly ? "w-9 px-0" : "px-2.5 md:px-3"}`}
             >
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span className={headerIconsOnly ? "sr-only" : ""}>Holidays</span>
@@ -14485,7 +14485,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                   setActiveNotificationsTab(bookingRequestCount ? "bookings" : mentionCount || !canEdit ? "mentions" : "pending");
                   setNotificationsOpen(true);
                 }}
-                className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-yellow-300/25 bg-yellow-400/10 text-xs font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-5"}`}
+                className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-yellow-300/25 bg-yellow-400/10 text-[11px] font-black text-yellow-100 hover:bg-yellow-400/20 sm:h-9 ${headerIconsOnly ? "w-9 px-0" : "px-2.5 md:px-3"}`}
                 title={canEdit ? "Notification center" : "Mentions notification center"}
               >
                 <Bell className="h-4 w-4 shrink-0" />
@@ -14506,7 +14506,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                     updateAddMenuPosition();
                     setAddMenuOpen((open) => !open);
                   }}
-                  className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-400 text-xs font-black text-black hover:bg-purple-300 sm:h-10 ${headerIconsOnly ? "w-11 px-0" : "px-3 md:px-6"}`}
+                  className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-purple-400 text-[11px] font-black text-black hover:bg-purple-300 sm:h-9 ${headerIconsOnly ? "w-9 px-0" : "px-2.5 md:px-3"}`}
                 >
                   <Plus className="h-4 w-4 shrink-0" />
                   <span className={headerIconsOnly ? "sr-only" : ""}>Add</span>
@@ -14543,7 +14543,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
             <Button
               onClick={() => setTimeFormat(timeFormat === "24" ? "12" : "24")}
               title={timeFormat === "24" ? "24-hour time" : "AM/PM time"}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-9 sm:w-9 sm:px-0"
             >
               <Clock className="h-4 w-4 shrink-0" />
               <span className="sr-only">{timeFormat === "24" ? "24-hour time" : "AM/PM time"}</span>
@@ -14551,7 +14551,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
             <Button
               onClick={() => setTheme(isLightTheme ? "dark" : "light")}
               title={isLightTheme ? "Switch to dark mode" : "Switch to light mode"}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-9 sm:w-9 sm:px-0"
             >
               {isLightTheme ? <Moon className="h-4 w-4 shrink-0" /> : <Sun className="h-4 w-4 shrink-0" />}
               <span className="sr-only">{isLightTheme ? "Dark mode" : "Light mode"}</span>
@@ -14563,7 +14563,7 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
                 setProfileMenuOpen((open) => !open);
               }}
               title="Profile"
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-purple-200/25 bg-purple-400/15 p-0 text-xs font-black text-purple-50 hover:bg-purple-400/25 sm:h-10 sm:w-10"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-purple-200/25 bg-purple-400/15 p-0 text-xs font-black text-purple-50 hover:bg-purple-400/25 sm:h-9 sm:w-9"
             >
               {currentUserAvatarUrl ? (
                 <img src={currentUserAvatarUrl} alt="" className="h-full w-full object-cover" />
