@@ -12641,8 +12641,17 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   const [pendingNotificationTarget, setPendingNotificationTarget] = useState(null);
   const notificationsButtonRef = React.useRef(null);
   const addButtonRef = React.useRef(null);
+  const profileButtonRef = React.useRef(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addMenuStyle, setAddMenuStyle] = useState(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profileMenuStyle, setProfileMenuStyle] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [passwordConfirmDraft, setPasswordConfirmDraft] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [showPasswordDraft, setShowPasswordDraft] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("Add Event Day");
   const [modalInitialDays, setModalInitialDays] = useState(null);
@@ -12726,6 +12735,17 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   const canManageUsers = can("can_manage_users");
   const canViewActivity = can("view_activity");
   const headerIconsOnly = userRole === "superadmin";
+  const currentUserName = useMemo(() => {
+    const metadata = currentUser?.user_metadata || {};
+    const raw = metadata.display_name || metadata.full_name || currentUser?.email || "there";
+    return String(raw).split("@")[0].trim() || "there";
+  }, [currentUser]);
+  const currentUserInitials = useMemo(() => {
+    const parts = currentUserName.split(/\s+/).filter(Boolean);
+    const initials = (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : currentUserName.slice(0, 2)).toUpperCase();
+    return initials || "OA";
+  }, [currentUserName]);
+  const currentUserAvatarUrl = String(currentUser?.user_metadata?.avatar_url || currentUser?.user_metadata?.picture || "");
   const canUseNotificationCenter = can("view_notifications");
   const notificationButtonLabel = canEdit ? "Alerts" : "Mentions";
   const currentMentionUser = useMemo(() => {
@@ -12786,6 +12806,43 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
   const showToast = useCallback((message, tone = "success") => {
     setToast({ message, tone, id: Date.now() });
   }, []);
+
+  const openPasswordModal = useCallback(() => {
+    setProfileMenuOpen(false);
+    setPasswordDraft("");
+    setPasswordConfirmDraft("");
+    setPasswordError("");
+    setShowPasswordDraft(false);
+    setPasswordModalOpen(true);
+  }, []);
+
+  const changeOwnPassword = useCallback(async () => {
+    const password = passwordDraft.trim();
+    if (password.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== passwordConfirmDraft.trim()) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError("");
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setPasswordModalOpen(false);
+      setPasswordDraft("");
+      setPasswordConfirmDraft("");
+      showToast("Password updated");
+    } catch (error) {
+      setPasswordError(error?.message || "Could not update password.");
+      showToast("Password update failed", "error");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }, [passwordConfirmDraft, passwordDraft, showToast]);
 
   const [pendingCount, setPendingCount] = useState(0);
   const withPending = useCallback(async (promiseFactory) => {
@@ -13402,6 +13459,34 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
       if (raf) cancelAnimationFrame(raf);
     };
   }, [addMenuOpen, updateAddMenuPosition]);
+
+  const updateProfileMenuPosition = useCallback(() => {
+    const node = profileButtonRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const gutter = 12;
+    const width = 260;
+    const left = Math.max(gutter, Math.min(window.innerWidth - width - gutter, rect.right - width));
+    const top = rect.bottom + 8;
+    setProfileMenuStyle({ position: "fixed", left, top, width });
+  }, []);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined;
+    updateProfileMenuPosition();
+    let raf = 0;
+    const handle = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateProfileMenuPosition);
+    };
+    window.addEventListener("resize", handle);
+    window.addEventListener("scroll", handle, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handle);
+      window.removeEventListener("scroll", handle);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [profileMenuOpen, updateProfileMenuPosition]);
 
   const upcomingMalaysiaHolidays = useMemo(() => {
     return malaysiaHolidays.filter((holiday) => holiday.date >= todayISO).sort((a, b) => a.date.localeCompare(b.date));
@@ -14472,15 +14557,146 @@ function DashboardApp({ onLogout, userRole, userCustomPerms = [], currentUser })
               <span className="sr-only">{isLightTheme ? "Dark mode" : "Light mode"}</span>
             </Button>
             <Button
-              onClick={onLogout}
-              title={userRole ? `${userRole.toUpperCase()} Logout` : "Logout"}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1 text-white/55 hover:bg-white/10 hover:text-white sm:h-10 sm:w-10 sm:px-0"
+              ref={profileButtonRef}
+              onClick={() => {
+                updateProfileMenuPosition();
+                setProfileMenuOpen((open) => !open);
+              }}
+              title="Profile"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-purple-200/25 bg-purple-400/15 p-0 text-xs font-black text-purple-50 hover:bg-purple-400/25 sm:h-10 sm:w-10"
             >
-              <LogOut className="h-4 w-4 shrink-0" />
-              <span className="sr-only">Logout</span>
+              {currentUserAvatarUrl ? (
+                <img src={currentUserAvatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="grid h-full w-full place-items-center bg-gradient-to-br from-purple-300 via-cyan-200 to-emerald-200 text-black">
+                  {currentUserInitials}
+                </span>
+              )}
+              <span className="sr-only">Open profile menu</span>
             </Button>
           </div>
         </header>
+
+        {profileMenuOpen ? (
+          <div
+            className="fixed inset-0 z-[75]"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setProfileMenuOpen(false);
+            }}
+          >
+            <div style={profileMenuStyle || undefined} className="overflow-hidden rounded-2xl border border-white/10 bg-[#12111f] p-2 text-white shadow-2xl shadow-black/60">
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full border border-purple-200/25 bg-purple-400/15 text-sm font-black text-purple-50">
+                  {currentUserAvatarUrl ? (
+                    <img src={currentUserAvatarUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="grid h-full w-full place-items-center bg-gradient-to-br from-purple-300 via-cyan-200 to-emerald-200 text-black">
+                      {currentUserInitials}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-black text-white">Hello {currentUserName}!</div>
+                  <div className="mt-0.5 truncate text-[11px] font-bold text-white/35">{currentUser?.email || userRole}</div>
+                </div>
+              </div>
+              <div className="mt-2 grid gap-1">
+                <button
+                  type="button"
+                  onClick={openPasswordModal}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black text-white/75 hover:bg-purple-400 hover:text-black"
+                >
+                  <EyeOff className="h-4 w-4" />
+                  Change Password
+                </button>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {passwordModalOpen ? (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#12111f] text-white shadow-2xl shadow-black/70">
+              <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.24em] text-purple-200/60">Profile</div>
+                  <div className="mt-1 text-lg font-black">Change Password</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalOpen(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/50 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                  <span className="sr-only">Close</span>
+                </button>
+              </div>
+              <div className="space-y-3 px-5 py-5">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">New password</span>
+                  <div className="mt-1 flex overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                    <input
+                      type={showPasswordDraft ? "text" : "password"}
+                      value={passwordDraft}
+                      onChange={(e) => setPasswordDraft(e.target.value)}
+                      autoComplete="new-password"
+                      className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm font-bold text-white outline-none placeholder:text-white/25"
+                      placeholder="At least 8 characters"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordDraft((show) => !show)}
+                      className="grid w-11 place-items-center text-white/45 hover:bg-white/5 hover:text-white"
+                      title={showPasswordDraft ? "Hide password" : "Show password"}
+                    >
+                      {showPasswordDraft ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/30">Confirm password</span>
+                  <input
+                    type={showPasswordDraft ? "text" : "password"}
+                    value={passwordConfirmDraft}
+                    onChange={(e) => setPasswordConfirmDraft(e.target.value)}
+                    autoComplete="new-password"
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm font-bold text-white outline-none placeholder:text-white/25"
+                    placeholder="Repeat new password"
+                  />
+                </label>
+                {passwordError ? (
+                  <div className="rounded-xl border border-rose-300/25 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-100">
+                    {passwordError}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 border-t border-white/10 px-5 py-4">
+                <Button
+                  onClick={() => setPasswordModalOpen(false)}
+                  disabled={passwordSaving}
+                  className="h-10 rounded-xl bg-white/5 px-4 text-xs font-black text-white/55 hover:bg-white/10 hover:text-white"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={changeOwnPassword}
+                  disabled={passwordSaving}
+                  className="h-10 rounded-xl bg-purple-400 px-4 text-xs font-black text-black hover:bg-purple-300 disabled:opacity-60"
+                >
+                  {passwordSaving ? "Updating..." : "Update Password"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {notificationsOpen && canUseNotificationCenter ? (
           <div
